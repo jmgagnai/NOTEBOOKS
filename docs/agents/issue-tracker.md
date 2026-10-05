@@ -1,0 +1,82 @@
+# Issue tracker: Jira
+
+Issues live in Jira Cloud, project **JMG** (Kanban board, issue type **Task**), at
+https://jmga.atlassian.net/jira/software/projects/JMG. All operations go through
+the REST API via `curl` — there is no CLI.
+
+## Auth
+
+Basic Auth, `email:api_token` base64-encoded. Credentials live in `.env` (git-ignored,
+never commit it):
+
+- `JIRA_BASE_URL` — https://jmga.atlassian.net
+- `JIRA_EMAIL` — jmgagnaire@gmail.com
+- `JIRA_API_TOKEN` — the Atlassian API token
+- `JIRA_PROJECT_KEY` — JMG
+
+Source `.env` before any call, e.g.:
+
+```bash
+set -a; source .env; set +a
+AUTH="$JIRA_EMAIL:$JIRA_API_TOKEN"
+curl -s -u "$AUTH" -H "Content-Type: application/json" "$JIRA_BASE_URL/rest/api/3/..."
+```
+
+## Conventions
+
+- **Create an issue**:
+  `POST $JIRA_BASE_URL/rest/api/3/issue` with body
+  `{"fields":{"project":{"key":"JMG"},"summary":"...","description":{...ADF...},"issuetype":{"name":"Task"}}}`.
+  Jira's `description` field is Atlassian Document Format (ADF), not plain markdown —
+  wrap plain text as a single `doc` node with one `paragraph`/`text` node, or use the
+  `/rest/api/3/issue` `?expand=renderedFields` trick sparingly; for most bodies a single
+  ADF paragraph is enough.
+- **Read an issue**: `GET $JIRA_BASE_URL/rest/api/3/issue/<key>?fields=summary,description,status,labels,comment`
+- **List/search issues**: `GET $JIRA_BASE_URL/rest/api/3/search?jql=project=JMG AND ...` (JQL), URL-encoded.
+- **Comment on an issue**: `POST $JIRA_BASE_URL/rest/api/3/issue/<key>/comment` with ADF body.
+- **Apply / remove labels**: `PUT $JIRA_BASE_URL/rest/api/3/issue/<key>` with
+  `{"fields":{"labels":["..."]}}` (full replace — fetch current labels first and merge).
+- **Transition status**: `GET .../issue/<key>/transitions` to find the transition id for
+  the target status, then `POST .../issue/<key>/transitions` with `{"transition":{"id":"<id>"}}`.
+- **Close/Done**: transition to the `Done` status via the same mechanism.
+
+## Workflow states
+
+Confirmed via `GET /rest/api/3/project/JMG/statuses` — same four statuses for every
+issue type (Epic, Task, Story, Subtask):
+
+`To Do` → `In Progress` → `In Review` → `Done`
+
+Status ids (stable, usable in transition lookups without a name match):
+`To Do`=10004, `In Progress`=10005, `In Review`=10006, `Done`=10007.
+
+## When a skill says "publish to the issue tracker"
+
+Create a Jira issue (issue type `Task`) in project `JMG`.
+
+## When a skill says "fetch the relevant ticket"
+
+`GET` the issue by key, expanding `comment` and `labels`.
+
+## Wayfinding operations
+
+Used by `/wayfinder`. Jira has no native sub-issue/dependency graph as rich as GitHub's,
+so this is approximated:
+
+- **Map**: a single Task labelled `wayfinder-map`, holding the Notes / Decisions-so-far /
+  Fog content in its `description` (ADF).
+- **Child ticket**: a Task linked to the map via an issue link of type **"relates to"**
+  (or **Jira sub-tasks** if the board enables them), labelled `wayfinder-<type>`
+  (`wayfinder-research` / `wayfinder-prototype` / `wayfinder-grilling` / `wayfinder-task`).
+  Once claimed, set `assignee` to the driving dev via
+  `PUT .../issue/<key>/assignee`.
+- **Blocking**: Jira issue link type **"is blocked by"** /
+  `POST $JIRA_BASE_URL/rest/api/3/issueLink` with
+  `{"type":{"name":"Blocks"},"inwardIssue":{"key":"<child>"},"outwardIssue":{"key":"<blocker>"}}`.
+  A ticket is unblocked when every issue linked as a blocker is in status `Done`.
+- **Frontier query**: `GET /rest/api/3/search?jql=project=JMG AND labels="wayfinder-*" AND status!=Done`,
+  then for each result fetch `issuelinks` and drop any with an open (`status != Done`)
+  blocker, or an existing `assignee`; first by creation order wins.
+- **Claim**: `PUT .../issue/<key>/assignee` with your account id, the session's first write.
+- **Resolve**: comment the answer, transition to `Done`, then append a context pointer
+  to the map's Decisions-so-far (in the map issue's description, via a `PUT`).
