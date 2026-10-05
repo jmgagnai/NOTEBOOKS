@@ -12,17 +12,35 @@ interface NotebooksState {
   notebooks: Notebook[];
   loading: boolean;
   error: string | null;
+  // The most recently deleted Notebook, kept around so the UI can offer an
+  // "Undo" action that restores it (NBK-4). `GET /notebooks` never returns
+  // soft-deleted Notebooks, so this is the only way to get back to one.
+  lastDeleted: Notebook | null;
 }
 
 const initialState: NotebooksState = {
   notebooks: [],
   loading: false,
   error: null,
+  lastDeleted: null,
 };
+
+function errorMessage(err: unknown, fallback: string): string {
+  if (err && typeof err === 'object' && 'error' in err) {
+    const body = (err as { error?: unknown }).error;
+    if (body && typeof body === 'object' && 'message' in body && typeof body.message === 'string') {
+      return body.message;
+    }
+  }
+  return err instanceof Error ? err.message : fallback;
+}
 
 /**
  * Holds the Notebook list fetched through the generated ng-openapi-gen
- * client — the one real seam this walking skeleton proves end to end.
+ * client, and every create/rename/delete/restore mutation (NBK-4). Per
+ * ADR-0001 there is no ownership check anywhere in this chain — any
+ * authenticated user can mutate any Notebook, including ones listed here
+ * that someone else created.
  */
 export const NotebooksStore = signalStore(
   { providedIn: 'root' },
@@ -38,6 +56,55 @@ export const NotebooksStore = signalStore(
           loading: false,
           error: err instanceof Error ? err.message : 'Failed to load Notebooks.',
         });
+      }
+    },
+
+    async createNotebook(title: string): Promise<void> {
+      patchState(store, { error: null });
+      try {
+        const notebook = await notebooksService.createNotebook({ body: { title } });
+        patchState(store, { notebooks: [...store.notebooks(), notebook] });
+      } catch (err) {
+        patchState(store, { error: errorMessage(err, 'Failed to create Notebook.') });
+      }
+    },
+
+    async renameNotebook(id: string, title: string): Promise<void> {
+      patchState(store, { error: null });
+      try {
+        const renamed = await notebooksService.renameNotebook({ id, body: { title } });
+        patchState(store, {
+          notebooks: store.notebooks().map((notebook) => (notebook.id === id ? renamed : notebook)),
+        });
+      } catch (err) {
+        patchState(store, { error: errorMessage(err, 'Failed to rename Notebook.') });
+      }
+    },
+
+    async deleteNotebook(id: string): Promise<void> {
+      patchState(store, { error: null });
+      const deleted = store.notebooks().find((notebook) => notebook.id === id) ?? null;
+      try {
+        await notebooksService.deleteNotebook({ id });
+        patchState(store, {
+          notebooks: store.notebooks().filter((notebook) => notebook.id !== id),
+          lastDeleted: deleted,
+        });
+      } catch (err) {
+        patchState(store, { error: errorMessage(err, 'Failed to delete Notebook.') });
+      }
+    },
+
+    async restoreNotebook(id: string): Promise<void> {
+      patchState(store, { error: null });
+      try {
+        const restored = await notebooksService.restoreNotebook({ id });
+        patchState(store, {
+          notebooks: [...store.notebooks(), restored],
+          lastDeleted: store.lastDeleted()?.id === id ? null : store.lastDeleted(),
+        });
+      } catch (err) {
+        patchState(store, { error: errorMessage(err, 'Failed to restore Notebook.') });
       }
     },
   })),

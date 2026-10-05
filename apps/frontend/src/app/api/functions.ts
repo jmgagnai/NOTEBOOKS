@@ -11,3 +11,11 @@ export type { GetCurrentUser$Params as GetCurrentUser$Params } from './fn/auth/g
 export { getCurrentUser as getCurrentUser } from './fn/auth/get-current-user';
 export type { ListNotebooks$Params as ListNotebooks$Params } from './fn/notebooks/list-notebooks';
 export { listNotebooks as listNotebooks } from './fn/notebooks/list-notebooks';
+export type { CreateNotebook$Params as CreateNotebook$Params } from './fn/notebooks/create-notebook';
+export { createNotebook as createNotebook } from './fn/notebooks/create-notebook';
+export type { DeleteNotebook$Params as DeleteNotebook$Params } from './fn/notebooks/delete-notebook';
+export { deleteNotebook as deleteNotebook } from './fn/notebooks/delete-notebook';
+export type { RenameNotebook$Params as RenameNotebook$Params } from './fn/notebooks/rename-notebook';
+export { renameNotebook as renameNotebook } from './fn/notebooks/rename-notebook';
+export type { RestoreNotebook$Params as RestoreNotebook$Params } from './fn/notebooks/restore-notebook';
+export { restoreNotebook as restoreNotebook } from './fn/notebooks/restore-notebook';

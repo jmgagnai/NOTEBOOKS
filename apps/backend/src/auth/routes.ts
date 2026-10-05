@@ -94,7 +94,7 @@ export function registerAuthRoutes(app: FastifyInstance, pool: Pool): void {
       },
     },
     async (_request, reply) => {
-      await reply.clearCookie(SESSION_COOKIE_NAME, { path: "/" }).status(204).send();
+      await reply.clearCookie(SESSION_COOKIE_NAME, { path: "/" }).status(204).send(null);
     },
   );
 

@@ -9,8 +9,16 @@ import { BaseService } from '../base-service';
 import { ApiConfiguration } from '../api-configuration';
 import { StrictHttpResponse } from '../strict-http-response';
 
+import { createNotebook } from '../fn/notebooks/create-notebook';
+import { CreateNotebook$Params } from '../fn/notebooks/create-notebook';
+import { deleteNotebook } from '../fn/notebooks/delete-notebook';
+import { DeleteNotebook$Params } from '../fn/notebooks/delete-notebook';
 import { listNotebooks } from '../fn/notebooks/list-notebooks';
 import { ListNotebooks$Params } from '../fn/notebooks/list-notebooks';
+import { renameNotebook } from '../fn/notebooks/rename-notebook';
+import { RenameNotebook$Params } from '../fn/notebooks/rename-notebook';
+import { restoreNotebook } from '../fn/notebooks/restore-notebook';
+import { RestoreNotebook$Params } from '../fn/notebooks/restore-notebook';
 
 @Injectable({ providedIn: 'root' })
 export class NotebooksService extends BaseService {
@@ -65,6 +73,186 @@ export class NotebooksService extends BaseService {
 'title': string;
 'createdAt': string;
 }> => r.body);
+  }
+
+  /** Path part for operation `createNotebook()` */
+  static readonly CreateNotebookPath = '/notebooks';
+
+  /**
+   * Create a Notebook.
+   *
+   *
+   *
+   * This method provides access to the full `HttpResponse`, allowing access to response headers.
+   * To access only the response body, use `createNotebook()` instead.
+   *
+   * This method sends `application/json` and handles request body of type `application/json`.
+   */
+  createNotebook$Response(params: CreateNotebook$Params, context?: HttpContext): Promise<StrictHttpResponse<{
+'id': string;
+'title': string;
+'createdAt': string;
+}>> {
+    const obs = createNotebook(this.http, this.rootUrl, params, context);
+    return firstValueFrom(obs);
+  }
+
+  /**
+   * Create a Notebook.
+   *
+   *
+   *
+   * This method provides access only to the response body.
+   * To access the full response (for headers, for example), `createNotebook$Response()` instead.
+   *
+   * This method sends `application/json` and handles request body of type `application/json`.
+   */
+  createNotebook(params: CreateNotebook$Params, context?: HttpContext): Promise<{
+'id': string;
+'title': string;
+'createdAt': string;
+}> {
+    const resp = this.createNotebook$Response(params, context);
+    return resp.then((r: StrictHttpResponse<{
+'id': string;
+'title': string;
+'createdAt': string;
+}>): {
+'id': string;
+'title': string;
+'createdAt': string;
+} => r.body);
+  }
+
+  /** Path part for operation `deleteNotebook()` */
+  static readonly DeleteNotebookPath = '/notebooks/{id}';
+
+  /**
+   * Soft-delete a Notebook.
+   *
+   *
+   *
+   * This method provides access to the full `HttpResponse`, allowing access to response headers.
+   * To access only the response body, use `deleteNotebook()` instead.
+   *
+   * This method doesn't expect any request body.
+   */
+  deleteNotebook$Response(params: DeleteNotebook$Params, context?: HttpContext): Promise<StrictHttpResponse<'null'>> {
+    const obs = deleteNotebook(this.http, this.rootUrl, params, context);
+    return firstValueFrom(obs);
+  }
+
+  /**
+   * Soft-delete a Notebook.
+   *
+   *
+   *
+   * This method provides access only to the response body.
+   * To access the full response (for headers, for example), `deleteNotebook$Response()` instead.
+   *
+   * This method doesn't expect any request body.
+   */
+  deleteNotebook(params: DeleteNotebook$Params, context?: HttpContext): Promise<'null'> {
+    const resp = this.deleteNotebook$Response(params, context);
+    return resp.then((r: StrictHttpResponse<'null'>): 'null' => r.body);
+  }
+
+  /** Path part for operation `renameNotebook()` */
+  static readonly RenameNotebookPath = '/notebooks/{id}';
+
+  /**
+   * Rename a Notebook.
+   *
+   *
+   *
+   * This method provides access to the full `HttpResponse`, allowing access to response headers.
+   * To access only the response body, use `renameNotebook()` instead.
+   *
+   * This method sends `application/json` and handles request body of type `application/json`.
+   */
+  renameNotebook$Response(params: RenameNotebook$Params, context?: HttpContext): Promise<StrictHttpResponse<{
+'id': string;
+'title': string;
+'createdAt': string;
+}>> {
+    const obs = renameNotebook(this.http, this.rootUrl, params, context);
+    return firstValueFrom(obs);
+  }
+
+  /**
+   * Rename a Notebook.
+   *
+   *
+   *
+   * This method provides access only to the response body.
+   * To access the full response (for headers, for example), `renameNotebook$Response()` instead.
+   *
+   * This method sends `application/json` and handles request body of type `application/json`.
+   */
+  renameNotebook(params: RenameNotebook$Params, context?: HttpContext): Promise<{
+'id': string;
+'title': string;
+'createdAt': string;
+}> {
+    const resp = this.renameNotebook$Response(params, context);
+    return resp.then((r: StrictHttpResponse<{
+'id': string;
+'title': string;
+'createdAt': string;
+}>): {
+'id': string;
+'title': string;
+'createdAt': string;
+} => r.body);
+  }
+
+  /** Path part for operation `restoreNotebook()` */
+  static readonly RestoreNotebookPath = '/notebooks/{id}/restore';
+
+  /**
+   * Restore a soft-deleted Notebook.
+   *
+   *
+   *
+   * This method provides access to the full `HttpResponse`, allowing access to response headers.
+   * To access only the response body, use `restoreNotebook()` instead.
+   *
+   * This method doesn't expect any request body.
+   */
+  restoreNotebook$Response(params: RestoreNotebook$Params, context?: HttpContext): Promise<StrictHttpResponse<{
+'id': string;
+'title': string;
+'createdAt': string;
+}>> {
+    const obs = restoreNotebook(this.http, this.rootUrl, params, context);
+    return firstValueFrom(obs);
+  }
+
+  /**
+   * Restore a soft-deleted Notebook.
+   *
+   *
+   *
+   * This method provides access only to the response body.
+   * To access the full response (for headers, for example), `restoreNotebook$Response()` instead.
+   *
+   * This method doesn't expect any request body.
+   */
+  restoreNotebook(params: RestoreNotebook$Params, context?: HttpContext): Promise<{
+'id': string;
+'title': string;
+'createdAt': string;
+}> {
+    const resp = this.restoreNotebook$Response(params, context);
+    return resp.then((r: StrictHttpResponse<{
+'id': string;
+'title': string;
+'createdAt': string;
+}>): {
+'id': string;
+'title': string;
+'createdAt': string;
+} => r.body);
   }
 
 }

@@ -10,3 +10,18 @@ export const notebookSchema = z.object({
 export type Notebook = z.infer<typeof notebookSchema>;
 
 export const listNotebooksResponseSchema = z.array(notebookSchema);
+
+export const createNotebookRequestSchema = z.object({
+  title: z.string().min(1),
+});
+export type CreateNotebookRequest = z.infer<typeof createNotebookRequestSchema>;
+
+export const renameNotebookRequestSchema = z.object({
+  title: z.string().min(1),
+});
+export type RenameNotebookRequest = z.infer<typeof renameNotebookRequestSchema>;
+
+export const notebookIdParamsSchema = z.object({
+  id: z.string().uuid(),
+});
+export type NotebookIdParams = z.infer<typeof notebookIdParamsSchema>;

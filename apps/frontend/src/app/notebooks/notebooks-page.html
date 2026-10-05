@@ -4,6 +4,27 @@
   </mat-card-header>
 
   <mat-card-content>
+    <form class="notebooks-page__create" (submit)="submitCreate($event)">
+      <mat-form-field appearance="outline">
+        <mat-label>New Notebook title</mat-label>
+        <input
+          matInput
+          type="text"
+          [value]="newTitle()"
+          (input)="onNewTitleInput($event)"
+          required
+        />
+      </mat-form-field>
+      <button mat-flat-button color="primary" type="submit">Create</button>
+    </form>
+
+    @if (store.lastDeleted(); as deleted) {
+      <p class="notebooks-page__undo">
+        "{{ deleted.title }}" deleted.
+        <button mat-button type="button" (click)="restore(deleted.id)">Undo</button>
+      </p>
+    }
+
     @if (store.loading()) {
       <mat-progress-spinner mode="indeterminate" diameter="32" />
     } @else if (store.error(); as error) {
@@ -13,7 +34,37 @@
     } @else {
       <mat-list>
         @for (notebook of store.notebooks(); track notebook.id) {
-          <mat-list-item>{{ notebook.title }}</mat-list-item>
+          <mat-list-item class="notebooks-page__item">
+            @if (editingId() === notebook.id) {
+              <input
+                class="notebooks-page__edit-input"
+                type="text"
+                [attr.aria-label]="'Rename ' + notebook.title"
+                [value]="editingTitle()"
+                (input)="onEditTitleInput($event)"
+              />
+              <button mat-button type="button" (click)="saveRename(notebook.id)">Save</button>
+              <button mat-button type="button" (click)="cancelRename()">Cancel</button>
+            } @else {
+              <span class="notebooks-page__title">{{ notebook.title }}</span>
+              <button
+                mat-button
+                type="button"
+                [attr.aria-label]="'Rename ' + notebook.title"
+                (click)="startRename(notebook)"
+              >
+                Rename
+              </button>
+              <button
+                mat-button
+                type="button"
+                [attr.aria-label]="'Delete ' + notebook.title"
+                (click)="delete(notebook.id)"
+              >
+                Delete
+              </button>
+            }
+          </mat-list-item>
         }
       </mat-list>
     }
