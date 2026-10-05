@@ -1,8 +1,10 @@
+import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import swagger from "@fastify/swagger";
 import Fastify, { type FastifyInstance } from "fastify";
 import { jsonSchemaTransform, serializerCompiler, validatorCompiler } from "fastify-type-provider-zod";
 import type { Pool } from "pg";
+import { registerAuthRoutes } from "./auth/routes.js";
 import { registerNotebookRoutes } from "./notebooks/routes.js";
 
 export interface BuildAppOptions {
@@ -20,7 +22,8 @@ export async function buildApp({ pool }: BuildAppOptions): Promise<FastifyInstan
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
 
-  await app.register(cors, { origin: true });
+  await app.register(cors, { origin: true, credentials: true });
+  await app.register(cookie);
   await app.register(swagger, {
     openapi: {
       openapi: "3.0.3",
@@ -32,6 +35,7 @@ export async function buildApp({ pool }: BuildAppOptions): Promise<FastifyInstan
     transform: jsonSchemaTransform,
   });
 
+  registerAuthRoutes(app, pool);
   registerNotebookRoutes(app, pool);
 
   return app;

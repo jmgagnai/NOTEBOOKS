@@ -1,0 +1,47 @@
+<mat-card class="login-page">
+  <mat-card-header>
+    <mat-card-title>Log in</mat-card-title>
+  </mat-card-header>
+
+  <mat-card-content>
+    <form (submit)="submit($event)">
+      <mat-form-field appearance="outline">
+        <mat-label>Email</mat-label>
+        <input
+          matInput
+          type="email"
+          [value]="email()"
+          (input)="onEmailInput($event)"
+          required
+          autocomplete="email"
+        />
+      </mat-form-field>
+
+      <mat-form-field appearance="outline">
+        <mat-label>Password</mat-label>
+        <input
+          matInput
+          type="password"
+          [value]="password()"
+          (input)="onPasswordInput($event)"
+          required
+          autocomplete="current-password"
+        />
+      </mat-form-field>
+
+      @if (store.error(); as error) {
+        <p class="login-page__error">{{ error }}</p>
+      }
+
+      <button mat-flat-button color="primary" type="submit" [disabled]="store.loading()">
+        @if (store.loading()) {
+          <mat-progress-spinner mode="indeterminate" diameter="20" />
+        } @else {
+          Log in
+        }
+      </button>
+    </form>
+
+    <p class="login-page__switch">Don't have an account? <a routerLink="/register">Register</a></p>
+  </mat-card-content>
+</mat-card>

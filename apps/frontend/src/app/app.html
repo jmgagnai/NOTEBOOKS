@@ -1,1 +1,10 @@
-<app-notebooks-page />
+@if (store.user(); as user) {
+  <mat-toolbar color="primary" class="app-shell__toolbar">
+    <span>RAG Notebook</span>
+    <span class="app-shell__spacer"></span>
+    <span class="app-shell__user">{{ user.email }}</span>
+    <button mat-button (click)="logout()">Log out</button>
+  </mat-toolbar>
+}
+
+<router-outlet />
