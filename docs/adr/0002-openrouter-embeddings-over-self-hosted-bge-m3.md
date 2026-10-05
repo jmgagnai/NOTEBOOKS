@@ -1,0 +1,3 @@
+# OpenRouter-hosted embeddings instead of self-hosted bge-m3
+
+Embeddings are generated via OpenRouter's hosted Qwen3-Embedding-4B model rather than self-hosting bge-m3 as originally planned. OpenRouter added an embeddings endpoint serving several open-source embedding models (Qwen3-Embedding among them); using it removes the need for a dedicated embedding-serving sidecar, leaving the Python subprocess surface limited to Docling conversion alone. The trade-off: embeddings now depend on OpenRouter's availability and pricing for this call too, and changing embedding models later requires re-embedding every stored chunk — a real migration, not a config change.

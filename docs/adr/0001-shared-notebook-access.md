@@ -1,0 +1,3 @@
+# Shared Notebook access despite full attribution
+
+Every authenticated user can view and edit every Notebook, Document, and Chat Thread — there is no ownership or permissions model gating access in V1, and concurrent edits to the same Notebook are not detected or prevented by the system. This is deliberate: V1 targets a small trusted team where shared visibility matters more than isolation, and retrofitting a permissions model later is expensive once data and UI assume unrestricted access. Attribution is still tracked throughout (a Chat Thread records its author, every chat message records who asked it) — only *access* is unrestricted, not *identity*.
