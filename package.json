@@ -1,0 +1,24 @@
+{
+  "name": "rag-notebook",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "backend:dev": "pnpm --filter backend dev",
+    "backend:build": "pnpm --filter backend build",
+    "backend:test": "pnpm --filter backend test",
+    "backend:migrate": "pnpm --filter backend migrate",
+    "backend:openapi:generate": "pnpm --filter backend openapi:generate",
+    "frontend:dev": "pnpm --filter frontend start",
+    "frontend:build": "pnpm --filter frontend build",
+    "frontend:test": "pnpm --filter frontend test",
+    "frontend:openapi:generate": "pnpm --filter frontend openapi:generate",
+    "openapi:generate": "pnpm run backend:openapi:generate && pnpm run frontend:openapi:generate",
+    "test": "pnpm run backend:test && pnpm run frontend:test",
+    "infra:up": "docker compose up -d",
+    "infra:down": "docker compose down"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@12.9.1"
+}
