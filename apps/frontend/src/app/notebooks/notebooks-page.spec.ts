@@ -21,6 +21,19 @@ describe('NotebooksPage', () => {
     expect(listNotebooks).toHaveBeenCalled();
   });
 
+  it('offers an Open link into each Notebook (NBK-5 detail view)', async () => {
+    const listNotebooks = vi
+      .fn()
+      .mockResolvedValue([{ id: '1', title: 'Q3 Contracts', createdAt: '2026-01-01T00:00:00.000Z' }]);
+
+    await render(NotebooksPage, {
+      providers: [{ provide: NotebooksService, useValue: { listNotebooks } }],
+    });
+
+    await screen.findByText('Q3 Contracts');
+    expect(screen.getByRole('button', { name: 'Open' })).toBeTruthy();
+  });
+
   it('shows an empty state when the Notebook list is empty', async () => {
     const listNotebooks = vi.fn().mockResolvedValue([]);
 

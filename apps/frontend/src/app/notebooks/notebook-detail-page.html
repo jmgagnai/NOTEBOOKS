@@ -1,0 +1,61 @@
+<mat-card class="notebook-detail-page">
+  <mat-card-header>
+    <mat-card-title>{{ notebook()?.title ?? 'Notebook' }}</mat-card-title>
+  </mat-card-header>
+
+  <mat-card-content>
+    <a class="notebook-detail-page__back" routerLink="/">&larr; Back to Notebooks</a>
+
+    <h2>Documents</h2>
+
+    <label class="notebook-detail-page__upload">
+      Upload a Document
+      <input type="file" (change)="onFileSelected($event)" aria-label="Upload a Document" />
+    </label>
+
+    @if (store.uploading()) {
+      <mat-progress-spinner mode="indeterminate" diameter="24" />
+    }
+
+    @if (store.lastDeleted(); as deleted) {
+      <p class="notebook-detail-page__undo">
+        "{{ deleted.filename }}" deleted.
+        <button mat-button type="button" (click)="restore(deleted)">Undo</button>
+      </p>
+    }
+
+    @if (store.loading()) {
+      <mat-progress-spinner mode="indeterminate" diameter="32" />
+    } @else if (store.error(); as error) {
+      <p class="notebook-detail-page__error">{{ error }}</p>
+    } @else if (store.documents().length === 0) {
+      <p>No Documents yet.</p>
+    } @else {
+      <mat-list>
+        @for (document of store.documents(); track document.id) {
+          <mat-list-item class="notebook-detail-page__item">
+            <span class="notebook-detail-page__filename">{{ document.filename }}</span>
+            <span class="notebook-detail-page__badge">{{ document.status }}</span>
+            <span class="notebook-detail-page__version">v{{ document.latestVersion.versionNumber }}</span>
+            <button
+              mat-button
+              type="button"
+              [attr.aria-label]="'Download ' + document.filename"
+              (click)="download(document)"
+            >
+              Download
+            </button>
+            <button
+              mat-button
+              type="button"
+              [attr.aria-label]="'Delete ' + document.filename"
+              (click)="delete(document)"
+            >
+              Delete
+            </button>
+          </mat-list-item>
+        }
+      </mat-list>
+    }
+  </mat-card-content>
+</mat-card>

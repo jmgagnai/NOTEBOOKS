@@ -1,0 +1,51 @@
+.notebook-detail-page {
+  max-width: 640px;
+  margin: 2rem auto;
+
+  &__back {
+    display: inline-block;
+    margin-bottom: 1rem;
+  }
+
+  &__error {
+    color: var(--mat-sys-error);
+  }
+
+  &__upload {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    margin-bottom: 1rem;
+  }
+
+  &__undo {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  &__item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  &__filename {
+    flex: 1;
+  }
+
+  &__badge {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    padding: 0.125rem 0.5rem;
+    border-radius: 1rem;
+    background: var(--mat-sys-secondary-container, #e0e0e0);
+    color: var(--mat-sys-on-secondary-container, #333);
+  }
+
+  &__version {
+    color: var(--mat-sys-on-surface-variant, #666);
+    font-size: 0.85rem;
+  }
+}

@@ -50,6 +50,13 @@
               <button
                 mat-button
                 type="button"
+                [routerLink]="['/notebooks', notebook.id]"
+              >
+                Open
+              </button>
+              <button
+                mat-button
+                type="button"
                 [attr.aria-label]="'Rename ' + notebook.title"
                 (click)="startRename(notebook)"
               >

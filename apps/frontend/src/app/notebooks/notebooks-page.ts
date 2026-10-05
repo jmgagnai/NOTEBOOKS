@@ -1,4 +1,5 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
 import { MatFormFieldModule } from '@angular/material/form-field';
@@ -23,6 +24,7 @@ import { Notebook, NotebooksStore } from './notebooks.store';
     MatInputModule,
     MatListModule,
     MatProgressSpinnerModule,
+    RouterLink,
   ],
   templateUrl: './notebooks-page.html',
   styleUrl: './notebooks-page.scss',

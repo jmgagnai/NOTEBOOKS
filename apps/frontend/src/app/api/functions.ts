@@ -19,3 +19,13 @@ export type { RenameNotebook$Params as RenameNotebook$Params } from './fn/notebo
 export { renameNotebook as renameNotebook } from './fn/notebooks/rename-notebook';
 export type { RestoreNotebook$Params as RestoreNotebook$Params } from './fn/notebooks/restore-notebook';
 export { restoreNotebook as restoreNotebook } from './fn/notebooks/restore-notebook';
+export type { ListDocuments$Params as ListDocuments$Params } from './fn/documents/list-documents';
+export { listDocuments as listDocuments } from './fn/documents/list-documents';
+export type { UploadDocument$Params as UploadDocument$Params } from './fn/documents/upload-document';
+export { uploadDocument as uploadDocument } from './fn/documents/upload-document';
+export type { DeleteDocument$Params as DeleteDocument$Params } from './fn/documents/delete-document';
+export { deleteDocument as deleteDocument } from './fn/documents/delete-document';
+export type { RestoreDocument$Params as RestoreDocument$Params } from './fn/documents/restore-document';
+export { restoreDocument as restoreDocument } from './fn/documents/restore-document';
+export type { DownloadDocumentVersion$Params as DownloadDocumentVersion$Params } from './fn/documents/download-document-version';
+export { downloadDocumentVersion as downloadDocumentVersion } from './fn/documents/download-document-version';

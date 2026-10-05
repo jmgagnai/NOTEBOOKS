@@ -3,3 +3,4 @@
 
 export { AuthService } from './services/auth.service';
 export { NotebooksService } from './services/notebooks.service';
+export { DocumentsService } from './services/documents.service';
