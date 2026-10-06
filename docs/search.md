@@ -37,6 +37,12 @@ GLOSSARY.md:
 
 A soft-deleted Document, and a soft-deleted Version, are both invisible here.
 
+Both filters are shared with chat retrieval rather than written twice: they
+live in `src/documents/searchable-versions.ts` as the `searchable_versions`
+`WITH` clause, which this query and `src/chat/retrieval.ts` both open with.
+NBK-9 and NBK-12 had independently derived the same rule in two different SQL
+idioms, and NBK-13 consolidated them — see `docs/versioning.md`.
+
 ## Rolled up to the Document, scored by its best Chunk
 
 Retrieval ranks Chunks, but a *result* is a Document: `MIN(distance) ...
@@ -140,6 +146,11 @@ built and parsed by the real code and only the network is fake.
   cosine similarity between two distinct axes is exactly 0 and between an
   axis and itself exactly 1, so every expected score is a known-good literal
   rather than something recomputed the way the code computes it.
+- `apps/backend/test/searchable-versions.test.ts` — the shared
+  latest-then-`ready` rule on its own, for every non-`ready` status.
+- `apps/backend/test/versioning-integrity.test.ts` — NBK-13: the same rule
+  from a real upload through a real ingestion run, where a re-upload's
+  supersession and an old Citation's survival are checked in one sequence.
 - `apps/frontend/src/app/search/search-page.spec.ts` — seam-3: the real page
   and `SearchStore`, mocking only the generated `SearchService`. Covers
   results rendered with their Abstract, no request before a search is

@@ -428,6 +428,80 @@ describe("Document routes", () => {
 
       expect(response.statusCode).toBe(404);
     });
+
+    // Found while verifying NBK-13's versioning guarantee end to end.
+    // Filename-collision versioning only groups *non-deleted* Documents, so a
+    // re-upload after a delete starts a new Document rather than a new
+    // Version — and that leaves the deleted one with nowhere to come back to,
+    // because a Notebook can hold only one non-deleted Document per filename.
+    // That has to read as a conflict the user can resolve, not as a 500.
+    it("returns 409 when the filename was re-uploaded while the Document was deleted", async () => {
+      const session = await loginAsNewUser("restorer3@example.com");
+      const notebookId = await createNotebook(session, "Restore Notebook 3");
+      const first = await uploadFile(session, notebookId, "contested.txt", "first");
+      const { id: documentId } = first.json() as { id: string };
+      await app.inject({
+        method: "DELETE",
+        url: `/notebooks/${notebookId}/documents/${documentId}`,
+        cookies: { session },
+      });
+
+      // With the original deleted, this is a new Document at Version 1 —
+      // not a new Version of the deleted one.
+      const second = await uploadFile(session, notebookId, "contested.txt", "second");
+      const replacement = second.json() as { id: string; latestVersion: { versionNumber: number } };
+      expect(replacement.id).not.toBe(documentId);
+      expect(replacement.latestVersion.versionNumber).toBe(1);
+
+      const response = await app.inject({
+        method: "POST",
+        url: `/notebooks/${notebookId}/documents/${documentId}/restore`,
+        cookies: { session },
+      });
+
+      expect(response.statusCode).toBe(409);
+      expect((response.json() as { message: string }).message).toContain("contested.txt");
+
+      // And the Notebook is left as it was: the replacement alone, with the
+      // deleted Document still deleted rather than half-restored.
+      const listed = await app.inject({
+        method: "GET",
+        url: `/notebooks/${notebookId}/documents`,
+        cookies: { session },
+      });
+      expect((listed.json() as Array<{ id: string }>).map((d) => d.id)).toEqual([replacement.id]);
+    });
+
+    // The conflict is about the *current* contents, so clearing them makes
+    // the restore possible again — which is what the 409's message tells the
+    // user to do.
+    it("restores after the colliding Document is itself deleted", async () => {
+      const session = await loginAsNewUser("restorer4@example.com");
+      const notebookId = await createNotebook(session, "Restore Notebook 4");
+      const first = await uploadFile(session, notebookId, "handover.txt", "first");
+      const { id: documentId } = first.json() as { id: string };
+      await app.inject({
+        method: "DELETE",
+        url: `/notebooks/${notebookId}/documents/${documentId}`,
+        cookies: { session },
+      });
+      const second = await uploadFile(session, notebookId, "handover.txt", "second");
+      const { id: replacementId } = second.json() as { id: string };
+      await app.inject({
+        method: "DELETE",
+        url: `/notebooks/${notebookId}/documents/${replacementId}`,
+        cookies: { session },
+      });
+
+      const response = await app.inject({
+        method: "POST",
+        url: `/notebooks/${notebookId}/documents/${documentId}/restore`,
+        cookies: { session },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect((response.json() as { id: string }).id).toBe(documentId);
+    });
   });
 
   // NBK-6: an upload is the ingestion pipeline's trigger. Only the hand-off

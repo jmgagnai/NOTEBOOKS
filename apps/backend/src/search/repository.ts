@@ -1,5 +1,6 @@
 import type { Pool } from "pg";
 import { toDocument, type DocumentRow } from "../documents/repository.js";
+import { SEARCHABLE_VERSIONS_CTE } from "../documents/searchable-versions.js";
 import type { SearchResult } from "./schema.js";
 
 /**
@@ -8,15 +9,14 @@ import type { SearchResult } from "./schema.js";
  * Three things are happening here, in this order, and each one is an
  * acceptance criterion of NBK-9:
  *
- * 1. `searchable` picks, per Document, the **latest** non-deleted Version —
- *    and keeps it only if that Version is `ready`. Both filters are in
- *    GLOSSARY.md: "only a Document's latest Version is searched", and
- *    `ready` "is the end of the pipeline and the only status that means a
- *    Document is safe to rely on". Note the order: the `ready` test is
- *    applied *after* the latest Version is chosen, never as part of
- *    choosing it, so a Document whose newest Version is still ingesting is
- *    absent rather than silently answering from its previous Version's
- *    Chunks — which would serve content the user has already replaced.
+ * 1. `searchable_versions` narrows the Notebook to the Documents retrieval
+ *    may read: each one's latest non-deleted Version, kept only if that
+ *    Version is `ready`, with the `ready` test applied *after* the Version is
+ *    chosen. Both rules are GLOSSARY.md's and both are shared with chat
+ *    retrieval, so they live in one place —
+ *    `documents/searchable-versions.ts`, which is also where the reasoning
+ *    is written down. It consumes `$1` (the Notebook id), so this query's own
+ *    parameters start at `$2`.
  *
  * 2. `scored` ranks Chunks and **rolls them up to their Version** with
  *    `MIN(distance)`: a Document's score is its single best Chunk, not an
@@ -46,50 +46,33 @@ import type { SearchResult } from "./schema.js";
  * corpus and why that is left as is for now.
  */
 const SEARCH_NOTEBOOK_SQL = `
-  WITH searchable AS (
-    SELECT
-      d.id,
-      d.notebook_id,
-      d.filename,
-      d.created_at,
-      v.id AS version_id,
-      v.version_number,
-      v.mime_type,
-      v.size_bytes,
-      v.version_created_at,
-      v.ingestion_status,
-      v.abstract
-    FROM documents d
-    JOIN LATERAL (
-      SELECT
-        id,
-        version_number,
-        mime_type,
-        size_bytes,
-        created_at AS version_created_at,
-        ingestion_status,
-        abstract
-      FROM document_versions
-      WHERE document_id = d.id AND deleted_at IS NULL
-      ORDER BY version_number DESC
-      LIMIT 1
-    ) v ON true
-    WHERE d.notebook_id = $1
-      AND d.deleted_at IS NULL
-      AND v.ingestion_status = 'ready'
-  ),
+  WITH ${SEARCHABLE_VERSIONS_CTE},
   scored AS (
     SELECT s.version_id, MIN(c.embedding <=> $2::vector) AS distance
-    FROM searchable s
+    FROM searchable_versions s
     JOIN chunks c ON c.document_version_id = s.version_id
     GROUP BY s.version_id
   )
-  SELECT searchable.*, 1 - scored.distance AS score
+  -- Aliased back to the column names a Document card is built from, so one
+  -- row maps through \`toDocument\` exactly as a listed Document does.
+  SELECT
+    s.document_id AS id,
+    s.notebook_id,
+    s.filename,
+    s.document_created_at AS created_at,
+    s.version_id,
+    s.version_number,
+    s.mime_type,
+    s.size_bytes,
+    s.version_created_at,
+    s.ingestion_status,
+    s.abstract,
+    1 - scored.distance AS score
   FROM scored
-  JOIN searchable ON searchable.version_id = scored.version_id
+  JOIN searchable_versions s ON s.version_id = scored.version_id
   -- Ties broken by age, oldest first, so an identical query twice running
   -- never shuffles its own results.
-  ORDER BY scored.distance ASC, searchable.created_at ASC, searchable.id ASC
+  ORDER BY scored.distance ASC, s.document_created_at ASC, s.document_id ASC
   LIMIT $3
 `;
 

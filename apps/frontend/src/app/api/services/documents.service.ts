@@ -401,7 +401,7 @@ export class DocumentsService extends BaseService {
   /**
    * Restore a soft-deleted Document.
    *
-   *
+   * Reports 409 if the Notebook has since acquired another Document under the same filename — a re-upload after the delete created one, and only one non-deleted Document per filename can exist in a Notebook.
    *
    * This method provides access to the full `HttpResponse`, allowing access to response headers.
    * To access only the response body, use `restoreDocument()` instead.
@@ -430,7 +430,7 @@ export class DocumentsService extends BaseService {
   /**
    * Restore a soft-deleted Document.
    *
-   *
+   * Reports 409 if the Notebook has since acquired another Document under the same filename — a re-upload after the delete created one, and only one non-deleted Document per filename can exist in a Notebook.
    *
    * This method provides access only to the response body.
    * To access the full response (for headers, for example), `restoreDocument$Response()` instead.

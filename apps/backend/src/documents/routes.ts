@@ -245,20 +245,35 @@ export function registerDocumentRoutes(
         operationId: "restoreDocument",
         tags: ["documents"],
         summary: "Restore a soft-deleted Document",
+        description:
+          "Reports 409 if the Notebook has since acquired another Document under the same filename — " +
+          "a re-upload after the delete created one, and only one non-deleted Document per filename can " +
+          "exist in a Notebook.",
         params: documentIdParamsSchema,
         response: {
           200: documentSchema,
           404: errorResponseSchema,
+          409: errorResponseSchema,
         },
       },
     },
     async (request, reply) => {
-      const document = await restoreDocument(pool, request.params.notebookId, request.params.documentId);
-      if (!document) {
+      const result = await restoreDocument(pool, request.params.notebookId, request.params.documentId);
+      if (result.outcome === "not-found") {
         await reply.status(404).send({ message: "Document not found." });
         return;
       }
-      await reply.status(200).send(document);
+      if (result.outcome === "filename-taken") {
+        // A conflict, not a server error: the Notebook's current contents are
+        // what make the restore impossible, and the user can resolve it.
+        await reply.status(409).send({
+          message:
+            `A Document named "${result.filename}" already exists in this Notebook, so the deleted one ` +
+            "cannot be restored under that name. Delete the current one first, then restore this one.",
+        });
+        return;
+      }
+      await reply.status(200).send(result.document);
     },
   );
 

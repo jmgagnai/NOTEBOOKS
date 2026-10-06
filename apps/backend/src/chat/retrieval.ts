@@ -1,4 +1,5 @@
 import type { Pool } from "pg";
+import { SEARCHABLE_VERSIONS_CTE } from "../documents/searchable-versions.js";
 
 /**
  * One Chunk retrieved for a question, with everything the answer path needs
@@ -57,20 +58,13 @@ interface RetrievedChunkRow {
 /**
  * The Chunks in a Notebook a question should be answered from, closest first.
  *
- * Two rules from GLOSSARY.md are enforced in SQL rather than left to a
- * caller, because getting either wrong is silent and wrong answers are the
- * symptom:
- *
- * - **Latest Version only.** "Only a Document's latest Version is searched in
- *   chat." The `DISTINCT ON` picks each Document's highest non-deleted
- *   Version *before* anything else filters, so a superseded Version is never
- *   a candidate — even though its Chunks still exist, because a Citation has
- *   to be able to reach them.
- * - **`ready` only.** "'ready' is the end of the pipeline and the only status
- *   that means a Document is safe to rely on for chat." The status is checked
- *   on that latest Version, after it was chosen — so a Document mid-re-ingest
- *   contributes nothing rather than falling back to its previous Version's
- *   content.
+ * Which Versions are eligible — each Document's latest non-deleted Version,
+ * kept only if it is `ready`, with the `ready` test applied after the Version
+ * is chosen — is `searchable_versions`, shared with search (NBK-9) because it
+ * is the same rule from GLOSSARY.md and getting either half wrong is silent,
+ * with wrong answers as the only symptom. The rule and its reasoning live in
+ * `documents/searchable-versions.ts`; it consumes `$1` (the Notebook id), so
+ * this query's own parameters start at `$2`.
  *
  * Similarity is `1 - (embedding <=> query)`, pgvector's cosine distance.
  * Embeddings are L2-normalised (Qwen3-Embedding-4B, verified live in NBK-8),
@@ -91,18 +85,7 @@ export async function retrieveChunks(
   limit: number = DEFAULT_RETRIEVAL_LIMIT,
 ): Promise<RetrievedChunk[]> {
   const { rows } = await pool.query<RetrievedChunkRow>(
-    `WITH latest_versions AS (
-       SELECT DISTINCT ON (d.id)
-         d.id AS document_id,
-         d.filename,
-         v.id AS version_id,
-         v.ingestion_status,
-         v.chat_snippet
-       FROM documents d
-       JOIN document_versions v ON v.document_id = d.id AND v.deleted_at IS NULL
-       WHERE d.notebook_id = $1 AND d.deleted_at IS NULL
-       ORDER BY d.id, v.version_number DESC
-     )
+    `WITH ${SEARCHABLE_VERSIONS_CTE}
      SELECT
        c.id AS chunk_id,
        l.document_id,
@@ -113,8 +96,7 @@ export async function retrieveChunks(
        l.chat_snippet,
        1 - (c.embedding <=> $2::vector) AS similarity
      FROM chunks c
-     JOIN latest_versions l ON l.version_id = c.document_version_id
-     WHERE l.ingestion_status = 'ready'
+     JOIN searchable_versions l ON l.version_id = c.document_version_id
      ORDER BY c.embedding <=> $2::vector, c.id
      LIMIT $3`,
     [notebookId, `[${queryEmbedding.join(",")}]`, limit],

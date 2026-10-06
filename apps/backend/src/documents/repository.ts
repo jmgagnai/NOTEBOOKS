@@ -256,17 +256,56 @@ export async function softDeleteDocument(pool: Pool, notebookId: string, documen
 }
 
 /**
- * Restores a soft-deleted Document (clears `deleted_at`). Per ADR-0001 there
- * is no ownership check. Returns `null` if no matching, currently
- * soft-deleted Document exists in this Notebook (caller maps this to 404).
+ * What restoring a Document did, or why it couldn't.
+ *
+ * `filename-taken` exists because a Document's filename is unique among a
+ * Notebook's *non-deleted* Documents (migration 0004) — that index is what
+ * makes a re-upload find the existing Document instead of creating a sibling
+ * (NBK-5). A Document that was deleted and whose filename has since been
+ * re-uploaded therefore has nowhere to come back to, and the caller has to be
+ * able to say so instead of surfacing a constraint violation.
  */
-export async function restoreDocument(pool: Pool, notebookId: string, documentId: string): Promise<Document | null> {
-  const { rowCount } = await pool.query(
-    "UPDATE documents SET deleted_at = NULL WHERE id = $1 AND notebook_id = $2 AND deleted_at IS NOT NULL",
-    [documentId, notebookId],
-  );
-  if (rowCount !== 1) return null;
-  return findDocumentWithLatestVersion(pool, notebookId, documentId);
+export type RestoreDocumentResult =
+  | { outcome: "restored"; document: Document }
+  | { outcome: "not-found" }
+  | { outcome: "filename-taken"; filename: string };
+
+/** Postgres' unique-violation SQLSTATE. */
+const UNIQUE_VIOLATION = "23505";
+
+/**
+ * Restores a soft-deleted Document (clears `deleted_at`). Per ADR-0001 there
+ * is no ownership check.
+ *
+ * The collision is detected by letting the write fail rather than by looking
+ * first: a check-then-update would still lose to an upload of the same
+ * filename committing in between, and the unique index is the only thing that
+ * can actually decide it.
+ */
+export async function restoreDocument(
+  pool: Pool,
+  notebookId: string,
+  documentId: string,
+): Promise<RestoreDocumentResult> {
+  let restored: number | null;
+  try {
+    ({ rowCount: restored } = await pool.query(
+      "UPDATE documents SET deleted_at = NULL WHERE id = $1 AND notebook_id = $2 AND deleted_at IS NOT NULL",
+      [documentId, notebookId],
+    ));
+  } catch (err) {
+    if ((err as { code?: string }).code !== UNIQUE_VIOLATION) throw err;
+    // The only unique constraint this statement can break is the one on
+    // (notebook_id, filename) for non-deleted Documents.
+    const { rows } = await pool.query<{ filename: string }>("SELECT filename FROM documents WHERE id = $1", [
+      documentId,
+    ]);
+    return { outcome: "filename-taken", filename: rows[0]?.filename ?? "" };
+  }
+
+  if (restored !== 1) return { outcome: "not-found" };
+  const document = await findDocumentWithLatestVersion(pool, notebookId, documentId);
+  return document ? { outcome: "restored", document } : { outcome: "not-found" };
 }
 
 export interface DownloadableVersion {
