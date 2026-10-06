@@ -4,7 +4,7 @@ import type { Pool } from "pg";
 import { createAuthGuard } from "../auth/guard.js";
 import { errorResponseSchema } from "../auth/schema.js";
 import { notebookExists } from "../documents/repository.js";
-import { answerQuestion, type ChatDeps, type GroundedAnswer } from "./answer-question.js";
+import { streamAnswer, type ChatDeps, type GroundedAnswer } from "./answer-question.js";
 import {
   appendQuestionAndAnswer,
   createChatThread,
@@ -24,6 +24,7 @@ import {
   sendChatMessageRequestSchema,
   sendChatMessageResponseSchema,
 } from "./schema.js";
+import { createAnswerStream } from "./streaming.js";
 
 export interface RegisterChatRoutesOptions {
   pool: Pool;
@@ -171,8 +172,12 @@ export function registerChatRoutes(app: FastifyInstance, { pool, chat }: Registe
         summary: "Ask a question in a Chat Thread and get one grounded answer",
         description:
           "Retrieves the closest Chunks from the Notebook's latest-version, `ready` Documents and " +
-          "returns one complete answer. The answer is not streamed. The answer message carries a " +
-          "Citation per source marker in its text, each pinned to the exact Document Version and " +
+          "returns the complete recorded exchange. While the answer is being generated it is also " +
+          "published to the live `GET /events` stream as `chat-answer-chunk` events in " +
+          "paragraph/heading-sized pieces, followed by one `chat-answer-completed` event naming the " +
+          "persisted message and carrying its Citations — so a client can render the answer " +
+          "progressively and this response is the authoritative result. The answer message carries " +
+          "a Citation per source marker in its text, each pinned to the exact Document Version and " +
           "chunk it was grounded in and persisted with the message.",
         params: chatThreadIdParamsSchema,
         body: sendChatMessageRequestSchema,
@@ -201,19 +206,47 @@ export function registerChatRoutes(app: FastifyInstance, { pool, chat }: Registe
       // own "conversation so far".
       const history = await listChatMessages(pool, thread.id);
 
+      // The answer is streamed onto the generic app-event channel as it is
+      // written (NBK-11), and this response still carries the whole recorded
+      // exchange. Both, not one or the other: the chunks let a reader start
+      // reading early, and the response is the truth a client stores. That
+      // is GLOSSARY.md's rule about an App Event applied literally — "they
+      // carry what changed, and a client that missed one re-reads the truth
+      // over the normal API" — and it is why no replay buffer exists here.
+      // Everyone else with the Notebook open sees the same chunks, which is
+      // the right behaviour for a Thread that is shared by definition.
+      const stream = createAnswerStream(pool, {
+        notebookId: thread.notebookId,
+        threadId: thread.id,
+      });
+
       let answer: GroundedAnswer;
       try {
-        answer = await answerQuestion(pool, chat, {
-          notebookId: thread.notebookId,
-          question: request.body.content,
-          history,
-        });
+        answer = await streamAnswer(
+          pool,
+          chat,
+          { notebookId: thread.notebookId, question: request.body.content, history },
+          (text) => stream.chunk(text),
+        );
       } catch (err) {
-        // Nothing is recorded. A question sitting unanswered in a shared
-        // Thread reads as one the team ignored, and there is no retry
-        // mechanism here for the user to lean on — asking again is the
-        // retry, and that works only if the failed attempt left no trace.
+        // Nothing is recorded, exactly as in NBK-10's synchronous path. A
+        // question sitting unanswered in a shared Thread reads as one the
+        // team ignored, and there is no retry mechanism here for the user to
+        // lean on — asking again is the retry, and that works only if the
+        // failed attempt left no trace.
+        //
+        // A half-streamed answer is the one new wrinkle: chunks a client
+        // already rendered describe prose that will never be persisted, so
+        // the failure is announced on the same channel and the preview is
+        // dropped. Publishing is best-effort — the user's 502 matters more
+        // than the notification, and the asking client learns of the failure
+        // from it anyway.
         request.log.error({ err }, "A chat answer could not be generated.");
+        await stream
+          .failed(err instanceof Error ? err.message : "The answer could not be generated.")
+          .catch((publishErr: unknown) => {
+            request.log.warn({ err: publishErr }, "Could not announce a failed chat answer.");
+          });
         await reply.status(502).send({
           message: "The answer could not be generated. Nothing was recorded; please ask again.",
         });
@@ -232,7 +265,9 @@ export function registerChatRoutes(app: FastifyInstance, { pool, chat }: Registe
       }
 
       // Question, answer and the answer's Citations in one transaction, so a
-      // Thread never holds an answer whose sources are missing.
+      // Thread never holds an answer whose sources are missing — and one
+      // `chat_messages` row for the answer however many chunks it was
+      // delivered in (NBK-11). The streaming is delivery; this is the record.
       const exchange = await appendQuestionAndAnswer(
         pool,
         thread.id,
@@ -241,6 +276,22 @@ export function registerChatRoutes(app: FastifyInstance, { pool, chat }: Registe
         answer.text,
         answer.citations,
       );
+
+      // Published only now that the row exists, so the event can name it:
+      // this is what turns a client's chunk preview into the persisted
+      // message, and the only event that can carry Citations, since they are
+      // resolved from the complete text. Best-effort for the same reason as
+      // above — the 201 below is the authoritative answer.
+      await stream
+        .completed({
+          messageId: exchange.answer.id,
+          questionId: exchange.question.id,
+          citations: exchange.answer.citations,
+        })
+        .catch((err: unknown) => {
+          request.log.warn({ err }, "Could not announce a completed chat answer.");
+        });
+
       await reply.status(201).send(exchange);
     },
   );

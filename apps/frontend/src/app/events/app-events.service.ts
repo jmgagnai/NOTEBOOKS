@@ -1,5 +1,5 @@
 import { Injectable, inject } from '@angular/core';
-import { Observable } from 'rxjs';
+import { Observable, finalize, share } from 'rxjs';
 import { ApiConfiguration } from '../api/api-configuration';
 
 /**
@@ -39,15 +39,30 @@ export class AppEventsService {
   private readonly config = inject(ApiConfiguration);
 
   /**
+   * The live connections, by topic set.
+   *
+   * One connection per topic set, however many consumers there are: a
+   * Notebook page has several (Document statuses, and since NBK-11 chat
+   * answers), and ADR-0004's design is "one NOTIFY channel, one `GET /events`
+   * endpoint" — a connection per store would multiply exactly the thing that
+   * was made generic to stay single, against a browser limit of about six
+   * per origin. An entry is removed when its last subscriber leaves, so a
+   * later watcher opens a fresh connection rather than reviving a closed one.
+   */
+  private readonly connections = new Map<string, Observable<AppEvent>>();
+
+  /**
    * Opens a stream of the given topics (e.g. `notebook:<uuid>`), or of
-   * everything if `topics` is empty. The connection is opened when the
-   * returned observable is subscribed to and closed when the last subscriber
-   * unsubscribes, so a component that stops watching stops costing a
-   * connection.
+   * everything if `topics` is empty. The connection is opened when the first
+   * subscriber arrives and closed when the last one leaves, so a component
+   * that stops watching stops costing a connection.
    */
   stream(topics: string[] = []): Observable<AppEvent> {
-    return new Observable<AppEvent>((subscriber) => {
-      const query = topics.map((topic) => `topic=${encodeURIComponent(topic)}`).join('&');
+    const query = topics.map((topic) => `topic=${encodeURIComponent(topic)}`).join('&');
+    const existing = this.connections.get(query);
+    if (existing) return existing;
+
+    const connection = new Observable<AppEvent>((subscriber) => {
       const url = `${this.config.rootUrl}/events${query ? `?${query}` : ''}`;
       // The session cookie is httpOnly and the backend is a different origin
       // in development, so the connection must be told to send credentials —
@@ -75,6 +90,19 @@ export class AppEventsService {
         source.removeEventListener('message', forward as EventListener);
         source.close();
       };
-    });
+    }).pipe(
+      // Before `share`, so it runs when the *connection* is torn down (the
+      // last subscriber leaving) rather than per subscriber.
+      finalize(() => this.connections.delete(query)),
+      // Multicast: every consumer of this topic set reads one connection.
+      // Plain `share`, not `shareReplay`: App Events are notifications about
+      // something that already happened, so replaying an old one to a late
+      // subscriber would tell it about a change it has already read over the
+      // REST routes (GLOSSARY.md, App Event).
+      share(),
+    );
+
+    this.connections.set(query, connection);
+    return connection;
   }
 }

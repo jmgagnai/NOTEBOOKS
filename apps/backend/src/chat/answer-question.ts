@@ -1,6 +1,6 @@
 import type { Pool } from "pg";
 import type { Embedder } from "../llm/embeddings.js";
-import type { ChatCompleter } from "../llm/openrouter.js";
+import type { ChatCompleter, ChatStreamer } from "../llm/openrouter.js";
 import {
   CITATION_INSTRUCTIONS,
   locateCitations,
@@ -9,6 +9,7 @@ import {
 } from "./citations.js";
 import { DEFAULT_RETRIEVAL_LIMIT, retrieveChunks, type RetrievedChunk } from "./retrieval.js";
 import type { ChatMessage } from "./schema.js";
+import { createAnswerChunker } from "./streaming.js";
 
 /**
  * What the chat module needs to answer a question.
@@ -22,6 +23,15 @@ import type { ChatMessage } from "./schema.js";
  */
 export interface ChatDeps {
   complete: ChatCompleter;
+  /**
+   * The streaming half of the same seam (NBK-11). Given, an answer is
+   * generated progressively and delivered in paragraph/heading chunks;
+   * omitted, the synchronous `complete` path is used and the answer simply
+   * arrives whole. Optional so a deployment or a test that only cares about
+   * the recorded result does not have to wire a second client, and so the
+   * two paths provably produce the same persisted row.
+   */
+  stream?: ChatStreamer;
   /** Embeds the user's question, to retrieve against. */
   embed: Embedder;
   /** The OpenRouter model id for chat answers. From `resolveTaskModels()`. */
@@ -163,17 +173,86 @@ function formatHistory(history: ChatMessage[]): string {
     .join("\n\n");
 }
 
+/** The answer the application gives when retrieval came back empty. */
+const noSourcesAnswer: GroundedAnswer = {
+  // Nothing was retrieved, so there is nothing to cite — and the sentence is
+  // the application's own, not a claim about any Document.
+  text: NO_SOURCES_ANSWER,
+  chunks: [],
+  citations: [],
+  unresolvedMarkers: [],
+};
+
 /**
- * Answers one question against a Notebook's Documents.
- *
- * The whole retrieval-augmented path in one call: embed the question,
+ * Everything that happens before the model is called: embed the question,
  * retrieve the closest Chunks from the Notebook's latest-version `ready`
- * Documents, assemble the grounding, and generate one complete answer.
+ * Documents, and lay out the grounding.
  *
- * Synchronous and complete, per NBK-10 — no streaming. NBK-11 upgrades the
- * delivery of `text` to SSE paragraph/heading chunks; what it needs is a
- * second way to run the final `complete` call, not a different retrieval or
- * a different prompt, which is why those sit above it here.
+ * Shared by the synchronous and the streamed path on purpose. NBK-11 changes
+ * only how the generated text is *delivered*, so retrieval, the prompt and
+ * the temperature must be literally the same code — otherwise "the persisted
+ * result is indistinguishable from the synchronous path's" would be a claim
+ * about two prompts that merely look alike.
+ *
+ * Returns `null` when the Notebook has nothing to answer from.
+ */
+async function groundQuestion(
+  pool: Pool,
+  deps: ChatDeps,
+  input: { notebookId: string; question: string; history: ChatMessage[] },
+): Promise<{ chunks: RetrievedChunk[]; request: { model: string; system: string; user: string; temperature: number } } | null> {
+  const [queryEmbedding] = await deps.embed([input.question]);
+  const chunks = await retrieveChunks(
+    pool,
+    input.notebookId,
+    queryEmbedding,
+    deps.retrievalLimit ?? DEFAULT_RETRIEVAL_LIMIT,
+  );
+  if (chunks.length === 0) return null;
+
+  const sections = ["## Sources", formatSources(chunks)];
+  const history = formatHistory(input.history);
+  if (history) sections.push("## The conversation so far", history);
+  sections.push("## The question to answer now", input.question);
+
+  return {
+    chunks,
+    request: {
+      model: deps.model,
+      system: CHAT_SYSTEM_PROMPT,
+      user: sections.join("\n\n"),
+      // Low, but not zero: this is an extraction-and-explanation task like
+      // the summarizers, where faithfulness to the sources matters more than
+      // variety. Matches the default the other LLM callers rely on.
+      temperature: 0.2,
+    },
+  };
+}
+
+/**
+ * Turns generated prose into a {@link GroundedAnswer}.
+ *
+ * The markers the model wrote are resolved only against the Chunks that were
+ * just retrieved, so a Citation cannot name a passage this answer was not
+ * grounded in (NBK-12), and are then located once in their Versions'
+ * Converted Markdown so following one can scroll to the passage.
+ *
+ * Runs on the *complete* text, which is why a streamed answer's Citations
+ * arrive at the end rather than alongside the chunk that mentions them: a
+ * marker in a half-written answer has no reliable meaning yet.
+ */
+async function groundedAnswer(pool: Pool, text: string, chunks: RetrievedChunk[]): Promise<GroundedAnswer> {
+  const { citations, unresolvedMarkers } = resolveCitationMarkers(text, chunks);
+  return { text, chunks, citations: await locateCitations(pool, citations), unresolvedMarkers };
+}
+
+/**
+ * Answers one question against a Notebook's Documents, in one call.
+ *
+ * Synchronous and complete, per NBK-10: the answer is returned whole and
+ * nothing is observable until it is. Still the path a deployment with no
+ * streaming client configured takes, and the reference the streamed path is
+ * checked against.
  *
  * Throws if generation fails, so the caller can decline to record a question
  * it has no answer for.
@@ -183,40 +262,64 @@ export async function answerQuestion(
   deps: ChatDeps,
   input: { notebookId: string; question: string; history: ChatMessage[] },
 ): Promise<GroundedAnswer> {
-  const [queryEmbedding] = await deps.embed([input.question]);
-  const chunks = await retrieveChunks(
-    pool,
-    input.notebookId,
-    queryEmbedding,
-    deps.retrievalLimit ?? DEFAULT_RETRIEVAL_LIMIT,
-  );
+  const grounding = await groundQuestion(pool, deps, input);
+  if (!grounding) return noSourcesAnswer;
 
-  if (chunks.length === 0) {
-    // Nothing was retrieved, so there is nothing to cite — and the sentence
-    // is the application's own, not a claim about any Document.
-    return { text: NO_SOURCES_ANSWER, chunks: [], citations: [], unresolvedMarkers: [] };
+  const text = await deps.complete(grounding.request);
+  return groundedAnswer(pool, text, grounding.chunks);
+}
+
+/**
+ * The same answer, delivered as it is written (NBK-11).
+ *
+ * `onChunk` is called once per paragraph- or heading-sized piece, in order,
+ * and awaited — so a caller that publishes each one cannot have chunk 4
+ * overtake chunk 3. See src/chat/streaming.ts for what decides where a chunk
+ * ends; the rule a *caller* needs is that chunks are append-only and never
+ * revised.
+ *
+ * The return value is the same {@link GroundedAnswer} `answerQuestion`
+ * produces, assembled from the full text — so the row the caller persists is
+ * the same row either path would have produced. That is the point: the
+ * chunks are a preview of a result that is only ever written down once.
+ *
+ * Throws if the stream fails at any point, having emitted whatever chunks had
+ * already completed. A caller must then record nothing: the prose a reader
+ * saw is a fragment no one can vouch for, and NBK-10's rule — nothing is
+ * recorded, asking again is the retry — is exactly as right here.
+ *
+ * Falls back to `answerQuestion` when no streaming client is configured,
+ * delivering the finished answer as a single chunk rather than failing: a
+ * client's rendering path is then the same whichever way the server is wired.
+ */
+export async function streamAnswer(
+  pool: Pool,
+  deps: ChatDeps,
+  input: { notebookId: string; question: string; history: ChatMessage[] },
+  onChunk: (text: string) => Promise<void>,
+): Promise<GroundedAnswer> {
+  if (!deps.stream) {
+    const answer = await answerQuestion(pool, deps, input);
+    await onChunk(answer.text);
+    return answer;
   }
 
-  const sections = ["## Sources", formatSources(chunks)];
-  const history = formatHistory(input.history);
-  if (history) sections.push("## The conversation so far", history);
-  sections.push("## The question to answer now", input.question);
+  const grounding = await groundQuestion(pool, deps, input);
+  if (!grounding) {
+    // Said by the application and already complete, so it is one chunk. It
+    // still goes through `onChunk` so every answer a client sees arrives the
+    // same way.
+    await onChunk(noSourcesAnswer.text);
+    return noSourcesAnswer;
+  }
 
-  const text = await deps.complete({
-    model: deps.model,
-    system: CHAT_SYSTEM_PROMPT,
-    user: sections.join("\n\n"),
-    // Low, but not zero: this is an extraction-and-explanation task like the
-    // summarizers, where faithfulness to the sources matters more than
-    // variety. Matches the default the other LLM callers rely on.
-    temperature: 0.2,
-  });
+  const chunker = createAnswerChunker();
+  let text = "";
+  for await (const delta of deps.stream(grounding.request)) {
+    text += delta;
+    for (const chunk of chunker.push(delta)) await onChunk(chunk);
+  }
+  for (const chunk of chunker.flush()) await onChunk(chunk);
 
-  // The markers the model wrote are resolved only against the Chunks that
-  // were just retrieved, so a Citation cannot name a passage this answer was
-  // not grounded in (NBK-12), and then located once in their Versions'
-  // Converted Markdown so following one can scroll to the passage.
-  const { citations, unresolvedMarkers } = resolveCitationMarkers(text, chunks);
-
-  return { text, chunks, citations: await locateCitations(pool, citations), unresolvedMarkers };
+  return groundedAnswer(pool, text, grounding.chunks);
 }

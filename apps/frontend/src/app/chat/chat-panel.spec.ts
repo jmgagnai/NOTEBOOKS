@@ -1,7 +1,9 @@
 import { provideRouter } from '@angular/router';
-import { fireEvent, render, screen } from '@testing-library/angular';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/angular';
+import { Subject } from 'rxjs';
 import { ChatPanel } from './chat-panel';
 import { ChatService } from '../api/services/chat.service';
+import { AppEvent, AppEventsService } from '../events/app-events.service';
 
 const NOTEBOOK_ID = '11111111-1111-1111-1111-111111111111';
 const DOCUMENT_ID = '22222222-2222-2222-2222-222222222222';
@@ -62,6 +64,39 @@ function citation(overrides: Partial<Record<string, unknown>> = {}) {
 // only the generated ng-openapi-gen client interface (ChatService) — never
 // the store or any Angular service internals.
 describe('ChatPanel', () => {
+  /**
+   * Stands in for the live SSE connection a streamed answer arrives on
+   * (NBK-11). `AppEventsService` is the seam, not `EventSource`: jsdom has no
+   * `EventSource`, and the panel's contract is "events arrive on this
+   * stream", not "an HTTP connection is opened in this particular way". That
+   * the real service turns a live SSE connection into these events is proven
+   * on the backend, by apps/backend/test/events.route.test.ts — and the same
+   * stub shape is already used by notebook-detail-page.spec.ts.
+   */
+  function appEventsStub() {
+    const events = new Subject<AppEvent>();
+    const topics: string[][] = [];
+    return {
+      events,
+      topics,
+      provider: {
+        provide: AppEventsService,
+        useValue: {
+          stream: (requested: string[]) => {
+            topics.push(requested);
+            return events.asObservable();
+          },
+        },
+      },
+    };
+  }
+
+  let appEvents: ReturnType<typeof appEventsStub>;
+
+  beforeEach(() => {
+    appEvents = appEventsStub();
+  });
+
   async function renderPanel(chatService: Partial<ChatService>) {
     return render(ChatPanel, {
       inputs: { notebookId: NOTEBOOK_ID },
@@ -69,7 +104,11 @@ describe('ChatPanel', () => {
       // somewhere, so the link has to be built by the thing that will
       // actually navigate (NBK-1's seam-3 rule — mock the generated HTTP
       // client, never Angular's own services).
-      providers: [provideRouter([]), { provide: ChatService, useValue: chatService }],
+      providers: [
+        provideRouter([]),
+        { provide: ChatService, useValue: chatService },
+        appEvents.provider,
+      ],
     });
   }
 
@@ -395,6 +434,186 @@ describe('ChatPanel', () => {
 
       expect(await screen.findByText('The sources do not say.')).toBeTruthy();
       expect(screen.queryAllByTestId('chat-citation')).toEqual([]);
+    });
+  });
+
+  // NBK-11's third acceptance criterion: "Angular chat UI renders the answer
+  // progressively as chunks arrive". The chunks arrive as App Events on the
+  // same generic SSE stream a Document's status changes arrive on (NBK-6),
+  // because per ADR-0004 that channel was built generic for exactly this.
+  describe('a streamed answer (NBK-11)', () => {
+    const STREAM_ID = '77777777-7777-7777-7777-777777777777';
+
+    function appEvent(type: string, data: Record<string, unknown>): AppEvent {
+      return {
+        id: `event-${type}-${String(data['index'] ?? 'end')}`,
+        type,
+        topic: `notebook:${NOTEBOOK_ID}`,
+        occurredAt: '2026-01-01T00:00:02.000Z',
+        data: { notebookId: NOTEBOOK_ID, threadId: 'thread-1', streamId: STREAM_ID, ...data },
+      };
+    }
+
+    const chunk = (index: number, text: string, overrides: Record<string, unknown> = {}): AppEvent =>
+      appEvent('chat-answer-chunk', { index, text, ...overrides });
+
+    const completed = (data: Record<string, unknown> = {}): AppEvent =>
+      appEvent('chat-answer-completed', { messageId: 'a1', questionId: 'q1', citations: [], ...data });
+
+    const failed = (data: Record<string, unknown> = {}): AppEvent =>
+      appEvent('chat-answer-failed', { reason: 'the provider hung up', ...data });
+
+    /**
+     * Opens a Thread with an ask in flight, handing back the resolver for the
+     * `POST .../messages` call.
+     *
+     * The ask is deliberately left unresolved: the whole user story is that a
+     * reader "start[s] reading before the full answer finishes generating",
+     * so every assertion about progressive rendering has to be made while
+     * the request that produces the answer is still outstanding.
+     */
+    async function askWithoutAnswering(overrides: Partial<ChatService> = {}) {
+      let settle!: (exchange: unknown) => void;
+      const sendChatMessage = vi.fn().mockReturnValue(
+        new Promise((resolve) => {
+          settle = resolve;
+        }),
+      );
+      const listChatMessages = vi.fn().mockResolvedValue([]);
+
+      await renderPanel({
+        listChatThreads: vi.fn().mockResolvedValue([thread()]) as never,
+        listChatMessages: listChatMessages as never,
+        sendChatMessage: sendChatMessage as never,
+        ...overrides,
+      });
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Open Revenue questions' }));
+      await screen.findByText('No messages yet.');
+      fireEvent.input(screen.getByLabelText('Ask a question'), {
+        target: { value: 'What was revenue in Q3?' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+
+      return { settle, listChatMessages };
+    }
+
+    it('renders each chunk as it arrives, and replaces the preview with the recorded answer', async () => {
+      const { settle } = await askWithoutAnswering();
+
+      // The panel asked for this Notebook's topic — the same stream the
+      // Document status badges follow, not a chat-specific one.
+      expect(appEvents.topics).toContainEqual([`notebook:${NOTEBOOK_ID}`]);
+
+      appEvents.events.next(chunk(0, '## Revenue'));
+
+      // Readable already, with the answer still being generated.
+      expect(await screen.findByText('## Revenue')).toBeTruthy();
+      // And only as far as the model has got: the second paragraph has not
+      // been sent yet, so it is not on screen.
+      expect(screen.queryByText('Revenue reached 12.4M in Q3.')).toBeNull();
+
+      appEvents.events.next(chunk(1, 'Revenue reached 12.4M in Q3.'));
+      expect(await screen.findByText('Revenue reached 12.4M in Q3.')).toBeTruthy();
+      // The first chunk is still there: chunks accumulate into one answer
+      // rather than replacing each other.
+      expect(screen.getByText('## Revenue')).toBeTruthy();
+
+      // The ask resolves with the recorded exchange — which is the truth
+      // (GLOSSARY.md: a client re-reads the truth over the normal API), so
+      // the preview gives way to the two persisted messages rather than
+      // leaving a third, duplicate copy of the answer on screen.
+      appEvents.events.next(completed());
+      settle({
+        question: message({ id: 'q1', role: 'user', content: 'What was revenue in Q3?' }),
+        answer: message({
+          id: 'a1',
+          role: 'assistant',
+          content: '## Revenue\n\nRevenue reached 12.4M in Q3.',
+        }),
+      });
+
+      await waitFor(() => {
+        expect(screen.queryByTestId('chat-streaming-answer')).toBeNull();
+      });
+      expect(screen.getAllByTestId('chat-message-author')).toHaveLength(2);
+    });
+
+    // Citations resolve from the markers in the *complete* text, so they
+    // cannot travel with any chunk — they arrive with the completion event
+    // (NBK-11), in the same shape the non-streaming response returns.
+    it("shows the answer's Citations as soon as the completion event carries them", async () => {
+      await askWithoutAnswering();
+
+      appEvents.events.next(chunk(0, 'Lead times lengthened to 14 weeks [1].'));
+      expect(await screen.findByText(/Lead times lengthened to 14 weeks/)).toBeTruthy();
+      // Nothing to link to yet, so the marker stays plain text.
+      expect(screen.queryByRole('link', { name: 'Source 1' })).toBeNull();
+
+      appEvents.events.next(completed({ citations: [citation()] }));
+
+      const preview = await screen.findByTestId('chat-streaming-answer');
+      expect(within(preview).getByRole('link', { name: 'Source 1' })).toBeTruthy();
+      expect(within(preview).getByTestId('chat-citation')).toBeTruthy();
+    });
+
+    // A stream that dies partway leaves prose that will never be persisted,
+    // so the preview has to go: leaving it up would show a reader an answer
+    // that no re-read of the Thread will ever contain.
+    it('drops the preview when the answer fails partway', async () => {
+      await askWithoutAnswering();
+
+      appEvents.events.next(chunk(0, '## Revenue'));
+      expect(await screen.findByText('## Revenue')).toBeTruthy();
+
+      appEvents.events.next(failed());
+
+      await waitFor(() => {
+        expect(screen.queryByTestId('chat-streaming-answer')).toBeNull();
+      });
+    });
+
+    // The case the GLOSSARY's App Event rule is about: this client was not
+    // connected when the answer started — someone else asked, or the
+    // EventSource reconnected mid-answer — and NOTIFY has no replay. Showing
+    // an answer with its opening missing would be worse than showing none,
+    // so it renders nothing and re-reads the Thread when the answer lands.
+    it('renders nothing for a stream it joined mid-answer, and re-reads the Thread instead', async () => {
+      const listChatMessages = vi
+        .fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValue([
+          message({ id: 'q1', role: 'user', content: 'What was revenue in Q3?' }),
+          message({ id: 'a1', role: 'assistant', content: 'Revenue reached 12.4M in Q3.' }),
+        ]);
+
+      await renderPanel({
+        listChatThreads: vi.fn().mockResolvedValue([thread()]) as never,
+        listChatMessages: listChatMessages as never,
+      });
+      fireEvent.click(await screen.findByRole('button', { name: 'Open Revenue questions' }));
+      await screen.findByText('No messages yet.');
+
+      // The first chunk this client sees is the third one of the answer.
+      appEvents.events.next(chunk(2, 'and the trend is upward.'));
+      expect(screen.queryByText('and the trend is upward.')).toBeNull();
+      expect(screen.queryByTestId('chat-streaming-answer')).toBeNull();
+
+      appEvents.events.next(completed());
+
+      // Re-read over the normal API, and the whole answer appears.
+      expect(await screen.findByText('Revenue reached 12.4M in Q3.')).toBeTruthy();
+      expect(listChatMessages).toHaveBeenCalledTimes(2);
+    });
+
+    it("ignores another Chat Thread's streamed answer", async () => {
+      await askWithoutAnswering();
+
+      appEvents.events.next(chunk(0, 'An answer in some other Thread.', { threadId: 'thread-2' }));
+
+      await waitFor(() => {
+        expect(screen.queryByText('An answer in some other Thread.')).toBeNull();
+      });
     });
   });
 });

@@ -360,7 +360,7 @@ export class ChatService extends BaseService {
   /**
    * Ask a question in a Chat Thread and get one grounded answer.
    *
-   * Retrieves the closest Chunks from the Notebook's latest-version, `ready` Documents and returns one complete answer. The answer is not streamed. The answer message carries a Citation per source marker in its text, each pinned to the exact Document Version and chunk it was grounded in and persisted with the message.
+   * Retrieves the closest Chunks from the Notebook's latest-version, `ready` Documents and returns the complete recorded exchange. While the answer is being generated it is also published to the live `GET /events` stream as `chat-answer-chunk` events in paragraph/heading-sized pieces, followed by one `chat-answer-completed` event naming the persisted message and carrying its Citations — so a client can render the answer progressively and this response is the authoritative result. The answer message carries a Citation per source marker in its text, each pinned to the exact Document Version and chunk it was grounded in and persisted with the message.
    *
    * This method provides access to the full `HttpResponse`, allowing access to response headers.
    * To access only the response body, use `sendChatMessage()` instead.
@@ -422,7 +422,7 @@ export class ChatService extends BaseService {
   /**
    * Ask a question in a Chat Thread and get one grounded answer.
    *
-   * Retrieves the closest Chunks from the Notebook's latest-version, `ready` Documents and returns one complete answer. The answer is not streamed. The answer message carries a Citation per source marker in its text, each pinned to the exact Document Version and chunk it was grounded in and persisted with the message.
+   * Retrieves the closest Chunks from the Notebook's latest-version, `ready` Documents and returns the complete recorded exchange. While the answer is being generated it is also published to the live `GET /events` stream as `chat-answer-chunk` events in paragraph/heading-sized pieces, followed by one `chat-answer-completed` event naming the persisted message and carrying its Citations — so a client can render the answer progressively and this response is the authoritative result. The answer message carries a Citation per source marker in its text, each pinned to the exact Document Version and chunk it was grounded in and persisted with the message.
    *
    * This method provides access only to the response body.
    * To access the full response (for headers, for example), `sendChatMessage$Response()` instead.

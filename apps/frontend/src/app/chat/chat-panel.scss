@@ -124,6 +124,19 @@
     &--user {
       background: var(--mat-sys-surface-container-high, #e7e7e7);
     }
+
+    // The answer still being written (NBK-11). Marked as provisional because
+    // it is: it is not a message yet, and it can still be withdrawn if the
+    // stream fails.
+    &--streaming {
+      border: 1px dashed var(--mat-sys-outline-variant, #ddd);
+
+      // Each chunk is its own paragraph element, so they need the spacing a
+      // single pre-wrapped block got from its blank lines.
+      .chat-panel__message-content + .chat-panel__message-content {
+        margin-top: 0.6rem;
+      }
+    }
   }
 
   &__message-author {
@@ -135,9 +148,10 @@
 
   &__message-content {
     margin: 0;
-    // Answers are Markdown prose with blank-line paragraph breaks; rendering
-    // them as Markdown is NBK-11 territory, so for now the line structure at
-    // least has to survive.
+    // Answers are Markdown prose with blank-line paragraph breaks. Rendering
+    // them as Markdown is still out of scope, so the line structure at least
+    // has to survive — including in a streamed answer, where one of these
+    // holds exactly one chunk.
     white-space: pre-wrap;
   }
 
