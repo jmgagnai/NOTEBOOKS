@@ -3,6 +3,7 @@
 
 export { AuthService } from './services/auth.service';
 export { NotebooksService } from './services/notebooks.service';
+export { ChatService } from './services/chat.service';
 export { SearchService } from './services/search.service';
 export { DocumentsService } from './services/documents.service';
 export { EventsService } from './services/events.service';

@@ -3,6 +3,7 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { ChatPanel } from '../chat/chat-panel';
 import { Document, DocumentsStore } from '../documents/documents.store';
 import { NotebooksStore } from './notebooks.store';
 
@@ -20,11 +21,16 @@ import { NotebooksStore } from './notebooks.store';
  *
  * While open, it also follows this Notebook's live app events (NBK-6) so a
  * Document's status badge tracks the background pipeline without a refresh.
+ *
+ * Below the Documents sits the chat panel (NBK-10) — the Notebook's Chat
+ * Threads and the open conversation. Per NBK-1 a Notebook's detail page is
+ * "composed of a sources panel ... [and] a chat panel", so the two live on
+ * one page; the chat panel owns its own store and data loading.
  */
 @Component({
   selector: 'app-notebook-detail-page',
   standalone: true,
-  imports: [MatButtonModule, MatCardModule, MatProgressSpinnerModule, RouterLink],
+  imports: [ChatPanel, MatButtonModule, MatCardModule, MatProgressSpinnerModule, RouterLink],
   templateUrl: './notebook-detail-page.html',
   styleUrl: './notebook-detail-page.scss',
 })

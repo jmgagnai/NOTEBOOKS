@@ -7,6 +7,8 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { jsonSchemaTransform, serializerCompiler, validatorCompiler } from "fastify-type-provider-zod";
 import type { Pool } from "pg";
 import { registerAuthRoutes } from "./auth/routes.js";
+import type { ChatDeps } from "./chat/answer-question.js";
+import { registerChatRoutes } from "./chat/routes.js";
 import { registerDocumentRoutes } from "./documents/routes.js";
 import type { AppEventSubscriber } from "./events/bus.js";
 import { registerEventRoutes } from "./events/routes.js";
@@ -33,6 +35,12 @@ export interface BuildAppOptions {
   // Omitted, `GET /events` isn't registered at all; a process that serves
   // live updates always supplies it.
   appEvents?: AppEventSubscriber;
+  // The chat answer path (NBK-10): the OpenRouter completer, the embedder
+  // used to embed a question for retrieval, and the fixed server-side chat
+  // model. Optional for the same reason the ingestion deps are — a
+  // deployment without an OpenRouter key still serves Thread CRUD, and
+  // asking a question reports 503 instead of recording an unanswerable one.
+  chat?: ChatDeps;
   // Notebook search (NBK-9) embeds the incoming query with the same model
   // ingestion stage 3 embedded the chunks with. Unlike the options above,
   // omitting it does NOT drop the route: `GET /notebooks/:id/search` stays
@@ -52,6 +60,7 @@ export async function buildApp({
   documentsBucket,
   jobs,
   appEvents,
+  chat,
   embed,
 }: BuildAppOptions): Promise<FastifyInstance> {
   const app = Fastify({ logger: false });
@@ -75,6 +84,7 @@ export async function buildApp({
 
   registerAuthRoutes(app, pool);
   registerNotebookRoutes(app, pool);
+  registerChatRoutes(app, { pool, chat });
   registerSearchRoutes(app, { pool, embed });
   if (s3 && documentsBucket) {
     registerDocumentRoutes(app, { pool, s3, documentsBucket, jobs });

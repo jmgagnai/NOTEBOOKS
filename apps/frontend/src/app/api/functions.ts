@@ -19,6 +19,16 @@ export type { RenameNotebook$Params as RenameNotebook$Params } from './fn/notebo
 export { renameNotebook as renameNotebook } from './fn/notebooks/rename-notebook';
 export type { RestoreNotebook$Params as RestoreNotebook$Params } from './fn/notebooks/restore-notebook';
 export { restoreNotebook as restoreNotebook } from './fn/notebooks/restore-notebook';
+export type { ListChatThreads$Params as ListChatThreads$Params } from './fn/chat/list-chat-threads';
+export { listChatThreads as listChatThreads } from './fn/chat/list-chat-threads';
+export type { CreateChatThread$Params as CreateChatThread$Params } from './fn/chat/create-chat-thread';
+export { createChatThread as createChatThread } from './fn/chat/create-chat-thread';
+export type { RenameChatThread$Params as RenameChatThread$Params } from './fn/chat/rename-chat-thread';
+export { renameChatThread as renameChatThread } from './fn/chat/rename-chat-thread';
+export type { ListChatMessages$Params as ListChatMessages$Params } from './fn/chat/list-chat-messages';
+export { listChatMessages as listChatMessages } from './fn/chat/list-chat-messages';
+export type { SendChatMessage$Params as SendChatMessage$Params } from './fn/chat/send-chat-message';
+export { sendChatMessage as sendChatMessage } from './fn/chat/send-chat-message';
 export type { SearchNotebook$Params as SearchNotebook$Params } from './fn/search/search-notebook';
 export { searchNotebook as searchNotebook } from './fn/search/search-notebook';
 export type { ListDocuments$Params as ListDocuments$Params } from './fn/documents/list-documents';
