@@ -1,0 +1,5 @@
+# Fast gate only. The full suite (Docker + Testcontainers, ~150s) runs in CI,
+# because a hook people wait on is a hook people bypass with --no-verify.
+pnpm exec lint-staged
+pnpm run check:migrations
+pnpm run check:types

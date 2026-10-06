@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  check:
+    # The fast gate, same as the pre-commit hook plus the glossary contract check.
+    # Split from `test` so a formatting or typing failure reports in under a
+    # minute instead of behind the suite.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run check
+
+  test:
+    # Needs a Docker daemon: every backend test file starts its own Postgres
+    # (pgvector) and, where relevant, MinIO via Testcontainers. ubuntu-latest
+    # provides one. The Docling test self-skips unless its ~4.5GB image is
+    # pulled, which CI deliberately does not do.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run test
+        env:
+          # Tests stub every OpenRouter call at the fetch boundary, so no real
+          # key is needed and none should be used — a real call here would spend
+          # money and make the suite non-deterministic.
+          OPENROUTER_API_KEY: test-key-not-used

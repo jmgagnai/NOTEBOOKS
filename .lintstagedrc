@@ -1,0 +1,4 @@
+{
+  "apps/*/src/**/*.{ts,html,scss}": "prettier --write",
+  "apps/*/test/**/*.ts": "prettier --write"
+}

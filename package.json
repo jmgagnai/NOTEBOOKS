@@ -15,10 +15,24 @@
     "openapi:generate": "pnpm run backend:openapi:generate && pnpm run frontend:openapi:generate",
     "test": "pnpm run backend:test && pnpm run frontend:test",
     "infra:up": "docker compose up -d",
-    "infra:down": "docker compose down"
+    "infra:down": "docker compose down",
+    "frontend:typecheck": "pnpm --filter frontend exec tsc -p tsconfig.app.json --noEmit",
+    "check:format": "prettier --check \"apps/*/src/**/*.{ts,html,scss}\" \"apps/*/test/**/*.ts\"",
+    "check:format:fix": "prettier --write \"apps/*/src/**/*.{ts,html,scss}\" \"apps/*/test/**/*.ts\"",
+    "check:glossary": "node scripts/check-glossary.mjs",
+    "check:migrations": "node scripts/check-migrations.mjs",
+    "check:types": "pnpm run backend:build && pnpm run frontend:typecheck",
+    "check": "pnpm run check:migrations && pnpm run check:format && pnpm run check:types && pnpm run backend:openapi:generate && pnpm run check:glossary",
+    "verify": "pnpm run check && pnpm run test",
+    "prepare": "husky"
   },
   "engines": {
     "node": ">=20"
   },
-  "packageManager": "pnpm@12.9.1"
+  "packageManager": "pnpm@12.9.1",
+  "devDependencies": {
+    "husky": "^9.1.7",
+    "lint-staged": "^17.6.0",
+    "prettier": "^3.9.9"
+  }
 }
