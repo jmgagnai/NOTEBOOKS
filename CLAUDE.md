@@ -18,6 +18,24 @@ either, while running the backend is not:
 
 No test makes a real OpenRouter call.
 
+Hit something the environment fought you on — a gated Docker image, a
+Testcontainers flake, a silent `ng build` failure? See
+`docs/environment-gotchas.md` before debugging it.
+
+## Checks
+
+`pnpm run check` is the fast gate (no Docker, no network): migration numbering,
+formatting, both typechecks, then the published OpenAPI contract against
+`GLOSSARY.md`'s `_Avoid_` lists. `pnpm run verify` adds the test suite. The
+pre-commit hook runs a subset; CI runs everything.
+
+## Generated code
+
+`apps/frontend/src/app/api/` is ng-openapi-gen output, derived from the
+backend's Zod route schemas via `apps/backend/openapi.json`. Change a route or
+schema, then run `pnpm run openapi:generate`; never hand-edit it, and resolve
+merge conflicts in it by regenerating.
+
 ## Agent skills
 
 ### Issue tracker

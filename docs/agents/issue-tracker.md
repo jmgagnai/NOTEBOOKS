@@ -24,15 +24,37 @@ AUTH="$JIRA_EMAIL:$JIRA_API_TOKEN"
 curl -s -u "$AUTH" -H "Content-Type: application/json" "$JIRA_BASE_URL/rest/api/3/..."
 ```
 
+## Use the helper, not raw curl
+
+`node scripts/jira.mjs` wraps the operations below and converts Markdown bodies
+to Atlassian Document Format, which the v3 API requires. Reach for it first:
+
+```bash
+node scripts/jira.mjs get NBK-1 --comments
+node scripts/jira.mjs comment NBK-1 body.md          # - reads stdin
+node scripts/jira.mjs create --summary "..." --body ticket.md \
+  --type Task --parent NBK-1 --label ready-for-agent
+node scripts/jira.mjs transition NBK-5 Done
+node scripts/jira.mjs link NBK-6 blocked-by NBK-5
+```
+
+It converts headings, paragraphs, bullet and ordered lists, `- [ ]` task lists
+(which become real Jira checkboxes), and inline bold/code/links. Hand-rolling
+that conversion per task is how a spec's structure gets flattened into one
+paragraph.
+
+The raw endpoints below remain the reference for anything the helper does not
+cover.
+
 ## Conventions
 
 - **Create an issue**:
   `POST $JIRA_BASE_URL/rest/api/3/issue` with body
   `{"fields":{"project":{"key":"NBK"},"summary":"...","description":{...ADF...},"issuetype":{"name":"Task"}}}`.
-  Jira's `description` field is Atlassian Document Format (ADF), not plain markdown —
-  wrap plain text as a single `doc` node with one `paragraph`/`text` node, or use the
-  `/rest/api/3/issue` `?expand=renderedFields` trick sparingly; for most bodies a single
-  ADF paragraph is enough.
+  Jira's `description` field is Atlassian Document Format (ADF), not plain markdown.
+  `scripts/jira.mjs` does that conversion for you; build ADF by hand only for a node
+  type it doesn't emit, and keep the document's structure rather than collapsing it
+  into one paragraph — a spec or ticket is mostly headings, lists and checkboxes.
 - **Read an issue**: `GET $JIRA_BASE_URL/rest/api/3/issue/<key>?fields=summary,description,status,labels,comment`
 - **List/search issues**: `GET $JIRA_BASE_URL/rest/api/3/search?jql=project=NBK AND ...` (JQL), URL-encoded.
 - **Comment on an issue**: `POST $JIRA_BASE_URL/rest/api/3/issue/<key>/comment` with ADF body.
