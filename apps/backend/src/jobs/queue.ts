@@ -6,6 +6,13 @@ import {
   type ConvertToMarkdownDeps,
   type ConvertToMarkdownPayload,
 } from "../ingestion/convert-to-markdown.js";
+import {
+  SUMMARIZE_DOCUMENT_QUEUE,
+  summarizeDocumentPayloadSchema,
+  runSummarizeDocumentJob,
+  type SummarizeDocumentDeps,
+  type SummarizeDocumentPayload,
+} from "../ingestion/summarize-document.js";
 
 /**
  * Background jobs run on pg_boss against the same Postgres instance as
@@ -16,24 +23,46 @@ import {
  * The pipeline is one queue *per stage*, not one job that does everything. A
  * stage that fails is retried on its own, and on success a stage enqueues the
  * next — so a later stage's bug never re-runs an expensive earlier stage.
- * This ticket implements the first stage only (convert to Markdown); the
- * chaining hook is `JobQueue.enqueue*` being callable from inside a handler.
+ * Stage 1 is Markdown conversion (NBK-6) and stage 2 is metadata extraction
+ * plus the three Generated document artifacts (NBK-7); stage 2's handler is
+ * handed the `enqueue` for the stage after it the same way stage 1's is here.
  */
 export interface JobQueue {
   /** Enqueues ingestion stage 1 for one Document Version. */
   enqueueConvertToMarkdown(payload: ConvertToMarkdownPayload): Promise<void>;
+  /**
+   * Enqueues ingestion stage 2 for one Document Version. Normally called by
+   * stage 1 on success rather than from outside the pipeline; exposed so a
+   * Version stuck at "converted" can be re-driven without re-converting it.
+   */
+  enqueueSummarizeDocument(payload: SummarizeDocumentPayload): Promise<void>;
   stop(): Promise<void>;
+}
+
+/**
+ * The dependencies a worker process needs for the whole pipeline. Stage 2's
+ * are optional so a deployment (or a test) can work stage 1 alone.
+ *
+ * Note what is NOT here: the chaining callback stage 1 uses to hand over to
+ * stage 2. `startJobQueue` supplies that itself, closing over the pg_boss
+ * instance it just created — a caller cannot know it, and shouldn't have to.
+ */
+export interface PipelineWorkerDeps extends Omit<ConvertToMarkdownDeps, "enqueueSummarizeDocument"> {
+  /** The OpenRouter boundary for stage 2. Omitted, stage 2 isn't worked. */
+  complete?: SummarizeDocumentDeps["complete"];
+  /** Fixed model per task type for stage 2. Defaults to the server config. */
+  models?: SummarizeDocumentDeps["models"];
 }
 
 export interface StartJobQueueOptions {
   connectionString: string;
   /**
-   * Dependencies for the convert-to-Markdown worker. Omit to start a
-   * producer-only queue (one that enqueues but works nothing) — which is what
-   * makes the "enqueued before the backend started" case testable, and would
-   * let a deployment separate web and worker processes later.
+   * Dependencies for the ingestion workers. Omit to start a producer-only
+   * queue (one that enqueues but works nothing) — which is what makes the
+   * "enqueued before the backend started" case testable, and would let a
+   * deployment separate web and worker processes later.
    */
-  worker?: ConvertToMarkdownDeps;
+  worker?: PipelineWorkerDeps;
   /** Extra attempts after the first. Defaults to 3. */
   retryLimit?: number;
   /** Seconds between attempts. Defaults to 10. */
@@ -81,52 +110,67 @@ export async function startJobQueue(options: StartJobQueueOptions): Promise<JobQ
   });
 
   await boss.start();
+
   // pg_boss v10 requires a queue to exist before send/work. Creating it on
-  // every start keeps its retry policy declared in code rather than in
-  // whatever state the database was left in.
-  await boss.createQueue(CONVERT_TO_MARKDOWN_QUEUE, {
-    name: CONVERT_TO_MARKDOWN_QUEUE,
-    retryLimit,
-    retryDelay,
-    retryBackoff: retryDelay > 0,
-  });
-  await boss.updateQueue(CONVERT_TO_MARKDOWN_QUEUE, {
-    name: CONVERT_TO_MARKDOWN_QUEUE,
-    retryLimit,
-    retryDelay,
-    retryBackoff: retryDelay > 0,
-  });
+  // every start keeps each stage's retry policy declared in code rather than
+  // in whatever state the database was left in. Each stage gets its own queue
+  // precisely so these policies can diverge later (stage 2 is rate-limit
+  // bound, stage 1 is CPU bound).
+  const policy = { retryLimit, retryDelay, retryBackoff: retryDelay > 0 };
+  for (const queue of [CONVERT_TO_MARKDOWN_QUEUE, SUMMARIZE_DOCUMENT_QUEUE]) {
+    await boss.createQueue(queue, { name: queue, ...policy });
+    await boss.updateQueue(queue, { name: queue, ...policy });
+  }
+
+  const workOptions = {
+    includeMetadata: true as const,
+    batchSize: 1,
+    ...(options.pollingIntervalSeconds === undefined
+      ? {}
+      : { pollingIntervalSeconds: options.pollingIntervalSeconds }),
+  };
+
+  async function enqueueSummarizeDocument(payload: SummarizeDocumentPayload): Promise<void> {
+    await boss.send(SUMMARIZE_DOCUMENT_QUEUE, summarizeDocumentPayloadSchema.parse(payload));
+  }
 
   if (options.worker) {
-    const deps = options.worker;
-    await boss.work<ConvertToMarkdownPayload>(
-      CONVERT_TO_MARKDOWN_QUEUE,
-      {
-        includeMetadata: true,
-        batchSize: 1,
-        ...(options.pollingIntervalSeconds === undefined
-          ? {}
-          : { pollingIntervalSeconds: options.pollingIntervalSeconds }),
-      },
-      async (jobs) => {
+    const { complete, models, ...convertDeps } = options.worker;
+
+    await boss.work<ConvertToMarkdownPayload>(CONVERT_TO_MARKDOWN_QUEUE, workOptions, async (jobs) => {
+      for (const job of jobs) {
+        // `retryCount` is 0 on the first attempt, so a retry is still
+        // pending whenever it hasn't caught up with the limit. The handler
+        // uses this to decide whether a failure is terminal.
+        const willRetry = job.retryCount < job.retryLimit;
+        await runConvertToMarkdownJob(
+          // Stage 1 hands over to stage 2 through this closure — the queue
+          // can't be passed into its own worker deps, so it is injected here
+          // where `boss` is in scope.
+          { ...convertDeps, enqueueSummarizeDocument },
+          { payload: convertToMarkdownPayloadSchema.parse(job.data), willRetry },
+        );
+      }
+    });
+
+    if (complete) {
+      await boss.work<SummarizeDocumentPayload>(SUMMARIZE_DOCUMENT_QUEUE, workOptions, async (jobs) => {
         for (const job of jobs) {
-          // `retryCount` is 0 on the first attempt, so a retry is still
-          // pending whenever it hasn't caught up with the limit. The handler
-          // uses this to decide whether a failure is terminal.
           const willRetry = job.retryCount < job.retryLimit;
-          await runConvertToMarkdownJob(deps, {
-            payload: convertToMarkdownPayloadSchema.parse(job.data),
-            willRetry,
-          });
+          await runSummarizeDocumentJob(
+            { pool: convertDeps.pool, complete, ...(models === undefined ? {} : { models }) },
+            { payload: summarizeDocumentPayloadSchema.parse(job.data), willRetry },
+          );
         }
-      },
-    );
+      });
+    }
   }
 
   return {
     async enqueueConvertToMarkdown(payload: ConvertToMarkdownPayload): Promise<void> {
       await boss.send(CONVERT_TO_MARKDOWN_QUEUE, convertToMarkdownPayloadSchema.parse(payload));
     },
+    enqueueSummarizeDocument,
     async stop(): Promise<void> {
       await boss.stop({ wait: true });
     },

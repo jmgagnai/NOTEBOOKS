@@ -1,5 +1,11 @@
 import type { Pool } from "pg";
-import type { Document, DocumentStatus, DocumentVersion } from "./schema.js";
+import type {
+  Document,
+  DocumentContent,
+  DocumentDetail,
+  DocumentStatus,
+  DocumentVersion,
+} from "./schema.js";
 
 interface DocumentWithLatestVersionRow {
   id: string;
@@ -12,6 +18,11 @@ interface DocumentWithLatestVersionRow {
   size_bytes: string;
   version_created_at: Date;
   ingestion_status: DocumentStatus;
+  // Ingestion stage 2's output (NBK-7). Null until it has run.
+  abstract: string | null;
+  chat_snippet: string | null;
+  executive_summary: string | null;
+  metadata: Record<string, unknown> | null;
 }
 
 // Joins each Document to its latest (highest version_number, non-deleted)
@@ -28,16 +39,25 @@ const SELECT_DOCUMENTS_WITH_LATEST_VERSION = `
     v.mime_type,
     v.size_bytes,
     v.created_at AS version_created_at,
-    v.ingestion_status
+    v.ingestion_status,
+    v.abstract,
+    v.chat_snippet,
+    v.executive_summary,
+    v.metadata
   FROM documents d
   JOIN LATERAL (
-    SELECT id, version_number, mime_type, size_bytes, created_at, ingestion_status
+    SELECT id, version_number, mime_type, size_bytes, created_at, ingestion_status,
+           abstract, chat_snippet, executive_summary, metadata
     FROM document_versions
     WHERE document_id = d.id AND deleted_at IS NULL
     ORDER BY version_number DESC
     LIMIT 1
   ) v ON true
 `;
+
+// Deliberately absent from this projection: `markdown`. The Converted
+// Markdown can run past 200 pages, so it is never selected alongside a list
+// of Documents — `findDocumentContent` fetches it for one Version on demand.
 
 function toDocument(row: DocumentWithLatestVersionRow): Document {
   const latestVersion: DocumentVersion = {
@@ -52,8 +72,20 @@ function toDocument(row: DocumentWithLatestVersionRow): Document {
     notebookId: row.notebook_id,
     filename: row.filename,
     status: row.ingestion_status,
+    // The Abstract of the latest Version — the artifact GLOSSARY.md assigns
+    // to document cards and search results.
+    abstract: row.abstract,
     createdAt: row.created_at.toISOString(),
     latestVersion,
+  };
+}
+
+function toDocumentDetail(row: DocumentWithLatestVersionRow): DocumentDetail {
+  return {
+    ...toDocument(row),
+    metadata: row.metadata,
+    chatSnippet: row.chat_snippet,
+    executiveSummary: row.executive_summary,
   };
 }
 
@@ -87,6 +119,53 @@ async function findDocumentWithLatestVersion(
     [documentId, notebookId],
   );
   return rows[0] ? toDocument(rows[0]) : null;
+}
+
+/**
+ * One non-deleted Document with its latest Version's metadata and generated
+ * artifacts (NBK-7) — what the UI shows when a Document is opened, before
+ * the user expands to the full Converted Markdown. Per ADR-0001 there is no
+ * ownership check. Returns `null` if no match (caller maps this to 404).
+ */
+export async function findDocumentDetail(
+  pool: Pool,
+  notebookId: string,
+  documentId: string,
+): Promise<DocumentDetail | null> {
+  const { rows } = await pool.query<DocumentWithLatestVersionRow>(
+    `${SELECT_DOCUMENTS_WITH_LATEST_VERSION} WHERE d.id = $1 AND d.notebook_id = $2 AND d.deleted_at IS NULL`,
+    [documentId, notebookId],
+  );
+  return rows[0] ? toDocumentDetail(rows[0]) : null;
+}
+
+/**
+ * The Converted Markdown of one specific Document Version.
+ *
+ * A separate query, and a separate endpoint, from the Document detail
+ * because this is the payload that can run past 200 pages: a reader who
+ * never expands past the Executive Summary never pays for it.
+ *
+ * Scoped to its Notebook and Document but, like `findDownloadableVersion`,
+ * it does not require the parent Document to still be non-deleted — per
+ * GLOSSARY.md a Citation keeps pointing at an older Version, and following
+ * one has to be able to open it. Returns `null` if no match.
+ */
+export async function findDocumentContent(
+  pool: Pool,
+  notebookId: string,
+  documentId: string,
+  versionId: string,
+): Promise<DocumentContent | null> {
+  const { rows } = await pool.query<{ id: string; markdown: string | null }>(
+    `SELECT v.id, v.markdown
+     FROM document_versions v
+     JOIN documents d ON d.id = v.document_id
+     WHERE v.id = $1 AND v.document_id = $2 AND d.notebook_id = $3 AND v.deleted_at IS NULL`,
+    [versionId, documentId, notebookId],
+  );
+  const row = rows[0];
+  return row ? { versionId: row.id, markdown: row.markdown } : null;
 }
 
 /**

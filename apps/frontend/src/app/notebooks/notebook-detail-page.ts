@@ -2,25 +2,29 @@ import { Component, computed, inject, OnDestroy, OnInit } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
-import { MatListModule } from '@angular/material/list';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { Document, DocumentsStore } from '../documents/documents.store';
 import { NotebooksStore } from './notebooks.store';
 
 /**
- * A Notebook's detail view (NBK-5): shows its Documents, with upload,
- * delete, restore, and download actions. Notebooks have no dedicated
- * `GET /notebooks/:id` endpoint, so the Notebook itself (just its title,
- * for the page heading) is looked up from `NotebooksStore`'s already-loaded
- * list by route id, the same list the top-level Notebooks page uses.
+ * A Notebook's detail view (NBK-5): shows its Documents as cards, with
+ * upload, open, delete, restore, and download actions. Notebooks have no
+ * dedicated `GET /notebooks/:id` endpoint, so the Notebook itself (just its
+ * title, for the page heading) is looked up from `NotebooksStore`'s
+ * already-loaded list by route id, the same list the top-level Notebooks page
+ * uses.
+ *
+ * Each card carries that Document's Abstract (NBK-7) — the summary
+ * GLOSSARY.md writes "to be skimmed in a list" — and links to the Document
+ * itself, where the Executive Summary and the full converted content live.
  *
  * While open, it also follows this Notebook's live app events (NBK-6) so a
- * Document's status badge tracks background conversion without a refresh.
+ * Document's status badge tracks the background pipeline without a refresh.
  */
 @Component({
   selector: 'app-notebook-detail-page',
   standalone: true,
-  imports: [MatButtonModule, MatCardModule, MatListModule, MatProgressSpinnerModule, RouterLink],
+  imports: [MatButtonModule, MatCardModule, MatProgressSpinnerModule, RouterLink],
   templateUrl: './notebook-detail-page.html',
   styleUrl: './notebook-detail-page.scss',
 })

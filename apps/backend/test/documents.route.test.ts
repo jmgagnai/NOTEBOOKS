@@ -505,6 +505,162 @@ describe("Document routes", () => {
     });
   });
 
+  // The read side of ingestion stage 2 (NBK-7). The three Generated document
+  // artifacts have three different consumers, and the API splits along
+  // exactly those lines (see GLOSSARY.md):
+  //
+  //   Abstract          -> the Document list, for cards and search results
+  //   Executive Summary -> the Document detail, shown when one is opened
+  //   Converted Markdown -> its own endpoint, fetched only on expand
+  //
+  // Not one fat payload, because the Converted Markdown can run past 200
+  // pages: putting it on the list would make browsing a Notebook download
+  // every document in it.
+  describe("NBK-7: reading metadata and the generated artifacts", () => {
+    /** Writes stage 2's output onto a Version, as the job would. */
+    async function seedSummaries(versionId: string): Promise<void> {
+      await pool.query(
+        `UPDATE document_versions
+         SET ingestion_status = 'summarized',
+             markdown = $2,
+             metadata = $3::jsonb,
+             chat_snippet = $4,
+             executive_summary = $5,
+             abstract = $6,
+             summarized_at = now()
+         WHERE id = $1`,
+        [
+          versionId,
+          "# Quarterly Report\n\n## Revenue\n\n| Quarter | Total |\n| --- | --- |\n| Q1 | 12.4M |\n",
+          JSON.stringify({ title: "Quarterly Report", authors: ["A. Analyst"], documentType: "report" }),
+          "Chat Snippet for a model to read.",
+          "## Key points\n\nThe Executive Summary a human sees first.",
+          "The Abstract, short enough to skim in a list.",
+        ],
+      );
+    }
+
+    it("includes each Document's Abstract in the list, but not its Executive Summary or Markdown", async () => {
+      const session = await loginAsNewUser("nbk7-list@example.com");
+      const notebookId = await createNotebook(session, "Summarized");
+      const upload = await uploadFile(session, notebookId, "quarterly.md", "# Quarterly Report");
+      const { latestVersion } = upload.json() as { latestVersion: { id: string } };
+      await seedSummaries(latestVersion.id);
+
+      const response = await app.inject({
+        method: "GET",
+        url: `/notebooks/${notebookId}/documents`,
+        cookies: { session },
+      });
+
+      expect(response.statusCode).toBe(200);
+      const [document] = response.json() as Array<Record<string, unknown>>;
+      expect(document.status).toBe("summarized");
+      expect(document.abstract).toBe("The Abstract, short enough to skim in a list.");
+      // A 200-page document's content must not ride along on a list request.
+      expect(document).not.toHaveProperty("markdown");
+      expect(document).not.toHaveProperty("executiveSummary");
+    });
+
+    it("reports a null Abstract for a Document that hasn't been summarized yet", async () => {
+      const session = await loginAsNewUser("nbk7-list-pending@example.com");
+      const notebookId = await createNotebook(session, "Not yet summarized");
+      await uploadFile(session, notebookId, "fresh.md", "# Fresh");
+
+      const response = await app.inject({
+        method: "GET",
+        url: `/notebooks/${notebookId}/documents`,
+        cookies: { session },
+      });
+
+      const [document] = response.json() as Array<{ status: string; abstract: string | null }>;
+      expect(document.status).toBe("queued");
+      expect(document.abstract).toBeNull();
+    });
+
+    it("serves the Executive Summary, Chat Snippet and metadata on the Document detail", async () => {
+      const session = await loginAsNewUser("nbk7-detail@example.com");
+      const notebookId = await createNotebook(session, "Detail");
+      const upload = await uploadFile(session, notebookId, "quarterly.md", "# Quarterly Report");
+      const { id: documentId, latestVersion } = upload.json() as {
+        id: string;
+        latestVersion: { id: string };
+      };
+      await seedSummaries(latestVersion.id);
+
+      const response = await app.inject({
+        method: "GET",
+        url: `/notebooks/${notebookId}/documents/${documentId}`,
+        cookies: { session },
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = response.json() as Record<string, unknown>;
+      expect(body.id).toBe(documentId);
+      expect(body.executiveSummary).toBe("## Key points\n\nThe Executive Summary a human sees first.");
+      expect(body.abstract).toBe("The Abstract, short enough to skim in a list.");
+      expect(body.chatSnippet).toBe("Chat Snippet for a model to read.");
+      expect(body.metadata).toMatchObject({ title: "Quarterly Report", documentType: "report" });
+      // Still not the full content: that is a deliberate second request,
+      // made only when the user expands past the Executive Summary.
+      expect(body).not.toHaveProperty("markdown");
+    });
+
+    it("returns 404 for a Document detail that doesn't exist", async () => {
+      const session = await loginAsNewUser("nbk7-detail-404@example.com");
+      const notebookId = await createNotebook(session, "Missing detail");
+
+      const response = await app.inject({
+        method: "GET",
+        url: `/notebooks/${notebookId}/documents/00000000-0000-0000-0000-000000000000`,
+        cookies: { session },
+      });
+
+      expect(response.statusCode).toBe(404);
+    });
+
+    it("serves the Converted Markdown for a Version on its own endpoint", async () => {
+      const session = await loginAsNewUser("nbk7-content@example.com");
+      const notebookId = await createNotebook(session, "Content");
+      const upload = await uploadFile(session, notebookId, "quarterly.md", "# Quarterly Report");
+      const { id: documentId, latestVersion } = upload.json() as {
+        id: string;
+        latestVersion: { id: string };
+      };
+      await seedSummaries(latestVersion.id);
+
+      const response = await app.inject({
+        method: "GET",
+        url: `/notebooks/${notebookId}/documents/${documentId}/versions/${latestVersion.id}/content`,
+        cookies: { session },
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = response.json() as { markdown: string | null };
+      // Markdown, not pre-rendered HTML: the structure (headings, tables)
+      // has to survive to the client so it can render it as such.
+      expect(body.markdown).toContain("## Revenue");
+      expect(body.markdown).toContain("| Q1 | 12.4M |");
+    });
+
+    it("rejects unauthenticated reads of the detail and the content with 401", async () => {
+      const session = await loginAsNewUser("nbk7-guard@example.com");
+      const notebookId = await createNotebook(session, "Guarded");
+      const upload = await uploadFile(session, notebookId, "guarded.md", "# Guarded");
+      const { id: documentId, latestVersion } = upload.json() as {
+        id: string;
+        latestVersion: { id: string };
+      };
+
+      for (const url of [
+        `/notebooks/${notebookId}/documents/${documentId}`,
+        `/notebooks/${notebookId}/documents/${documentId}/versions/${latestVersion.id}/content`,
+      ]) {
+        expect((await app.inject({ method: "GET", url })).statusCode).toBe(401);
+      }
+    });
+  });
+
   // Per ADR-0001 (shared Notebook access despite full attribution): Documents
   // are not owned by the user who uploaded them, so there is deliberately no
   // ownership check on any Document route. This proves that's not an

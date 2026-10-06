@@ -29,7 +29,7 @@ _Avoid_: conversation, session.
 ### Ingestion
 
 **Ingestion**:
-The background pipeline that turns an uploaded Document Version into something chat can be grounded in. It runs as a chain of independently retryable **Stages**, each one enqueuing the next on success; stage 1 is conversion to Markdown. A Document Version's progress through it is its status: `queued` → `converting` → `converted` or `failed`.
+The background pipeline that turns an uploaded Document Version into something chat can be grounded in. It runs as a chain of independently retryable **Stages**, each one enqueuing the next on success; stage 1 is conversion to Markdown and stage 2 is metadata extraction plus the three Generated document artifacts. A Document Version's progress through it is its status: `queued` → `converting` → `converted` → `summarizing` → `summarized`, or `failed` for whichever Stage exhausted its retries. A Stage whose failure will still be retried returns the Version to the status it consumes, not to `failed`.
 _Avoid_: processing, indexing (reserve "indexing" for the embedding/retrieval stage specifically), import.
 
 **Converted Markdown**:

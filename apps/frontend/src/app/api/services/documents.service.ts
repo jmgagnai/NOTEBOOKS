@@ -13,6 +13,10 @@ import { deleteDocument } from '../fn/documents/delete-document';
 import { DeleteDocument$Params } from '../fn/documents/delete-document';
 import { downloadDocumentVersion } from '../fn/documents/download-document-version';
 import { DownloadDocumentVersion$Params } from '../fn/documents/download-document-version';
+import { getDocument } from '../fn/documents/get-document';
+import { GetDocument$Params } from '../fn/documents/get-document';
+import { getDocumentVersionContent } from '../fn/documents/get-document-version-content';
+import { GetDocumentVersionContent$Params } from '../fn/documents/get-document-version-content';
 import { listDocuments } from '../fn/documents/list-documents';
 import { ListDocuments$Params } from '../fn/documents/list-documents';
 import { restoreDocument } from '../fn/documents/restore-document';
@@ -43,7 +47,8 @@ export class DocumentsService extends BaseService {
 'id': string;
 'notebookId': string;
 'filename': string;
-'status': 'queued' | 'converting' | 'converted' | 'failed';
+'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'failed';
+'abstract': string | null;
 'createdAt': string;
 'latestVersion': {
 'id': string;
@@ -71,7 +76,8 @@ export class DocumentsService extends BaseService {
 'id': string;
 'notebookId': string;
 'filename': string;
-'status': 'queued' | 'converting' | 'converted' | 'failed';
+'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'failed';
+'abstract': string | null;
 'createdAt': string;
 'latestVersion': {
 'id': string;
@@ -86,7 +92,8 @@ export class DocumentsService extends BaseService {
 'id': string;
 'notebookId': string;
 'filename': string;
-'status': 'queued' | 'converting' | 'converted' | 'failed';
+'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'failed';
+'abstract': string | null;
 'createdAt': string;
 'latestVersion': {
 'id': string;
@@ -99,7 +106,8 @@ export class DocumentsService extends BaseService {
 'id': string;
 'notebookId': string;
 'filename': string;
-'status': 'queued' | 'converting' | 'converted' | 'failed';
+'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'failed';
+'abstract': string | null;
 'createdAt': string;
 'latestVersion': {
 'id': string;
@@ -128,7 +136,8 @@ export class DocumentsService extends BaseService {
 'id': string;
 'notebookId': string;
 'filename': string;
-'status': 'queued' | 'converting' | 'converted' | 'failed';
+'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'failed';
+'abstract': string | null;
 'createdAt': string;
 'latestVersion': {
 'id': string;
@@ -156,7 +165,8 @@ export class DocumentsService extends BaseService {
 'id': string;
 'notebookId': string;
 'filename': string;
-'status': 'queued' | 'converting' | 'converted' | 'failed';
+'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'failed';
+'abstract': string | null;
 'createdAt': string;
 'latestVersion': {
 'id': string;
@@ -171,7 +181,8 @@ export class DocumentsService extends BaseService {
 'id': string;
 'notebookId': string;
 'filename': string;
-'status': 'queued' | 'converting' | 'converted' | 'failed';
+'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'failed';
+'abstract': string | null;
 'createdAt': string;
 'latestVersion': {
 'id': string;
@@ -184,7 +195,8 @@ export class DocumentsService extends BaseService {
 'id': string;
 'notebookId': string;
 'filename': string;
-'status': 'queued' | 'converting' | 'converted' | 'failed';
+'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'failed';
+'abstract': string | null;
 'createdAt': string;
 'latestVersion': {
 'id': string;
@@ -193,6 +205,115 @@ export class DocumentsService extends BaseService {
 'sizeBytes': number;
 'createdAt': string;
 };
+} => r.body);
+  }
+
+  /** Path part for operation `getDocument()` */
+  static readonly GetDocumentPath = '/notebooks/{notebookId}/documents/{documentId}';
+
+  /**
+   * Get one Document with its latest Version's extracted metadata and generated summaries (Abstract, Executive Summary, Chat Snippet).
+   *
+   *
+   *
+   * This method provides access to the full `HttpResponse`, allowing access to response headers.
+   * To access only the response body, use `getDocument()` instead.
+   *
+   * This method doesn't expect any request body.
+   */
+  getDocument$Response(params: GetDocument$Params, context?: HttpContext): Promise<StrictHttpResponse<{
+'id': string;
+'notebookId': string;
+'filename': string;
+'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'failed';
+'abstract': string | null;
+'createdAt': string;
+'latestVersion': {
+'id': string;
+'versionNumber': number;
+'mimeType': string;
+'sizeBytes': number;
+'createdAt': string;
+};
+'metadata': ({
+[key: string]: any;
+}) | null;
+'chatSnippet': string | null;
+'executiveSummary': string | null;
+}>> {
+    const obs = getDocument(this.http, this.rootUrl, params, context);
+    return firstValueFrom(obs);
+  }
+
+  /**
+   * Get one Document with its latest Version's extracted metadata and generated summaries (Abstract, Executive Summary, Chat Snippet).
+   *
+   *
+   *
+   * This method provides access only to the response body.
+   * To access the full response (for headers, for example), `getDocument$Response()` instead.
+   *
+   * This method doesn't expect any request body.
+   */
+  getDocument(params: GetDocument$Params, context?: HttpContext): Promise<{
+'id': string;
+'notebookId': string;
+'filename': string;
+'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'failed';
+'abstract': string | null;
+'createdAt': string;
+'latestVersion': {
+'id': string;
+'versionNumber': number;
+'mimeType': string;
+'sizeBytes': number;
+'createdAt': string;
+};
+'metadata': ({
+[key: string]: any;
+}) | null;
+'chatSnippet': string | null;
+'executiveSummary': string | null;
+}> {
+    const resp = this.getDocument$Response(params, context);
+    return resp.then((r: StrictHttpResponse<{
+'id': string;
+'notebookId': string;
+'filename': string;
+'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'failed';
+'abstract': string | null;
+'createdAt': string;
+'latestVersion': {
+'id': string;
+'versionNumber': number;
+'mimeType': string;
+'sizeBytes': number;
+'createdAt': string;
+};
+'metadata': ({
+[key: string]: any;
+}) | null;
+'chatSnippet': string | null;
+'executiveSummary': string | null;
+}>): {
+'id': string;
+'notebookId': string;
+'filename': string;
+'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'failed';
+'abstract': string | null;
+'createdAt': string;
+'latestVersion': {
+'id': string;
+'versionNumber': number;
+'mimeType': string;
+'sizeBytes': number;
+'createdAt': string;
+};
+'metadata': ({
+[key: string]: any;
+}) | null;
+'chatSnippet': string | null;
+'executiveSummary': string | null;
 } => r.body);
   }
 
@@ -229,6 +350,51 @@ export class DocumentsService extends BaseService {
     return resp.then((r: StrictHttpResponse<'null'>): 'null' => r.body);
   }
 
+  /** Path part for operation `getDocumentVersionContent()` */
+  static readonly GetDocumentVersionContentPath = '/notebooks/{notebookId}/documents/{documentId}/versions/{versionId}/content';
+
+  /**
+   * Get the Converted Markdown of a Document Version.
+   *
+   *
+   *
+   * This method provides access to the full `HttpResponse`, allowing access to response headers.
+   * To access only the response body, use `getDocumentVersionContent()` instead.
+   *
+   * This method doesn't expect any request body.
+   */
+  getDocumentVersionContent$Response(params: GetDocumentVersionContent$Params, context?: HttpContext): Promise<StrictHttpResponse<{
+'versionId': string;
+'markdown': string | null;
+}>> {
+    const obs = getDocumentVersionContent(this.http, this.rootUrl, params, context);
+    return firstValueFrom(obs);
+  }
+
+  /**
+   * Get the Converted Markdown of a Document Version.
+   *
+   *
+   *
+   * This method provides access only to the response body.
+   * To access the full response (for headers, for example), `getDocumentVersionContent$Response()` instead.
+   *
+   * This method doesn't expect any request body.
+   */
+  getDocumentVersionContent(params: GetDocumentVersionContent$Params, context?: HttpContext): Promise<{
+'versionId': string;
+'markdown': string | null;
+}> {
+    const resp = this.getDocumentVersionContent$Response(params, context);
+    return resp.then((r: StrictHttpResponse<{
+'versionId': string;
+'markdown': string | null;
+}>): {
+'versionId': string;
+'markdown': string | null;
+} => r.body);
+  }
+
   /** Path part for operation `restoreDocument()` */
   static readonly RestoreDocumentPath = '/notebooks/{notebookId}/documents/{documentId}/restore';
 
@@ -246,7 +412,8 @@ export class DocumentsService extends BaseService {
 'id': string;
 'notebookId': string;
 'filename': string;
-'status': 'queued' | 'converting' | 'converted' | 'failed';
+'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'failed';
+'abstract': string | null;
 'createdAt': string;
 'latestVersion': {
 'id': string;
@@ -274,7 +441,8 @@ export class DocumentsService extends BaseService {
 'id': string;
 'notebookId': string;
 'filename': string;
-'status': 'queued' | 'converting' | 'converted' | 'failed';
+'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'failed';
+'abstract': string | null;
 'createdAt': string;
 'latestVersion': {
 'id': string;
@@ -289,7 +457,8 @@ export class DocumentsService extends BaseService {
 'id': string;
 'notebookId': string;
 'filename': string;
-'status': 'queued' | 'converting' | 'converted' | 'failed';
+'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'failed';
+'abstract': string | null;
 'createdAt': string;
 'latestVersion': {
 'id': string;
@@ -302,7 +471,8 @@ export class DocumentsService extends BaseService {
 'id': string;
 'notebookId': string;
 'filename': string;
-'status': 'queued' | 'converting' | 'converted' | 'failed';
+'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'failed';
+'abstract': string | null;
 'createdAt': string;
 'latestVersion': {
 'id': string;

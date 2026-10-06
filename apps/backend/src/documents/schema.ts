@@ -11,11 +11,23 @@ export const documentVersionSchema = z.object({
 });
 export type DocumentVersion = z.infer<typeof documentVersionSchema>;
 
-// Where a Document Version is in the ingestion pipeline (NBK-6). Stage 1 is
-// Markdown conversion: an upload is enqueued ("queued"), a worker picks it up
-// ("converting"), and it ends "converted" or "failed". Later stages add their
-// own values to this progression rather than a parallel field.
-export const documentStatusSchema = z.enum(["queued", "converting", "converted", "failed"]);
+// Where a Document Version is in the ingestion pipeline. Stage 1 is Markdown
+// conversion (NBK-6): an upload is enqueued ("queued"), a worker picks it up
+// ("converting"), and it reaches "converted". Stage 2 is metadata extraction
+// and the three Generated document artifacts (NBK-7), chained off stage 1:
+// it picks a converted Version up ("summarizing") and leaves it
+// "summarized" — the state stage 3 (chunking) will consume. "failed" is
+// terminal for whichever stage exhausted its retries; `ingestion_error` says
+// which and why. Later stages add their own values to this progression
+// rather than a parallel field.
+export const documentStatusSchema = z.enum([
+  "queued",
+  "converting",
+  "converted",
+  "summarizing",
+  "summarized",
+  "failed",
+]);
 export type DocumentStatus = z.infer<typeof documentStatusSchema>;
 
 // A Document as returned over the API. See GLOSSARY.md: "a source file
@@ -26,17 +38,56 @@ export type DocumentStatus = z.infer<typeof documentStatusSchema>;
 // `status` is the latest Version's ingestion status, mirrored onto the
 // Document so the UI has one field to render a badge from. It is derived, not
 // stored: `document_versions.ingestion_status` is the single source of truth.
+// `abstract` is the latest Version's Abstract — 50-100 words, per
+// GLOSSARY.md "used in search results, search-result previews, and document
+// cards". It is on the list payload precisely because that is where cards
+// are rendered. Null until ingestion stage 2 has run. The Executive Summary
+// and the Converted Markdown deliberately are NOT here: a Notebook's list
+// must not carry 1-2 pages (let alone 200) per Document.
 export const documentSchema = z.object({
   id: z.string().uuid(),
   notebookId: z.string().uuid(),
   filename: z.string(),
   status: documentStatusSchema,
+  abstract: z.string().nullable(),
   createdAt: z.string().datetime({ offset: true }),
   latestVersion: documentVersionSchema,
 });
 export type Document = z.infer<typeof documentSchema>;
 
 export const listDocumentsResponseSchema = z.array(documentSchema);
+
+// Metadata extracted from a Document Version by ingestion stage 2 (NBK-7).
+// Open-ended on purpose: what an extractor finds varies by document kind, so
+// this mirrors the JSONB column it comes out of rather than freezing a field
+// list the API would have to version.
+export const documentMetadataResponseSchema = z.record(z.unknown()).nullable();
+
+// A Document opened on its own. Carries what a reader needs *before* they ask
+// for the full content: per GLOSSARY.md the Executive Summary is "shown first
+// when a user opens a document, before they choose to view the full converted
+// content (which may run past 200 pages)". That content comes from
+// `GET .../versions/:versionId/content` instead, on expand.
+//
+// `chatSnippet` is included for completeness and operability — it is the
+// model-facing artifact, and being able to see what chat will be grounded in
+// is worth more than hiding it.
+export const documentDetailSchema = documentSchema.extend({
+  metadata: documentMetadataResponseSchema,
+  chatSnippet: z.string().nullable(),
+  executiveSummary: z.string().nullable(),
+});
+export type DocumentDetail = z.infer<typeof documentDetailSchema>;
+
+// The Converted Markdown of one Version. Markdown, not rendered HTML: per
+// NBK-1 the client renders "the full Document content ... with its original
+// structure (headings, tables, etc.)", so the structure has to reach it
+// intact. Null if stage 1 hasn't run yet.
+export const documentContentSchema = z.object({
+  versionId: z.string().uuid(),
+  markdown: z.string().nullable(),
+});
+export type DocumentContent = z.infer<typeof documentContentSchema>;
 
 export const notebookIdParamsSchema = z.object({
   notebookId: z.string().uuid(),
@@ -55,3 +106,8 @@ export const documentVersionDownloadParamsSchema = z.object({
   versionId: z.string().uuid(),
 });
 export type DocumentVersionDownloadParams = z.infer<typeof documentVersionDownloadParamsSchema>;
+
+// Same shape as the download params; named separately so the two operations
+// read independently in the generated OpenAPI document and client.
+export const documentVersionContentParamsSchema = documentVersionDownloadParamsSchema;
+export type DocumentVersionContentParams = z.infer<typeof documentVersionContentParamsSchema>;

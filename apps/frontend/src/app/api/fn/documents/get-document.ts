@@ -8,12 +8,12 @@ import { StrictHttpResponse } from '../../strict-http-response';
 import { RequestBuilder } from '../../request-builder';
 
 
-export interface RestoreDocument$Params {
+export interface GetDocument$Params {
   notebookId: string;
   documentId: string;
 }
 
-export function restoreDocument(http: HttpClient, rootUrl: string, params: RestoreDocument$Params, context?: HttpContext): Observable<StrictHttpResponse<{
+export function getDocument(http: HttpClient, rootUrl: string, params: GetDocument$Params, context?: HttpContext): Observable<StrictHttpResponse<{
 'id': string;
 'notebookId': string;
 'filename': string;
@@ -27,8 +27,13 @@ export function restoreDocument(http: HttpClient, rootUrl: string, params: Resto
 'sizeBytes': number;
 'createdAt': string;
 };
+'metadata': ({
+[key: string]: any;
+}) | null;
+'chatSnippet': string | null;
+'executiveSummary': string | null;
 }>> {
-  const rb = new RequestBuilder(rootUrl, restoreDocument.PATH, 'post');
+  const rb = new RequestBuilder(rootUrl, getDocument.PATH, 'get');
   if (params) {
     rb.path('notebookId', params.notebookId, {});
     rb.path('documentId', params.documentId, {});
@@ -53,9 +58,14 @@ export function restoreDocument(http: HttpClient, rootUrl: string, params: Resto
       'sizeBytes': number;
       'createdAt': string;
       };
+      'metadata': ({
+      [key: string]: any;
+      }) | null;
+      'chatSnippet': string | null;
+      'executiveSummary': string | null;
       }>;
     })
   );
 }
 
-restoreDocument.PATH = '/notebooks/{notebookId}/documents/{documentId}/restore';
+getDocument.PATH = '/notebooks/{notebookId}/documents/{documentId}';

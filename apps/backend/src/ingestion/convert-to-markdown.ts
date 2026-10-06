@@ -42,6 +42,18 @@ export interface ConvertToMarkdownDeps {
   convertToMarkdown: MarkdownConverter;
   /** Parent directory for this job's scratch files. Defaults to the OS temp dir. */
   tempDir?: string;
+  /**
+   * Hands this Document Version to ingestion stage 2 (NBK-7). This is the
+   * chaining ADR-0004 describes — "each stage ... on success enqueues the
+   * next" — and it is a plain callback rather than a `JobQueue` because
+   * `startJobQueue` builds the queue *from* these deps, so depending on the
+   * queue here would be circular.
+   *
+   * Omitted, conversion still succeeds and the Version simply stays
+   * "converted" — which is what keeps this handler testable without stage 2
+   * in the picture.
+   */
+  enqueueSummarizeDocument?: (payload: { documentId: string; versionId: string }) => Promise<void>;
 }
 
 export interface ConvertToMarkdownInvocation {
@@ -159,6 +171,24 @@ export async function runConvertToMarkdownJob(
 
     const markdown = await readFile(outputPath, "utf8");
     await transitionTo(pool, version, "converted", { markdown, error: null });
+
+    // Enqueued after the Converted Markdown is committed, never before: a
+    // stage-2 job that out-ran its own input would find nothing to read.
+    //
+    // A failure to hand over is thrown rather than logged, unlike the upload
+    // route's enqueue (see documents/routes.ts). There, swallowing it was
+    // right because the caller was a user's HTTP request and the Version's
+    // "queued" status recorded the work still owed. Here the caller is
+    // already a retryable job, and a swallowed failure would leave the
+    // Version sitting at "converted" with nothing coming for it. Re-running
+    // the conversion on the retry is wasted work; a silently stalled
+    // pipeline is a bug.
+    if (deps.enqueueSummarizeDocument) {
+      await deps.enqueueSummarizeDocument({
+        documentId: payload.documentId,
+        versionId: payload.versionId,
+      });
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     await transitionTo(pool, version, willRetry ? "queued" : "failed", { error: message });

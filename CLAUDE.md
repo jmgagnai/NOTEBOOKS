@@ -1,10 +1,17 @@
 ## Local setup
 
-`pnpm install` does not install everything. Ingestion stage 1 converts
-documents by spawning a one-shot Docling container, so its image has to be
-pulled separately — see `docs/ingestion-docling.md`. Tests stub that
-boundary, so `pnpm test` is green without the image; running the backend is
-not.
+`pnpm install` does not install everything. Two external boundaries have to
+be set up separately, and tests stub both — so `pnpm test` is green without
+either, while running the backend is not:
+
+- **Ingestion stage 1** converts documents by spawning a one-shot Docling
+  container, so its image has to be pulled. See `docs/ingestion-docling.md`.
+- **Ingestion stage 2** extracts metadata and generates the three summaries
+  via OpenRouter, so `OPENROUTER_API_KEY` must be in `.env`. Without it the
+  backend starts and says so, but Documents stop at the `converted` status.
+  See `docs/ingestion-summaries.md`.
+
+No test makes a real OpenRouter call.
 
 ## Agent skills
 

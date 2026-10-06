@@ -243,6 +243,56 @@ describe("convert-to-Markdown job", () => {
     expect(version.ingestion_error).toContain("transient docling crash");
   });
 
+  // Per ADR-0004 and GLOSSARY.md, Ingestion is "a chain of independently
+  // retryable Stages, each one enqueuing the next on success". Stage 2
+  // (NBK-7) is the first stage to be on the receiving end of that, so the
+  // handler has to actually hand over.
+  it("enqueues ingestion stage 2 once conversion succeeds, and not when it fails", async () => {
+    const enqueued: { documentId: string; versionId: string }[] = [];
+    const enqueueSummarizeDocument = async (payload: { documentId: string; versionId: string }) => {
+      enqueued.push(payload);
+    };
+
+    const converted = await seedUploadedVersion("chained.txt", "chain me");
+    await runConvertToMarkdownJob(
+      {
+        pool,
+        s3,
+        documentsBucket: DOCUMENTS_BUCKET,
+        tempDir: tempRoot,
+        enqueueSummarizeDocument,
+        convertToMarkdown: async ({ outputPath }) => {
+          await writeFile(outputPath, "# Chained\n", "utf8");
+        },
+      },
+      { payload: { documentId: converted.documentId, versionId: converted.versionId }, willRetry: false },
+    );
+
+    expect(enqueued).toEqual([{ documentId: converted.documentId, versionId: converted.versionId }]);
+
+    // A failed conversion produces no Converted Markdown, so there is
+    // nothing for stage 2 to read — handing over would only queue a job
+    // guaranteed to fail.
+    const failed = await seedUploadedVersion("unchained.txt", "no chain");
+    await expect(
+      runConvertToMarkdownJob(
+        {
+          pool,
+          s3,
+          documentsBucket: DOCUMENTS_BUCKET,
+          tempDir: tempRoot,
+          enqueueSummarizeDocument,
+          convertToMarkdown: async () => {
+            throw new Error("conversion failed");
+          },
+        },
+        { payload: { documentId: failed.documentId, versionId: failed.versionId }, willRetry: false },
+      ),
+    ).rejects.toThrow("conversion failed");
+
+    expect(enqueued).toHaveLength(1);
+  });
+
   it("does nothing for a Document Version that no longer exists", async () => {
     await expect(
       runConvertToMarkdownJob(

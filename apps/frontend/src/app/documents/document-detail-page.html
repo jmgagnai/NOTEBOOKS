@@ -1,0 +1,66 @@
+<mat-card class="document-detail-page">
+  <mat-card-content>
+    <a class="document-detail-page__back" [routerLink]="['/notebooks', notebookId]">&larr; Back to the Notebook</a>
+
+    @if (store.openDocumentLoading()) {
+      <mat-progress-spinner mode="indeterminate" diameter="32" />
+    } @else if (store.error(); as error) {
+      <p class="document-detail-page__error">{{ error }}</p>
+    } @else if (store.openDocument(); as document) {
+      <h1 class="document-detail-page__filename">{{ document.filename }}</h1>
+      <p class="document-detail-page__meta-line">
+        <span [class]="'document-detail-page__badge document-detail-page__badge--' + document.status">{{
+          document.status
+        }}</span>
+        <span>v{{ document.latestVersion.versionNumber }}</span>
+      </p>
+
+      @if (metadataEntries().length > 0) {
+        <dl class="document-detail-page__metadata">
+          @for (entry of metadataEntries(); track entry.label) {
+            <dt>{{ entry.label }}</dt>
+            <dd>{{ entry.value }}</dd>
+          }
+        </dl>
+      }
+
+      <!--
+        The Executive Summary comes first, per GLOSSARY.md — it is the 1-2
+        page artifact "shown first when a user opens a document".
+      -->
+      <section class="document-detail-page__summary">
+        <h2>Executive Summary</h2>
+        @if (document.executiveSummary) {
+          <app-markdown-view [markdown]="document.executiveSummary" />
+        } @else {
+          <p class="document-detail-page__pending">
+            The Executive Summary is still being generated for this Document.
+          </p>
+        }
+      </section>
+
+      <!--
+        Expanding to the full Converted Markdown is a deliberate action: that
+        content may run past 200 pages, so it is neither fetched nor rendered
+        until it is asked for.
+      -->
+      <section class="document-detail-page__content">
+        <button mat-button type="button" (click)="toggleFullContent()">
+          {{ expanded() ? 'Hide full content' : 'Show full content' }}
+        </button>
+
+        @if (expanded()) {
+          @if (store.openContentLoading()) {
+            <mat-progress-spinner mode="indeterminate" diameter="32" />
+          } @else if (store.openContent()?.markdown; as markdown) {
+            <app-markdown-view [markdown]="markdown" />
+          } @else {
+            <p class="document-detail-page__pending">
+              This Document has not been converted to Markdown yet.
+            </p>
+          }
+        }
+      </section>
+    }
+  </mat-card-content>
+</mat-card>

@@ -4,6 +4,8 @@ import { createPool } from "./db/pool.js";
 import { createAppEventSubscriber } from "./events/bus.js";
 import { createDoclingConverter } from "./ingestion/docling.js";
 import { startJobQueue } from "./jobs/queue.js";
+import { resolveTaskModels } from "./llm/models.js";
+import { createOpenRouterCompleter } from "./llm/openrouter.js";
 import { createS3Client, ensureBucket } from "./storage/s3-client.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
@@ -15,6 +17,11 @@ const MINIO_ENDPOINT = process.env.MINIO_ENDPOINT ?? "http://localhost:9000";
 const MINIO_ACCESS_KEY = process.env.MINIO_ACCESS_KEY ?? "rag_notebook";
 const MINIO_SECRET_KEY = process.env.MINIO_SECRET_KEY ?? "rag_notebook_secret";
 const DOCUMENTS_BUCKET = process.env.DOCUMENTS_BUCKET ?? "rag-notebook-documents";
+
+// Ingestion stage 2 (NBK-7) calls OpenRouter for metadata extraction and the
+// three generated summaries. Which model runs which task is server-side
+// configuration only (see llm/models.ts) — never user-selectable, per NBK-1.
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 
 async function main(): Promise<void> {
   const pool = createPool(DATABASE_URL);
@@ -35,6 +42,17 @@ async function main(): Promise<void> {
   // This single process both serves HTTP and works jobs, which is the right
   // shape for a dev/small deployment; splitting them later means starting
   // one process without `worker` and one without `app.listen`.
+  // Without a key, stage 1 still runs and stage 2 simply has no worker: an
+  // upload is converted and then waits at "converted". Said out loud at
+  // startup, because a silently half-run pipeline is a trap.
+  if (!OPENROUTER_API_KEY) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      "OPENROUTER_API_KEY is not set: ingestion stage 2 (metadata + summaries) will not run, " +
+        "and Documents will stop at the \"converted\" status.",
+    );
+  }
+
   const jobs = await startJobQueue({
     connectionString: DATABASE_URL,
     worker: {
@@ -42,6 +60,12 @@ async function main(): Promise<void> {
       s3,
       documentsBucket: DOCUMENTS_BUCKET,
       convertToMarkdown: createDoclingConverter(),
+      ...(OPENROUTER_API_KEY
+        ? {
+            complete: createOpenRouterCompleter({ apiKey: OPENROUTER_API_KEY }),
+            models: resolveTaskModels(),
+          }
+        : {}),
     },
   });
 

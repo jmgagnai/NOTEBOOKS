@@ -23,8 +23,12 @@ export type { ListDocuments$Params as ListDocuments$Params } from './fn/document
 export { listDocuments as listDocuments } from './fn/documents/list-documents';
 export type { UploadDocument$Params as UploadDocument$Params } from './fn/documents/upload-document';
 export { uploadDocument as uploadDocument } from './fn/documents/upload-document';
+export type { GetDocument$Params as GetDocument$Params } from './fn/documents/get-document';
+export { getDocument as getDocument } from './fn/documents/get-document';
 export type { DeleteDocument$Params as DeleteDocument$Params } from './fn/documents/delete-document';
 export { deleteDocument as deleteDocument } from './fn/documents/delete-document';
+export type { GetDocumentVersionContent$Params as GetDocumentVersionContent$Params } from './fn/documents/get-document-version-content';
+export { getDocumentVersionContent as getDocumentVersionContent } from './fn/documents/get-document-version-content';
 export type { RestoreDocument$Params as RestoreDocument$Params } from './fn/documents/restore-document';
 export { restoreDocument as restoreDocument } from './fn/documents/restore-document';
 export type { DownloadDocumentVersion$Params as DownloadDocumentVersion$Params } from './fn/documents/download-document-version';

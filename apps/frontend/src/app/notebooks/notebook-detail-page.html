@@ -31,33 +31,63 @@
     } @else if (store.documents().length === 0) {
       <p>No Documents yet.</p>
     } @else {
-      <mat-list>
+      <!--
+        Document cards, not a flat list: per NBK-7 a card carries the
+        Document's Abstract (GLOSSARY.md: the 50-100 word artifact written
+        "to be skimmed in a list"), so each entry needs room for a line or
+        two of prose under its filename.
+      -->
+      <ul class="notebook-detail-page__cards">
         @for (document of store.documents(); track document.id) {
-          <mat-list-item class="notebook-detail-page__item">
-            <span class="notebook-detail-page__filename">{{ document.filename }}</span>
-            <span [class]="'notebook-detail-page__badge notebook-detail-page__badge--' + document.status">{{
-              document.status
-            }}</span>
-            <span class="notebook-detail-page__version">v{{ document.latestVersion.versionNumber }}</span>
-            <button
-              mat-button
-              type="button"
-              [attr.aria-label]="'Download ' + document.filename"
-              (click)="download(document)"
-            >
-              Download
-            </button>
-            <button
-              mat-button
-              type="button"
-              [attr.aria-label]="'Delete ' + document.filename"
-              (click)="delete(document)"
-            >
-              Delete
-            </button>
-          </mat-list-item>
+          <li class="notebook-detail-page__card">
+            <div class="notebook-detail-page__card-head">
+              <span class="notebook-detail-page__filename">{{ document.filename }}</span>
+              <span [class]="'notebook-detail-page__badge notebook-detail-page__badge--' + document.status">{{
+                document.status
+              }}</span>
+              <span class="notebook-detail-page__version">v{{ document.latestVersion.versionNumber }}</span>
+            </div>
+
+            @if (document.abstract) {
+              <p class="notebook-detail-page__abstract">{{ document.abstract }}</p>
+            } @else {
+              <p class="notebook-detail-page__abstract notebook-detail-page__abstract--pending">
+                Abstract not generated yet.
+              </p>
+            }
+
+            <div class="notebook-detail-page__card-actions">
+              <!--
+                Opening the Document is where its Executive Summary and the
+                full converted content live (NBK-7).
+              -->
+              <a
+                mat-button
+                [routerLink]="['/notebooks', notebookId, 'documents', document.id]"
+                [attr.aria-label]="'Open ' + document.filename"
+              >
+                Open
+              </a>
+              <button
+                mat-button
+                type="button"
+                [attr.aria-label]="'Download ' + document.filename"
+                (click)="download(document)"
+              >
+                Download
+              </button>
+              <button
+                mat-button
+                type="button"
+                [attr.aria-label]="'Delete ' + document.filename"
+                (click)="delete(document)"
+              >
+                Delete
+              </button>
+            </div>
+          </li>
         }
-      </mat-list>
+      </ul>
     }
   </mat-card-content>
 </mat-card>

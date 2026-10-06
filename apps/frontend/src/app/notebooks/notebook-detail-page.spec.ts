@@ -292,6 +292,139 @@ describe('NotebookDetailPage', () => {
     expect(screen.queryByText('failed')).toBeNull();
   });
 
+  // NBK-7: "Document cards show the Abstract". Per GLOSSARY.md the Abstract
+  // is the 50-100 word artifact "used in search results, search-result
+  // previews, and document cards" — so this is the one summary that belongs
+  // in a list, and it has to be visible without opening anything.
+  describe('NBK-7: the Abstract on a Document card', () => {
+    function summarizedDocument(overrides: Partial<Record<string, unknown>> = {}) {
+      return {
+        id: 'doc-7',
+        notebookId: NOTEBOOK_ID,
+        filename: 'quarterly.pdf',
+        status: 'summarized',
+        abstract: 'A quarterly report covering revenue growth and supply-chain risk across three regions.',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        latestVersion: {
+          id: 'v-11',
+          versionNumber: 1,
+          mimeType: 'application/pdf',
+          sizeBytes: 100,
+          createdAt: '2026-01-01T00:00:00.000Z',
+        },
+        ...overrides,
+      };
+    }
+
+    it("shows the Abstract on the Document's card, and links to the Document", async () => {
+      const listNotebooks = vi.fn().mockResolvedValue([]);
+      const listDocuments = vi.fn().mockResolvedValue([summarizedDocument()]);
+
+      await render(NotebookDetailPage, {
+        providers: [
+          activatedRouteFor(NOTEBOOK_ID),
+          { provide: NotebooksService, useValue: { listNotebooks } },
+          { provide: DocumentsService, useValue: { listDocuments } },
+          { provide: DocumentTransferService, useValue: {} },
+          appEventsStub().provider,
+        ],
+      });
+
+      expect(await screen.findByText('quarterly.pdf')).toBeTruthy();
+      expect(
+        screen.getByText(
+          'A quarterly report covering revenue growth and supply-chain risk across three regions.',
+        ),
+      ).toBeTruthy();
+
+      // Opening the Document is where the Executive Summary lives, so the
+      // card has to get the user there.
+      const open = screen.getByRole('link', { name: 'Open quarterly.pdf' });
+      expect(open.getAttribute('href')).toBe(`/notebooks/${NOTEBOOK_ID}/documents/doc-7`);
+    });
+
+    it('says the Abstract is still being generated while ingestion has not produced one', async () => {
+      const listNotebooks = vi.fn().mockResolvedValue([]);
+      const listDocuments = vi
+        .fn()
+        .mockResolvedValue([summarizedDocument({ status: 'converting', abstract: null })]);
+
+      await render(NotebookDetailPage, {
+        providers: [
+          activatedRouteFor(NOTEBOOK_ID),
+          { provide: NotebooksService, useValue: { listNotebooks } },
+          { provide: DocumentsService, useValue: { listDocuments } },
+          { provide: DocumentTransferService, useValue: {} },
+          appEventsStub().provider,
+        ],
+      });
+
+      await screen.findByText('quarterly.pdf');
+      // An empty card would read as "this document says nothing"; the status
+      // badge alone doesn't explain the missing summary.
+      expect(screen.getByText('Abstract not generated yet.')).toBeTruthy();
+    });
+
+    // The pipeline now has a second stage, so the badge has two more states
+    // to show. And because an app event carries only *what changed* — per
+    // ADR-0004 it has to stay well inside Postgres's 8000-byte NOTIFY cap —
+    // the newly generated Abstract is not in the event. Reaching
+    // "summarized" is the cue to re-read that one Document over the normal
+    // API, which is the ADR's "an event is a hint" contract made concrete.
+    it('tracks the stage-2 statuses live, then re-reads the Document to pick up its Abstract', async () => {
+      const listNotebooks = vi.fn().mockResolvedValue([]);
+      const listDocuments = vi
+        .fn()
+        .mockResolvedValue([summarizedDocument({ status: 'converted', abstract: null })]);
+      const getDocument = vi.fn().mockResolvedValue(
+        summarizedDocument({ status: 'summarized', abstract: 'The freshly generated Abstract.' }),
+      );
+      const appEvents = appEventsStub();
+
+      await render(NotebookDetailPage, {
+        providers: [
+          activatedRouteFor(NOTEBOOK_ID),
+          { provide: NotebooksService, useValue: { listNotebooks } },
+          { provide: DocumentsService, useValue: { listDocuments, getDocument } },
+          { provide: DocumentTransferService, useValue: {} },
+          appEvents.provider,
+        ],
+      });
+
+      await screen.findByText('quarterly.pdf');
+      expect(screen.getByText('converted')).toBeTruthy();
+      expect(screen.getByText('Abstract not generated yet.')).toBeTruthy();
+
+      appEvents.events.next({
+        id: 'event-s1',
+        type: 'document-version-status-changed',
+        topic: `notebook:${NOTEBOOK_ID}`,
+        occurredAt: '2026-01-01T00:00:01.000Z',
+        data: { documentId: 'doc-7', versionId: 'v-11', status: 'summarizing' },
+      });
+      expect(await screen.findByText('summarizing')).toBeTruthy();
+      // An in-progress stage is not a reason to re-read anything.
+      expect(getDocument).not.toHaveBeenCalled();
+
+      appEvents.events.next({
+        id: 'event-s2',
+        type: 'document-version-status-changed',
+        topic: `notebook:${NOTEBOOK_ID}`,
+        occurredAt: '2026-01-01T00:00:02.000Z',
+        data: { documentId: 'doc-7', versionId: 'v-11', status: 'summarized' },
+      });
+
+      const badge = await screen.findByText('summarized');
+      expect(badge.className).toContain('notebook-detail-page__badge--summarized');
+      // The Abstract arrives from the re-read, not from the event.
+      expect(await screen.findByText('The freshly generated Abstract.')).toBeTruthy();
+      expect(getDocument).toHaveBeenCalledWith({ notebookId: NOTEBOOK_ID, documentId: 'doc-7' });
+      // The whole list was never re-fetched — only the one Document that
+      // changed.
+      expect(listDocuments).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it('downloads a Document Version through the transfer service', async () => {
     const listNotebooks = vi.fn().mockResolvedValue([]);
     const existingDocument = {

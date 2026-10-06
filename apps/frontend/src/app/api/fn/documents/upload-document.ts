@@ -16,7 +16,8 @@ export function uploadDocument(http: HttpClient, rootUrl: string, params: Upload
 'id': string;
 'notebookId': string;
 'filename': string;
-'status': 'queued' | 'converting' | 'converted' | 'failed';
+'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'failed';
+'abstract': string | null;
 'createdAt': string;
 'latestVersion': {
 'id': string;
@@ -40,7 +41,8 @@ export function uploadDocument(http: HttpClient, rootUrl: string, params: Upload
       'id': string;
       'notebookId': string;
       'filename': string;
-      'status': 'queued' | 'converting' | 'converted' | 'failed';
+      'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'failed';
+      'abstract': string | null;
       'createdAt': string;
       'latestVersion': {
       'id': string;

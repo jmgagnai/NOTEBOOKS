@@ -8,6 +8,7 @@ import { runMigrations } from "../src/db/migrate.js";
 import { createPool } from "../src/db/pool.js";
 import { startJobQueue, type JobQueue } from "../src/jobs/queue.js";
 import type { MarkdownConverter } from "../src/ingestion/docling.js";
+import type { ChatCompleter } from "../src/llm/openrouter.js";
 import { createS3Client, ensureBucket, getObject, putObject } from "../src/storage/s3-client.js";
 import { startMinio } from "./support/minio-container.js";
 
@@ -58,6 +59,7 @@ describe("job queue", () => {
   async function start(options: {
     schema: string;
     convertToMarkdown?: MarkdownConverter;
+    complete?: ChatCompleter;
     retryLimit?: number;
   }): Promise<JobQueue> {
     const queue = await startJobQueue({
@@ -69,7 +71,15 @@ describe("job queue", () => {
       retryDelaySeconds: 0,
       pollingIntervalSeconds: 0.5,
       worker: options.convertToMarkdown
-        ? { pool, s3, documentsBucket: DOCUMENTS_BUCKET, convertToMarkdown: options.convertToMarkdown }
+        ? {
+            pool,
+            s3,
+            documentsBucket: DOCUMENTS_BUCKET,
+            convertToMarkdown: options.convertToMarkdown,
+            // Stage 2 (NBK-7) only has a worker when a completer is given,
+            // so the stage-1-only tests below stay exactly as they were.
+            ...(options.complete ? { complete: options.complete } : {}),
+          }
         : undefined,
     });
     started.push(queue);
@@ -158,6 +168,47 @@ describe("job queue", () => {
     const chunks: Buffer[] = [];
     for await (const chunk of stored.body) chunks.push(Buffer.from(chunk));
     expect(Buffer.concat(chunks).toString("utf8")).toBe("survives a failure");
+  });
+
+  // ADR-0004's chaining, end to end through pg_boss: one enqueue of stage 1
+  // must carry a Document Version all the way to "summarized" (NBK-7),
+  // across two separate queues with two separate retry policies. The
+  // handler-level half of this is in convert-to-markdown.job.test.ts; what's
+  // under test here is that the two queues are actually wired together.
+  it("chains stage 1 into stage 2, carrying a Version through to 'summarized'", async () => {
+    const seeded = await seedUploadedVersion("chained.txt", "convert then summarize");
+
+    // Stubbed at the ChatCompleter rather than at `fetch`: this file is
+    // about queue wiring, and OpenRouter request/response handling is
+    // covered at its HTTP boundary in summarize-document.job.test.ts.
+    const complete: ChatCompleter = async ({ system }) => {
+      if (system.includes("extract bibliographic metadata")) {
+        return '{"title":"Chained","authors":[],"documentType":"note","language":"en","publishedOn":null,"keywords":[]}';
+      }
+      if (system.includes("summarize one section")) return "A section summary.";
+      // Enough words to satisfy the widest range (Executive Summary), so no
+      // artifact triggers a corrective rewrite.
+      return Array.from({ length: 600 }, (_, i) => `w${i}`).join(" ");
+    };
+
+    const queue = await start({ schema: "pgboss_chain", convertToMarkdown: passthrough, complete });
+    await queue.enqueueConvertToMarkdown({
+      documentId: seeded.documentId,
+      versionId: seeded.versionId,
+    });
+
+    const version = await waitForStatus(seeded.versionId, ["summarized", "failed"]);
+    expect(version.ingestion_status).toBe("summarized");
+    // Stage 1's output is still there, and stage 2's is on top of it.
+    expect(version.markdown).toContain("convert then summarize");
+
+    const { rows } = await pool.query<{ abstract: string | null; chat_snippet: string | null; metadata: unknown }>(
+      "SELECT abstract, chat_snippet, metadata FROM document_versions WHERE id = $1",
+      [seeded.versionId],
+    );
+    expect(rows[0].abstract).toBeTruthy();
+    expect(rows[0].chat_snippet).toBeTruthy();
+    expect(rows[0].metadata).toMatchObject({ title: "Chained" });
   });
 
   it("completes a job enqueued before the backend started", async () => {

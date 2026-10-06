@@ -14,21 +14,36 @@ export interface DocumentVersion {
 }
 
 /**
- * Where a Document's latest Version is in the ingestion pipeline (NBK-6).
- * Mirrors the backend's `documentStatusSchema`.
+ * Where a Document's latest Version is in the ingestion pipeline. Mirrors the
+ * backend's `documentStatusSchema`: stage 1 is conversion (NBK-6), stage 2 is
+ * metadata extraction and the three generated summaries (NBK-7).
  */
-export type DocumentStatus = 'queued' | 'converting' | 'converted' | 'failed';
+export type DocumentStatus =
+  | 'queued'
+  | 'converting'
+  | 'converted'
+  | 'summarizing'
+  | 'summarized'
+  | 'failed';
 
 // A Document as returned over the API. See GLOSSARY.md: "a source file
 // uploaded into a Notebook, tracked through successive Document Versions."
 // `status` is its latest Version's ingestion status, which the background
-// pipeline (NBK-6) advances — so it changes under the UI's feet, which is
-// what `watchNotebook` below is for.
+// pipeline (NBK-6, NBK-7) advances — so it changes under the UI's feet, which
+// is what `watchNotebook` below is for.
+//
+// `abstract` is the 50-100 word artifact GLOSSARY.md assigns to "search
+// results, search-result previews, and document cards" — the only one of the
+// three summaries the list payload carries, because the Executive Summary
+// (1-2 pages) and the Converted Markdown (up to 200+ pages) would make
+// browsing a Notebook download every document in it. Null until ingestion
+// stage 2 has run.
 export interface Document {
   id: string;
   notebookId: string;
   filename: string;
   status: DocumentStatus;
+  abstract: string | null;
   createdAt: string;
   latestVersion: DocumentVersion;
 }
@@ -55,11 +70,34 @@ function asStatusChange(event: AppEvent): DocumentVersionStatusChanged | null {
   return { documentId, versionId, status: status as DocumentStatus };
 }
 
+// A Document opened on its own (NBK-7): the Document plus its latest
+// Version's extracted metadata and the two summaries that don't belong in a
+// list. Per GLOSSARY.md the Executive Summary is what a reader sees first,
+// "before they choose to view the full converted content".
+export interface DocumentDetail extends Document {
+  metadata: Record<string, unknown> | null;
+  chatSnippet: string | null;
+  executiveSummary: string | null;
+}
+
+// The Converted Markdown of one Version, fetched only when a reader expands
+// past the Executive Summary. Held separately from the Document because it
+// can run past 200 pages — nothing should load it by accident.
+export interface DocumentContent {
+  versionId: string;
+  markdown: string | null;
+}
+
 interface DocumentsState {
   documents: Document[];
   loading: boolean;
   uploading: boolean;
   error: string | null;
+  // The currently open Document, and its content once expanded.
+  openDocument: DocumentDetail | null;
+  openDocumentLoading: boolean;
+  openContent: DocumentContent | null;
+  openContentLoading: boolean;
   // The most recently deleted Document, kept around so the UI can offer an
   // "Undo" action that restores it (mirrors NotebooksStore's lastDeleted,
   // NBK-4) — `GET .../documents` never returns soft-deleted Documents, so
@@ -72,6 +110,10 @@ const initialState: DocumentsState = {
   loading: false,
   uploading: false,
   error: null,
+  openDocument: null,
+  openDocumentLoading: false,
+  openContent: null,
+  openContentLoading: false,
   lastDeleted: null,
 };
 
@@ -125,6 +167,63 @@ export const DocumentsStore = signalStore(
             error: errorMessage(err, 'Failed to load Documents.'),
           });
         }
+      },
+
+      /**
+       * Loads one Document with its metadata and summaries (NBK-7) — what a
+       * Document's own page shows. Deliberately a separate call from
+       * `loadDocuments`: the Executive Summary runs to 1-2 pages, so it
+       * belongs on an opened Document and not on every card in a list.
+       */
+      async loadDocument(notebookId: string, documentId: string): Promise<void> {
+        // Any previously expanded content belongs to a different Document.
+        patchState(store, {
+          openDocumentLoading: true,
+          error: null,
+          openDocument: null,
+          openContent: null,
+        });
+        try {
+          const openDocument = (await documentsService.getDocument({
+            notebookId,
+            documentId,
+          })) as DocumentDetail;
+          patchState(store, { openDocument, openDocumentLoading: false });
+        } catch (err) {
+          patchState(store, {
+            openDocumentLoading: false,
+            error: errorMessage(err, 'Failed to load Document.'),
+          });
+        }
+      },
+
+      /**
+       * Fetches a Version's Converted Markdown — the "expand past the
+       * Executive Summary" step (NBK-7). Never called on open: this is the
+       * payload that can run past 200 pages, so it is only ever fetched
+       * because a reader asked for it, and only once per Version.
+       */
+      async loadDocumentContent(notebookId: string, documentId: string, versionId: string): Promise<void> {
+        if (store.openContent()?.versionId === versionId) return;
+        patchState(store, { openContentLoading: true, error: null });
+        try {
+          const openContent = await documentsService.getDocumentVersionContent({
+            notebookId,
+            documentId,
+            versionId,
+          });
+          patchState(store, { openContent, openContentLoading: false });
+        } catch (err) {
+          patchState(store, {
+            openContentLoading: false,
+            error: errorMessage(err, 'Failed to load the Document content.'),
+          });
+        }
+      },
+
+      /** Drops the open Document, so navigating away doesn't leak it. */
+      clearOpenDocument(): void {
+        patchState(store, { openDocument: null, openContent: null, error: null });
       },
 
       async uploadDocument(notebookId: string, file: File): Promise<void> {
@@ -200,16 +299,42 @@ export const DocumentsStore = signalStore(
         watching = appEvents.stream([`notebook:${notebookId}`]).subscribe((event) => {
           const change = asStatusChange(event);
           if (!change) return;
+          const target = store
+            .documents()
+            .find((document) => document.id === change.documentId && document.latestVersion.id === change.versionId);
+          // The badge shows the *latest* Version's status, so a late event
+          // about a Version that has since been superseded by a re-upload
+          // must not drag it backwards.
+          if (!target) return;
+
           patchState(store, {
-            documents: store.documents().map((document) => {
-              if (document.id !== change.documentId) return document;
-              // The badge shows the *latest* Version's status, so a late
-              // event about a Version that has since been superseded by a
-              // re-upload must not drag it backwards.
-              if (document.latestVersion.id !== change.versionId) return document;
-              return { ...document, status: change.status };
-            }),
+            documents: store
+              .documents()
+              .map((document) => (document === target ? { ...document, status: change.status } : document)),
           });
+
+          // An app event carries *what changed*, never bulk data — per
+          // ADR-0004 a NOTIFY payload must stay well inside Postgres's
+          // 8000-byte cap — so the newly generated Abstract is not in it.
+          // Reaching "summarized" (NBK-7) is therefore the cue to re-read
+          // this one Document over the normal API, which is exactly the
+          // "an event is a hint; re-read the truth" contract the ADR sets.
+          if (change.status === 'summarized') {
+            void documentsService
+              .getDocument({ notebookId, documentId: change.documentId })
+              .then((fresh) => {
+                patchState(store, {
+                  documents: store
+                    .documents()
+                    .map((document) => (document.id === fresh.id ? { ...document, ...fresh } : document)),
+                });
+              })
+              .catch(() => {
+                // The badge is already correct; failing to enrich it with an
+                // Abstract is not worth an error banner over a background
+                // event the user never asked for.
+              });
+          }
         });
       },
 

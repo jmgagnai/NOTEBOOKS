@@ -11,6 +11,8 @@ import { getObject, putObject } from "../storage/s3-client.js";
 import { ACCEPTED_TYPES_DESCRIPTION, resolveAcceptedMimeType } from "./file-types.js";
 import {
   createDocumentVersion,
+  findDocumentContent,
+  findDocumentDetail,
   findDownloadableVersion,
   listDocuments,
   notebookExists,
@@ -18,8 +20,11 @@ import {
   softDeleteDocument,
 } from "./repository.js";
 import {
+  documentContentSchema,
+  documentDetailSchema,
   documentIdParamsSchema,
   documentSchema,
+  documentVersionContentParamsSchema,
   documentVersionDownloadParamsSchema,
   listDocumentsResponseSchema,
   notebookIdParamsSchema,
@@ -71,6 +76,68 @@ export function registerDocumentRoutes(
         return;
       }
       await reply.status(200).send(await listDocuments(pool, request.params.notebookId));
+    },
+  );
+
+  // Opening a Document (NBK-7): its Executive Summary, Abstract, Chat
+  // Snippet and extracted metadata — everything but the full Converted
+  // Markdown, which is a separate request because it can run past 200 pages.
+  app.withTypeProvider<ZodTypeProvider>().get(
+    "/notebooks/:notebookId/documents/:documentId",
+    {
+      preHandler: authGuard,
+      schema: {
+        operationId: "getDocument",
+        tags: ["documents"],
+        summary:
+          "Get one Document with its latest Version's extracted metadata and generated summaries (Abstract, Executive Summary, Chat Snippet)",
+        params: documentIdParamsSchema,
+        response: {
+          200: documentDetailSchema,
+          404: errorResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const document = await findDocumentDetail(pool, request.params.notebookId, request.params.documentId);
+      if (!document) {
+        await reply.status(404).send({ message: "Document not found." });
+        return;
+      }
+      await reply.status(200).send(document);
+    },
+  );
+
+  // Expanding past the Executive Summary (NBK-7). Markdown, not rendered
+  // HTML: the client renders the structure (headings, tables) itself, so the
+  // structure has to reach it intact.
+  app.withTypeProvider<ZodTypeProvider>().get(
+    "/notebooks/:notebookId/documents/:documentId/versions/:versionId/content",
+    {
+      preHandler: authGuard,
+      schema: {
+        operationId: "getDocumentVersionContent",
+        tags: ["documents"],
+        summary: "Get the Converted Markdown of a Document Version",
+        params: documentVersionContentParamsSchema,
+        response: {
+          200: documentContentSchema,
+          404: errorResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const content = await findDocumentContent(
+        pool,
+        request.params.notebookId,
+        request.params.documentId,
+        request.params.versionId,
+      );
+      if (!content) {
+        await reply.status(404).send({ message: "Document Version not found." });
+        return;
+      }
+      await reply.status(200).send(content);
     },
   );
 
