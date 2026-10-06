@@ -6,11 +6,13 @@ either, while running the backend is not:
 
 - **Ingestion stage 1** converts documents by spawning a one-shot Docling
   container, so its image has to be pulled. See `docs/ingestion-docling.md`.
-- **Ingestion stages 2 and 3** call OpenRouter — stage 2 for metadata and the
-  three summaries, stage 3 for chunk embeddings — so `OPENROUTER_API_KEY`
-  must be in `.env`. Without it the backend starts and says so, but Documents
-  stop at the `converted` status instead of reaching `ready`. See
-  `docs/ingestion-summaries.md` and `docs/ingestion-embeddings.md`.
+- **Ingestion stages 2 and 3, and search** call OpenRouter — stage 2 for
+  metadata and the three summaries, stage 3 for chunk embeddings, search for
+  the query's embedding — so `OPENROUTER_API_KEY` must be in `.env`. Without
+  it the backend starts and says so, but Documents stop at the `converted`
+  status instead of reaching `ready` and search answers 503. See
+  `docs/ingestion-summaries.md`, `docs/ingestion-embeddings.md` and
+  `docs/search.md`.
 
 No test makes a real OpenRouter call.
 

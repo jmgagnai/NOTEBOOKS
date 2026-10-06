@@ -51,10 +51,20 @@ async function main(): Promise<void> {
     // eslint-disable-next-line no-console
     console.warn(
       "OPENROUTER_API_KEY is not set: ingestion stage 2 (metadata + summaries) and stage 3 " +
-        "(chunking + embeddings) will not run, and Documents will stop at the \"converted\" " +
-        "status instead of reaching \"ready\".",
+        "(chunking + embeddings) will not run, Documents will stop at the \"converted\" " +
+        "status instead of reaching \"ready\", and search will answer 503 — it has to embed " +
+        "the query with the same model that embedded the chunks.",
     );
   }
+
+  // One embedder, two consumers: ingestion stage 3 embeds a Document
+  // Version's chunks with it, and search (NBK-9) embeds the incoming query
+  // with it. It has to be the same model on both sides — comparing vectors
+  // from two different models is meaningless — so they share one instance
+  // rather than each building their own.
+  const embed = OPENROUTER_API_KEY
+    ? createOpenRouterEmbedder({ apiKey: OPENROUTER_API_KEY, model: resolveEmbeddingModel() })
+    : undefined;
 
   const jobs = await startJobQueue({
     connectionString: DATABASE_URL,
@@ -67,16 +77,13 @@ async function main(): Promise<void> {
         ? {
             complete: createOpenRouterCompleter({ apiKey: OPENROUTER_API_KEY }),
             models: resolveTaskModels(),
-            embed: createOpenRouterEmbedder({
-              apiKey: OPENROUTER_API_KEY,
-              model: resolveEmbeddingModel(),
-            }),
+            embed,
           }
         : {}),
     },
   });
 
-  const app = await buildApp({ pool, s3, documentsBucket: DOCUMENTS_BUCKET, jobs, appEvents });
+  const app = await buildApp({ pool, s3, documentsBucket: DOCUMENTS_BUCKET, jobs, appEvents, embed });
   await app.listen({ port: PORT, host: "0.0.0.0" });
   // eslint-disable-next-line no-console
   console.log(`Backend listening on :${PORT}`);

@@ -7,7 +7,15 @@ import type {
   DocumentVersion,
 } from "./schema.js";
 
-interface DocumentWithLatestVersionRow {
+/**
+ * Exactly the columns a `Document` (as the API returns it) is built from — a
+ * Document joined to its latest Version.
+ *
+ * Exported, with {@link toDocument}, because search (NBK-9) returns the same
+ * shape out of a different query: a search result *is* a Document card plus
+ * a score, so the two must not drift into two mappings of one row.
+ */
+export interface DocumentRow {
   id: string;
   notebook_id: string;
   filename: string;
@@ -20,6 +28,9 @@ interface DocumentWithLatestVersionRow {
   ingestion_status: DocumentStatus;
   // Ingestion stage 2's output (NBK-7). Null until it has run.
   abstract: string | null;
+}
+
+interface DocumentWithLatestVersionRow extends DocumentRow {
   chat_snippet: string | null;
   executive_summary: string | null;
   metadata: Record<string, unknown> | null;
@@ -59,7 +70,8 @@ const SELECT_DOCUMENTS_WITH_LATEST_VERSION = `
 // Markdown can run past 200 pages, so it is never selected alongside a list
 // of Documents — `findDocumentContent` fetches it for one Version on demand.
 
-function toDocument(row: DocumentWithLatestVersionRow): Document {
+/** Maps one {@link DocumentRow} to the `Document` the API publishes. */
+export function toDocument(row: DocumentRow): Document {
   const latestVersion: DocumentVersion = {
     id: row.version_id,
     versionNumber: row.version_number,

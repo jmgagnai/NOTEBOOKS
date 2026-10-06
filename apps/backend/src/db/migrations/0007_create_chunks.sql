@@ -54,6 +54,13 @@ CREATE INDEX IF NOT EXISTS idx_chunks_document_version
 -- 4000 half-precision dimensions) or reducing the dimension — either way a
 -- decision for the retrieval ticket, with real data to measure, not a guess
 -- made here.
+--
+-- RESOLVED by NBK-9: it stays exact. Measured on a realistic corpus, an HNSW
+-- index on a duplicated halfvec column cannot even serve the query search
+-- actually runs (a MIN()/GROUP BY roll-up per Document, not ORDER BY ...
+-- LIMIT k), and the exact scan is a fraction of the OpenRouter round trip
+-- that embeds the query. See docs/adr/0005-exact-vector-scan-over-ann-index.md
+-- and the measurement in docs/search.md.
 
 -- Stage 3 extends the same status progression as stages 1 and 2 (see the 0005
 -- and 0006 comments) rather than adding a parallel field. A Version stage 2

@@ -1,0 +1,70 @@
+<mat-card class="search-page">
+  <mat-card-header>
+    <mat-card-title>Search {{ notebook()?.title ?? 'this Notebook' }}</mat-card-title>
+  </mat-card-header>
+
+  <mat-card-content>
+    <a class="search-page__back" [routerLink]="['/notebooks', notebookId]">&larr; Back to the Notebook</a>
+
+    <form class="search-page__form" (submit)="$event.preventDefault(); submit()">
+      <label class="search-page__field">
+        Search this Notebook
+        <input
+          type="search"
+          name="q"
+          aria-label="Search this Notebook"
+          placeholder="Keywords or a topic"
+          [value]="draft()"
+          (input)="onDraftInput($event)"
+        />
+      </label>
+      <button mat-button type="submit">Search</button>
+    </form>
+
+    @if (store.searching()) {
+      <mat-progress-spinner mode="indeterminate" diameter="32" />
+    } @else if (store.error(); as error) {
+      <p class="search-page__error">{{ error }}</p>
+    } @else if (!store.searched()) {
+      <p class="search-page__hint">
+        Search finds Documents by meaning, not just by the words you type. Only Documents that have
+        finished ingesting are searched.
+      </p>
+    } @else if (store.results().length === 0) {
+      <p class="search-page__empty">No Documents in this Notebook match "{{ store.query() }}".</p>
+    } @else {
+      <!--
+        Result cards, each led by its Abstract: per GLOSSARY.md the Abstract
+        is the artifact "used in search results, search-result previews, and
+        document cards", and NBK-1's story is judging relevance before
+        opening the document.
+      -->
+      <ul class="search-page__results">
+        @for (result of store.results(); track result.id) {
+          <li class="search-page__result">
+            <div class="search-page__result-head">
+              <span class="search-page__filename">{{ result.filename }}</span>
+              <span class="search-page__version">v{{ result.latestVersion.versionNumber }}</span>
+            </div>
+
+            @if (result.abstract) {
+              <p class="search-page__abstract">{{ result.abstract }}</p>
+            } @else {
+              <p class="search-page__abstract search-page__abstract--pending">
+                Abstract not generated yet.
+              </p>
+            }
+
+            <a
+              mat-button
+              [routerLink]="['/notebooks', notebookId, 'documents', result.id]"
+              [attr.aria-label]="'Open ' + result.filename"
+            >
+              Open
+            </a>
+          </li>
+        }
+      </ul>
+    }
+  </mat-card-content>
+</mat-card>

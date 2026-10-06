@@ -19,6 +19,8 @@ export type { RenameNotebook$Params as RenameNotebook$Params } from './fn/notebo
 export { renameNotebook as renameNotebook } from './fn/notebooks/rename-notebook';
 export type { RestoreNotebook$Params as RestoreNotebook$Params } from './fn/notebooks/restore-notebook';
 export { restoreNotebook as restoreNotebook } from './fn/notebooks/restore-notebook';
+export type { SearchNotebook$Params as SearchNotebook$Params } from './fn/search/search-notebook';
+export { searchNotebook as searchNotebook } from './fn/search/search-notebook';
 export type { ListDocuments$Params as ListDocuments$Params } from './fn/documents/list-documents';
 export { listDocuments as listDocuments } from './fn/documents/list-documents';
 export type { UploadDocument$Params as UploadDocument$Params } from './fn/documents/upload-document';
