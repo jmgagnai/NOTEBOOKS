@@ -7,11 +7,17 @@ const NOTEBOOK_ID = '11111111-1111-1111-1111-111111111111';
 const DOCUMENT_ID = '22222222-2222-2222-2222-222222222222';
 const VERSION_ID = '33333333-3333-3333-3333-333333333333';
 
-function activatedRoute() {
+// A Citation opens this page with the Document Version it pinned, the chunk
+// it points at and that chunk's character range in the Converted Markdown —
+// see `ChatPanel.citationParams`.
+function activatedRoute(queryParams: Record<string, string> = {}) {
   return {
     provide: ActivatedRoute,
     useValue: {
-      snapshot: { paramMap: convertToParamMap({ notebookId: NOTEBOOK_ID, documentId: DOCUMENT_ID }) },
+      snapshot: {
+        paramMap: convertToParamMap({ notebookId: NOTEBOOK_ID, documentId: DOCUMENT_ID }),
+        queryParamMap: convertToParamMap(queryParams),
+      },
     },
   };
 }
@@ -173,5 +179,128 @@ describe('DocumentDetailPage', () => {
     });
 
     expect(await screen.findByText('Document not found.')).toBeTruthy();
+  });
+
+  /**
+   * Seam-3 tests for the other half of NBK-12's acceptance criteria:
+   * "clicking a Citation in the Angular UI opens that exact Document Version,
+   * scrolled to that chunk's location".
+   *
+   * The Document on this page is at v2, so a Citation to v1 is the real case:
+   * GLOSSARY.md requires that following it still open "that exact Version at
+   * that location, even after newer Versions exist". A page that quietly
+   * loaded the latest Version instead would look right and be wrong.
+   */
+  describe('opened from a Citation', () => {
+    const OLD_VERSION_ID = '44444444-4444-4444-4444-444444444444';
+    const CHUNK_ID = '55555555-5555-5555-5555-555555555555';
+
+    // The paragraph "Revenue grew to 12.4M." in FULL_MARKDOWN, as a chunk's
+    // character range would have it: a verbatim, contiguous slice.
+    const CITED_FROM = FULL_MARKDOWN.indexOf('Revenue grew to 12.4M.');
+    const CITED_TO = CITED_FROM + 'Revenue grew to 12.4M.'.length;
+
+    const SUPERSEDED_MARKDOWN = FULL_MARKDOWN;
+
+    function citationRoute(extra: Record<string, string> = {}) {
+      return activatedRoute({
+        version: OLD_VERSION_ID,
+        chunk: CHUNK_ID,
+        from: String(CITED_FROM),
+        to: String(CITED_TO),
+        ...extra,
+      });
+    }
+
+    it('loads the pinned Document Version rather than the latest one', async () => {
+      const getDocument = vi.fn().mockResolvedValue(SUMMARIZED_DETAIL);
+      const getDocumentVersionContent = vi
+        .fn()
+        .mockResolvedValue({ versionId: OLD_VERSION_ID, markdown: SUPERSEDED_MARKDOWN });
+
+      await render(DocumentDetailPage, {
+        providers: [
+          citationRoute(),
+          { provide: DocumentsService, useValue: { getDocument, getDocumentVersionContent } },
+        ],
+      });
+
+      // Opened at the content, not behind the "Show full content" action: a
+      // reader who followed a Citation asked for a passage, not for a summary.
+      expect(await screen.findByText('Revenue grew to 12.4M.')).toBeTruthy();
+      expect(getDocumentVersionContent).toHaveBeenCalledWith({
+        notebookId: NOTEBOOK_ID,
+        documentId: DOCUMENT_ID,
+        // The pinned Version — SUMMARIZED_DETAIL's latest is VERSION_ID (v2).
+        versionId: OLD_VERSION_ID,
+      });
+      expect(getDocumentVersionContent).not.toHaveBeenCalledWith(
+        expect.objectContaining({ versionId: VERSION_ID }),
+      );
+    });
+
+    it('says the Version it opened is a superseded one', async () => {
+      const getDocument = vi.fn().mockResolvedValue(SUMMARIZED_DETAIL);
+      const getDocumentVersionContent = vi
+        .fn()
+        .mockResolvedValue({ versionId: OLD_VERSION_ID, markdown: SUPERSEDED_MARKDOWN });
+
+      await render(DocumentDetailPage, {
+        providers: [
+          citationRoute(),
+          { provide: DocumentsService, useValue: { getDocument, getDocumentVersionContent } },
+        ],
+      });
+
+      // Otherwise a reader comparing the passage against the Document's own
+      // "v2" badge has no way to tell that the difference is the point.
+      expect(await screen.findByTestId('cited-version-notice')).toBeTruthy();
+      expect(screen.getByTestId('cited-version-notice').textContent).toMatch(/no longer the latest/i);
+    });
+
+    it("marks the passage at the cited chunk's location", async () => {
+      const getDocument = vi.fn().mockResolvedValue(SUMMARIZED_DETAIL);
+      const getDocumentVersionContent = vi
+        .fn()
+        .mockResolvedValue({ versionId: OLD_VERSION_ID, markdown: SUPERSEDED_MARKDOWN });
+
+      await render(DocumentDetailPage, {
+        providers: [
+          citationRoute(),
+          { provide: DocumentsService, useValue: { getDocument, getDocumentVersionContent } },
+        ],
+      });
+
+      // The cited range resolves to the block of the rendered Markdown it
+      // falls in — that element is what gets scrolled to, so it is the
+      // observable form of "scrolled to that chunk's location".
+      const cited = await screen.findByTestId('cited-passage');
+      expect(cited.textContent).toContain('Revenue grew to 12.4M.');
+      // And only that passage: the heading above it and the table below are
+      // not swept into the highlight.
+      expect(cited.textContent).not.toContain('Quarterly Report 2025');
+      expect(cited.textContent).not.toContain('Q1');
+      // The rest of the document is still there to read around it.
+      expect(screen.getByRole('heading', { name: 'Revenue' })).toBeTruthy();
+    });
+
+    it('opens the pinned Version unscrolled when the Citation has no range', async () => {
+      const getDocument = vi.fn().mockResolvedValue(SUMMARIZED_DETAIL);
+      const getDocumentVersionContent = vi
+        .fn()
+        .mockResolvedValue({ versionId: OLD_VERSION_ID, markdown: SUPERSEDED_MARKDOWN });
+
+      await render(DocumentDetailPage, {
+        providers: [
+          // A Citation whose chunk text could not be located in the Converted
+          // Markdown carries no `from`/`to` — the Version must still open.
+          activatedRoute({ version: OLD_VERSION_ID, chunk: CHUNK_ID }),
+          { provide: DocumentsService, useValue: { getDocument, getDocumentVersionContent } },
+        ],
+      });
+
+      expect(await screen.findByText('Revenue grew to 12.4M.')).toBeTruthy();
+      expect(screen.queryByTestId('cited-passage')).toBeNull();
+    });
   });
 });

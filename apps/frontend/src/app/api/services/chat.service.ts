@@ -255,6 +255,18 @@ export class ChatService extends BaseService {
 'id': string;
 'email': string;
 };
+'citations': Array<{
+'id': string;
+'marker': number;
+'documentId': string;
+'documentVersionId': string;
+'versionNumber': number;
+'chunkId': string;
+'filename': string;
+'headingPath': Array<string>;
+'charStart': number | null;
+'charEnd': number | null;
+}>;
 'createdAt': string;
 }>>> {
     const obs = listChatMessages(this.http, this.rootUrl, params, context);
@@ -280,6 +292,18 @@ export class ChatService extends BaseService {
 'id': string;
 'email': string;
 };
+'citations': Array<{
+'id': string;
+'marker': number;
+'documentId': string;
+'documentVersionId': string;
+'versionNumber': number;
+'chunkId': string;
+'filename': string;
+'headingPath': Array<string>;
+'charStart': number | null;
+'charEnd': number | null;
+}>;
 'createdAt': string;
 }>> {
     const resp = this.listChatMessages$Response(params, context);
@@ -292,6 +316,18 @@ export class ChatService extends BaseService {
 'id': string;
 'email': string;
 };
+'citations': Array<{
+'id': string;
+'marker': number;
+'documentId': string;
+'documentVersionId': string;
+'versionNumber': number;
+'chunkId': string;
+'filename': string;
+'headingPath': Array<string>;
+'charStart': number | null;
+'charEnd': number | null;
+}>;
 'createdAt': string;
 }>>): Array<{
 'id': string;
@@ -302,6 +338,18 @@ export class ChatService extends BaseService {
 'id': string;
 'email': string;
 };
+'citations': Array<{
+'id': string;
+'marker': number;
+'documentId': string;
+'documentVersionId': string;
+'versionNumber': number;
+'chunkId': string;
+'filename': string;
+'headingPath': Array<string>;
+'charStart': number | null;
+'charEnd': number | null;
+}>;
 'createdAt': string;
 }> => r.body);
   }
@@ -312,7 +360,7 @@ export class ChatService extends BaseService {
   /**
    * Ask a question in a Chat Thread and get one grounded answer.
    *
-   * Retrieves the closest Chunks from the Notebook's latest-version, `ready` Documents and returns one complete answer. The answer is not streamed.
+   * Retrieves the closest Chunks from the Notebook's latest-version, `ready` Documents and returns one complete answer. The answer is not streamed. The answer message carries a Citation per source marker in its text, each pinned to the exact Document Version and chunk it was grounded in and persisted with the message.
    *
    * This method provides access to the full `HttpResponse`, allowing access to response headers.
    * To access only the response body, use `sendChatMessage()` instead.
@@ -329,6 +377,18 @@ export class ChatService extends BaseService {
 'id': string;
 'email': string;
 };
+'citations': Array<{
+'id': string;
+'marker': number;
+'documentId': string;
+'documentVersionId': string;
+'versionNumber': number;
+'chunkId': string;
+'filename': string;
+'headingPath': Array<string>;
+'charStart': number | null;
+'charEnd': number | null;
+}>;
 'createdAt': string;
 };
 'answer': {
@@ -340,6 +400,18 @@ export class ChatService extends BaseService {
 'id': string;
 'email': string;
 };
+'citations': Array<{
+'id': string;
+'marker': number;
+'documentId': string;
+'documentVersionId': string;
+'versionNumber': number;
+'chunkId': string;
+'filename': string;
+'headingPath': Array<string>;
+'charStart': number | null;
+'charEnd': number | null;
+}>;
 'createdAt': string;
 };
 }>> {
@@ -350,7 +422,7 @@ export class ChatService extends BaseService {
   /**
    * Ask a question in a Chat Thread and get one grounded answer.
    *
-   * Retrieves the closest Chunks from the Notebook's latest-version, `ready` Documents and returns one complete answer. The answer is not streamed.
+   * Retrieves the closest Chunks from the Notebook's latest-version, `ready` Documents and returns one complete answer. The answer is not streamed. The answer message carries a Citation per source marker in its text, each pinned to the exact Document Version and chunk it was grounded in and persisted with the message.
    *
    * This method provides access only to the response body.
    * To access the full response (for headers, for example), `sendChatMessage$Response()` instead.
@@ -367,6 +439,18 @@ export class ChatService extends BaseService {
 'id': string;
 'email': string;
 };
+'citations': Array<{
+'id': string;
+'marker': number;
+'documentId': string;
+'documentVersionId': string;
+'versionNumber': number;
+'chunkId': string;
+'filename': string;
+'headingPath': Array<string>;
+'charStart': number | null;
+'charEnd': number | null;
+}>;
 'createdAt': string;
 };
 'answer': {
@@ -378,6 +462,18 @@ export class ChatService extends BaseService {
 'id': string;
 'email': string;
 };
+'citations': Array<{
+'id': string;
+'marker': number;
+'documentId': string;
+'documentVersionId': string;
+'versionNumber': number;
+'chunkId': string;
+'filename': string;
+'headingPath': Array<string>;
+'charStart': number | null;
+'charEnd': number | null;
+}>;
 'createdAt': string;
 };
 }> {
@@ -392,6 +488,18 @@ export class ChatService extends BaseService {
 'id': string;
 'email': string;
 };
+'citations': Array<{
+'id': string;
+'marker': number;
+'documentId': string;
+'documentVersionId': string;
+'versionNumber': number;
+'chunkId': string;
+'filename': string;
+'headingPath': Array<string>;
+'charStart': number | null;
+'charEnd': number | null;
+}>;
 'createdAt': string;
 };
 'answer': {
@@ -403,6 +511,18 @@ export class ChatService extends BaseService {
 'id': string;
 'email': string;
 };
+'citations': Array<{
+'id': string;
+'marker': number;
+'documentId': string;
+'documentVersionId': string;
+'versionNumber': number;
+'chunkId': string;
+'filename': string;
+'headingPath': Array<string>;
+'charStart': number | null;
+'charEnd': number | null;
+}>;
 'createdAt': string;
 };
 }>): {
@@ -415,6 +535,18 @@ export class ChatService extends BaseService {
 'id': string;
 'email': string;
 };
+'citations': Array<{
+'id': string;
+'marker': number;
+'documentId': string;
+'documentVersionId': string;
+'versionNumber': number;
+'chunkId': string;
+'filename': string;
+'headingPath': Array<string>;
+'charStart': number | null;
+'charEnd': number | null;
+}>;
 'createdAt': string;
 };
 'answer': {
@@ -426,6 +558,18 @@ export class ChatService extends BaseService {
 'id': string;
 'email': string;
 };
+'citations': Array<{
+'id': string;
+'marker': number;
+'documentId': string;
+'documentVersionId': string;
+'versionNumber': number;
+'chunkId': string;
+'filename': string;
+'headingPath': Array<string>;
+'charStart': number | null;
+'charEnd': number | null;
+}>;
 'createdAt': string;
 };
 } => r.body);

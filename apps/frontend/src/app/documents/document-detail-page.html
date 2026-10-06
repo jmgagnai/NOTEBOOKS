@@ -24,6 +24,20 @@
         </dl>
       }
 
+      @if (viewingSupersededVersion()) {
+        <!--
+          Arrived from a Citation pointing at an older Version. Per
+          GLOSSARY.md that is exactly what a Citation is for — "even after
+          newer Versions exist" — so this says so rather than quietly showing
+          content that contradicts the v{{ document.latestVersion.versionNumber }}
+          badge above.
+        -->
+        <p class="document-detail-page__cited-notice" data-testid="cited-version-notice">
+          Opened from a Citation: this is the Document Version the answer cited, which is no longer
+          the latest.
+        </p>
+      }
+
       <!--
         The Executive Summary comes first, per GLOSSARY.md — it is the 1-2
         page artifact "shown first when a user opens a document".
@@ -53,7 +67,18 @@
           @if (store.openContentLoading()) {
             <mat-progress-spinner mode="indeterminate" diameter="32" />
           } @else if (store.openContent()?.markdown; as markdown) {
-            <app-markdown-view [markdown]="markdown" />
+            <!--
+              `highlightFrom`/`highlightTo` are the cited chunk's character
+              range, which the view resolves to the block it falls in and
+              scrolls to — "scrolled to that chunk's location" (NBK-12). Null
+              when the page was not opened from a Citation, which renders the
+              document exactly as before.
+            -->
+            <app-markdown-view
+              [markdown]="markdown"
+              [highlightFrom]="citedFrom"
+              [highlightTo]="citedTo"
+            />
           } @else {
             <p class="document-detail-page__pending">
               This Document has not been converted to Markdown yet.

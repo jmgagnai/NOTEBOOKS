@@ -87,7 +87,54 @@
               <span class="chat-panel__message-author" data-testid="chat-message-author">{{
                 author(message)
               }}</span>
-              <p class="chat-panel__message-content">{{ message.content }}</p>
+              <!--
+                The prose, with each source marker turned into a link to the
+                exact Document Version and chunk it cites (NBK-12). A marker
+                the backend recorded no Citation for stays plain text — it
+                named a passage the answer was not grounded in.
+              -->
+              <p class="chat-panel__message-content">
+                @for (segment of segments(message); track $index) {
+                  @if (segment.citation; as citation) {
+                    <a
+                      class="chat-panel__marker"
+                      [attr.aria-label]="'Source ' + citation.marker"
+                      [title]="citationName(citation) + ' (v' + citation.versionNumber + ')'"
+                      [routerLink]="citationLink(citation)"
+                      [queryParams]="citationParams(citation)"
+                      >{{ segment.text }}</a
+                    >
+                  } @else {
+                    <span>{{ segment.text }}</span>
+                  }
+                }
+              </p>
+
+              @if (message.citations.length > 0) {
+                <!--
+                  And the same Citations as a named list, so the sources are
+                  readable without hunting through the prose for brackets.
+                -->
+                <ul class="chat-panel__citations">
+                  @for (citation of message.citations; track citation.id) {
+                    <li class="chat-panel__citation" data-testid="chat-citation">
+                      <a
+                        [routerLink]="citationLink(citation)"
+                        [queryParams]="citationParams(citation)"
+                      >
+                        <span class="chat-panel__citation-marker">[{{ citation.marker }}]</span>
+                        <span class="chat-panel__citation-name">{{ citationName(citation) }}</span>
+                        <!--
+                          The Version is named, because a Citation may well
+                          point at a superseded one — and a reader who follows
+                          it needs to know that is deliberate.
+                        -->
+                        <span class="chat-panel__citation-version">v{{ citation.versionNumber }}</span>
+                      </a>
+                    </li>
+                  }
+                </ul>
+              }
             </li>
           }
         </ol>

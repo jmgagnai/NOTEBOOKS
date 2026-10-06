@@ -45,6 +45,42 @@ export type RenameChatThreadRequest = z.infer<typeof renameChatThreadRequestSche
 export const chatMessageRoleSchema = z.enum(["user", "assistant"]);
 export type ChatMessageRole = z.infer<typeof chatMessageRoleSchema>;
 
+// A Citation, as returned over the API. See GLOSSARY.md: "a pointer into one
+// specific Document Version at one specific chunk, surfaced in a chat answer
+// as a source reference. Following a Citation opens that exact Version at
+// that location, even after newer Versions exist."
+//
+// `documentVersionId` + `chunkId` is the pinned pair, recorded when the
+// answer was written. `documentId` and `versionNumber` ride along so a client
+// can build the link and say *which* Version it is opening without a second
+// round trip — they are read off the pinned Version, never off the Document's
+// current one.
+//
+// There is no display-label field: per NBK-12 a Citation's name derives from
+// the chunk's `headingPath` (plus the filename), which travels here as data
+// so the client can render it the way it needs to.
+//
+// `charStart`/`charEnd` are the chunk's half-open character range in that
+// Version's Converted Markdown — what "scrolled to that chunk's location"
+// resolves to. Null when the text could not be located (a Version with no
+// Converted Markdown), in which case following the Citation still opens the
+// right Version, just not scrolled.
+export const citationSchema = z.object({
+  id: z.string().uuid(),
+  // The marker as it appears in the answer text ("[2]"), so a client can
+  // match a marker in the prose to the Citation it refers to.
+  marker: z.number().int().positive(),
+  documentId: z.string().uuid(),
+  documentVersionId: z.string().uuid(),
+  versionNumber: z.number().int().positive(),
+  chunkId: z.string().uuid(),
+  filename: z.string(),
+  headingPath: z.array(z.string()),
+  charStart: z.number().int().nonnegative().nullable(),
+  charEnd: z.number().int().nonnegative().nullable(),
+});
+export type Citation = z.infer<typeof citationSchema>;
+
 // One message in a Chat Thread.
 //
 // `askedBy` is present on *both* roles, per GLOSSARY.md ("every message in it
@@ -52,12 +88,18 @@ export type ChatMessageRole = z.infer<typeof chatMessageRoleSchema>;
 // it, and for an answer it is the person whose question produced it. In a
 // Thread several people have contributed to, that is what lets a reader tell
 // whose exchange they are looking at.
+//
+// `citations` is the answer's sources (NBK-12), always present and empty for
+// a question — a question makes no claims. They are persisted with the
+// message rather than recomputed, so re-reading a Thread months later gives
+// back the same pinned Versions the answer was actually grounded in.
 export const chatMessageSchema = z.object({
   id: z.string().uuid(),
   threadId: z.string().uuid(),
   role: chatMessageRoleSchema,
   content: z.string(),
   askedBy: chatParticipantSchema,
+  citations: z.array(citationSchema),
   createdAt: z.string().datetime({ offset: true }),
 });
 export type ChatMessage = z.infer<typeof chatMessageSchema>;

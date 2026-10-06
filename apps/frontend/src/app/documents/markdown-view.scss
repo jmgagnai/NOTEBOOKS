@@ -6,6 +6,21 @@
   line-height: 1.6;
   overflow-wrap: break-word;
 
+  // One wrapper per top-level Markdown block, so a Citation's character
+  // range has something in the DOM to point at (NBK-12). Transparent by
+  // design — it must not change how the document reads.
+  &__block--cited {
+    // The passage a Citation landed on. Marked rather than merely scrolled
+    // to: a reader arriving mid-document needs to see *which* paragraph the
+    // answer's claim came from, not just roughly where it was.
+    background: var(--mat-sys-primary-container, #e8def8);
+    border-left: 3px solid var(--mat-sys-primary, #6750a4);
+    padding: 0.25rem 0.75rem;
+    margin: 0.5em 0;
+    border-radius: 0.25rem;
+    scroll-margin-top: 4rem;
+  }
+
   ::ng-deep {
     h1,
     h2,

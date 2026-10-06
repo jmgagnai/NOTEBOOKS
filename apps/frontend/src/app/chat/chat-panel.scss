@@ -136,9 +136,62 @@
   &__message-content {
     margin: 0;
     // Answers are Markdown prose with blank-line paragraph breaks; rendering
-    // them as Markdown is NBK-11/NBK-12 territory, so for now the line
-    // structure at least has to survive.
+    // them as Markdown is NBK-11 territory, so for now the line structure at
+    // least has to survive.
     white-space: pre-wrap;
+  }
+
+  // A source marker inside the prose (NBK-12). Deliberately small and
+  // unobtrusive: it has to be reachable without interrupting the sentence it
+  // sits in.
+  &__marker {
+    color: var(--mat-sys-primary, #6750a4);
+    font-size: 0.8em;
+    vertical-align: super;
+    text-decoration: none;
+    font-weight: 600;
+
+    &:hover,
+    &:focus-visible {
+      text-decoration: underline;
+    }
+  }
+
+  &__citations {
+    list-style: none;
+    margin: 0.5rem 0 0;
+    padding: 0.5rem 0 0;
+    border-top: 1px dashed var(--mat-sys-outline-variant, #ddd);
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    font-size: 0.8rem;
+  }
+
+  &__citation a {
+    display: flex;
+    align-items: baseline;
+    gap: 0.4rem;
+    color: inherit;
+    text-decoration: none;
+
+    &:hover,
+    &:focus-visible {
+      text-decoration: underline;
+    }
+  }
+
+  &__citation-marker {
+    color: var(--mat-sys-primary, #6750a4);
+    font-weight: 600;
+  }
+
+  // The Version a Citation pins. Shown on every Citation, not only superseded
+  // ones, so "v1" next to a Document now on v3 reads as information rather
+  // than as a bug.
+  &__citation-version {
+    color: var(--mat-sys-on-surface-variant, #666);
+    font-variant-numeric: tabular-nums;
   }
 
   &__composer {

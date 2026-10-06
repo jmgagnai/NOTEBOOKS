@@ -22,6 +22,18 @@ export function listChatMessages(http: HttpClient, rootUrl: string, params: List
 'id': string;
 'email': string;
 };
+'citations': Array<{
+'id': string;
+'marker': number;
+'documentId': string;
+'documentVersionId': string;
+'versionNumber': number;
+'chunkId': string;
+'filename': string;
+'headingPath': Array<string>;
+'charStart': number | null;
+'charEnd': number | null;
+}>;
 'createdAt': string;
 }>>> {
   const rb = new RequestBuilder(rootUrl, listChatMessages.PATH, 'get');
@@ -44,6 +56,18 @@ export function listChatMessages(http: HttpClient, rootUrl: string, params: List
       'id': string;
       'email': string;
       };
+      'citations': Array<{
+      'id': string;
+      'marker': number;
+      'documentId': string;
+      'documentVersionId': string;
+      'versionNumber': number;
+      'chunkId': string;
+      'filename': string;
+      'headingPath': Array<string>;
+      'charStart': number | null;
+      'charEnd': number | null;
+      }>;
       'createdAt': string;
       }>>;
     })

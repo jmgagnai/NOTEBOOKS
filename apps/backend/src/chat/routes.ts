@@ -4,7 +4,7 @@ import type { Pool } from "pg";
 import { createAuthGuard } from "../auth/guard.js";
 import { errorResponseSchema } from "../auth/schema.js";
 import { notebookExists } from "../documents/repository.js";
-import { answerQuestion, type ChatDeps } from "./answer-question.js";
+import { answerQuestion, type ChatDeps, type GroundedAnswer } from "./answer-question.js";
 import {
   appendQuestionAndAnswer,
   createChatThread,
@@ -171,7 +171,9 @@ export function registerChatRoutes(app: FastifyInstance, { pool, chat }: Registe
         summary: "Ask a question in a Chat Thread and get one grounded answer",
         description:
           "Retrieves the closest Chunks from the Notebook's latest-version, `ready` Documents and " +
-          "returns one complete answer. The answer is not streamed.",
+          "returns one complete answer. The answer is not streamed. The answer message carries a " +
+          "Citation per source marker in its text, each pinned to the exact Document Version and " +
+          "chunk it was grounded in and persisted with the message.",
         params: chatThreadIdParamsSchema,
         body: sendChatMessageRequestSchema,
         response: {
@@ -199,13 +201,13 @@ export function registerChatRoutes(app: FastifyInstance, { pool, chat }: Registe
       // own "conversation so far".
       const history = await listChatMessages(pool, thread.id);
 
-      let answer: string;
+      let answer: GroundedAnswer;
       try {
-        ({ text: answer } = await answerQuestion(pool, chat, {
+        answer = await answerQuestion(pool, chat, {
           notebookId: thread.notebookId,
           question: request.body.content,
           history,
-        }));
+        });
       } catch (err) {
         // Nothing is recorded. A question sitting unanswered in a shared
         // Thread reads as one the team ignored, and there is no retry
@@ -218,15 +220,26 @@ export function registerChatRoutes(app: FastifyInstance, { pool, chat }: Registe
         return;
       }
 
-      // The retrieved Chunks are deliberately not persisted or returned:
-      // Citations are NBK-12. They are available on `answerQuestion`'s
-      // result for it to attach without reworking this path.
+      // A marker the model invented does not fail the request — the answer
+      // is still worth having and the prose is recorded verbatim — but it is
+      // worth seeing in the logs, because a model that routinely cites
+      // sources it was not given is a prompt problem.
+      if (answer.unresolvedMarkers.length > 0) {
+        request.log.warn(
+          { markers: answer.unresolvedMarkers, retrieved: answer.chunks.length },
+          "A chat answer cited source markers that matched no retrieved Chunk; they were dropped.",
+        );
+      }
+
+      // Question, answer and the answer's Citations in one transaction, so a
+      // Thread never holds an answer whose sources are missing.
       const exchange = await appendQuestionAndAnswer(
         pool,
         thread.id,
         request.authUser!.id,
         request.body.content,
-        answer,
+        answer.text,
+        answer.citations,
       );
       await reply.status(201).send(exchange);
     },

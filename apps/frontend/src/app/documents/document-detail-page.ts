@@ -21,6 +21,16 @@ import { MarkdownView } from './markdown-view';
  * Markdown (see `MarkdownView`), so headings and tables survive: NBK-1's
  * story 23 is specifically that long documents must not appear as a wall of
  * text.
+ *
+ * It is also where a Citation lands (NBK-12). Following one arrives with
+ * `?version=&chunk=&from=&to=` — the Document Version the answer was grounded
+ * in, the chunk it cited, and that chunk's character range in the Version's
+ * Converted Markdown. The page then opens *that* Version rather than the
+ * latest, expanded straight to the content and marked at the cited passage,
+ * because GLOSSARY.md requires that following a Citation open "that exact
+ * Version at that location, even after newer Versions exist". The Version id
+ * is read off the link rather than resolved here precisely so a newer upload
+ * cannot move it.
  */
 @Component({
   selector: 'app-document-detail-page',
@@ -37,13 +47,50 @@ export class DocumentDetailPage implements OnInit, OnDestroy {
   protected readonly notebookId = this.route.snapshot.paramMap.get('notebookId')!;
   protected readonly documentId = this.route.snapshot.paramMap.get('documentId')!;
 
+  private readonly query = this.route.snapshot.queryParamMap;
+
+  /**
+   * The Document Version a Citation pinned, or null when the page was opened
+   * normally. Read once from the link: it is the whole reason an old answer
+   * stays checkable, so nothing recomputes it.
+   */
+  protected readonly citedVersionId = this.query?.get('version') ?? null;
+
+  /** The cited chunk's character range in that Version's Converted Markdown. */
+  protected readonly citedFrom = numberParam(this.query?.get('from'));
+  protected readonly citedTo = numberParam(this.query?.get('to'));
+
   /**
    * Whether the reader has expanded past the Executive Summary. Component
    * state rather than store state: it is this view's disclosure, and the
    * fetched content itself (which is what's worth keeping) lives in the
    * store.
+   *
+   * Starts expanded when a Citation was followed: that reader asked for a
+   * specific passage, and making them click "Show full content" to reach it
+   * would be asking them to find it themselves.
    */
-  protected readonly expanded = signal(false);
+  protected readonly expanded = signal(this.citedVersionId !== null);
+
+  /**
+   * True when the Citation points at a Version that is no longer the
+   * Document's latest. Worth saying out loud: the page's own badge shows the
+   * latest Version's number, so a reader comparing the two needs to be told
+   * that the difference is deliberate.
+   */
+  protected readonly viewingSupersededVersion = computed(() => {
+    const document = this.store.openDocument();
+    return (
+      this.citedVersionId !== null &&
+      document !== null &&
+      document.latestVersion.id !== this.citedVersionId
+    );
+  });
+
+  /** Which Version's Converted Markdown this page shows. */
+  private targetVersionId(): string | null {
+    return this.citedVersionId ?? this.store.openDocument()?.latestVersion.id ?? null;
+  }
 
   protected readonly metadataEntries = computed(() => {
     const metadata = this.store.openDocument()?.metadata;
@@ -61,7 +108,17 @@ export class DocumentDetailPage implements OnInit, OnDestroy {
   });
 
   ngOnInit(): void {
-    void this.store.loadDocument(this.notebookId, this.documentId);
+    void this.load();
+  }
+
+  private async load(): Promise<void> {
+    await this.store.loadDocument(this.notebookId, this.documentId);
+    // A followed Citation names its Version, so the content can be fetched
+    // without waiting for the reader to ask — and fetched for the pinned
+    // Version, not the Document's current one.
+    if (this.citedVersionId !== null && this.store.openDocument()) {
+      await this.store.loadDocumentContent(this.notebookId, this.documentId, this.citedVersionId);
+    }
   }
 
   ngOnDestroy(): void {
@@ -76,11 +133,18 @@ export class DocumentDetailPage implements OnInit, OnDestroy {
       this.expanded.set(false);
       return;
     }
-    const document = this.store.openDocument();
-    if (!document) return;
+    const versionId = this.targetVersionId();
+    if (!versionId) return;
     this.expanded.set(true);
     // A no-op if this Version's content is already loaded, so collapsing and
     // re-expanding doesn't re-download it.
-    void this.store.loadDocumentContent(this.notebookId, this.documentId, document.latestVersion.id);
+    void this.store.loadDocumentContent(this.notebookId, this.documentId, versionId);
   }
+}
+
+/** A query parameter as a number, or null when absent or not a number. */
+function numberParam(value: string | null | undefined): number | null {
+  if (value === null || value === undefined || value.trim() === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
 }

@@ -26,6 +26,18 @@ export function sendChatMessage(http: HttpClient, rootUrl: string, params: SendC
 'id': string;
 'email': string;
 };
+'citations': Array<{
+'id': string;
+'marker': number;
+'documentId': string;
+'documentVersionId': string;
+'versionNumber': number;
+'chunkId': string;
+'filename': string;
+'headingPath': Array<string>;
+'charStart': number | null;
+'charEnd': number | null;
+}>;
 'createdAt': string;
 };
 'answer': {
@@ -37,6 +49,18 @@ export function sendChatMessage(http: HttpClient, rootUrl: string, params: SendC
 'id': string;
 'email': string;
 };
+'citations': Array<{
+'id': string;
+'marker': number;
+'documentId': string;
+'documentVersionId': string;
+'versionNumber': number;
+'chunkId': string;
+'filename': string;
+'headingPath': Array<string>;
+'charStart': number | null;
+'charEnd': number | null;
+}>;
 'createdAt': string;
 };
 }>> {
@@ -62,6 +86,18 @@ export function sendChatMessage(http: HttpClient, rootUrl: string, params: SendC
       'id': string;
       'email': string;
       };
+      'citations': Array<{
+      'id': string;
+      'marker': number;
+      'documentId': string;
+      'documentVersionId': string;
+      'versionNumber': number;
+      'chunkId': string;
+      'filename': string;
+      'headingPath': Array<string>;
+      'charStart': number | null;
+      'charEnd': number | null;
+      }>;
       'createdAt': string;
       };
       'answer': {
@@ -73,6 +109,18 @@ export function sendChatMessage(http: HttpClient, rootUrl: string, params: SendC
       'id': string;
       'email': string;
       };
+      'citations': Array<{
+      'id': string;
+      'marker': number;
+      'documentId': string;
+      'documentVersionId': string;
+      'versionNumber': number;
+      'chunkId': string;
+      'filename': string;
+      'headingPath': Array<string>;
+      'charStart': number | null;
+      'charEnd': number | null;
+      }>;
       'createdAt': string;
       };
       }>;

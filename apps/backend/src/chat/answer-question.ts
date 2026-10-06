@@ -1,6 +1,12 @@
 import type { Pool } from "pg";
 import type { Embedder } from "../llm/embeddings.js";
 import type { ChatCompleter } from "../llm/openrouter.js";
+import {
+  CITATION_INSTRUCTIONS,
+  locateCitations,
+  resolveCitationMarkers,
+  type ResolvedCitation,
+} from "./citations.js";
 import { DEFAULT_RETRIEVAL_LIMIT, retrieveChunks, type RetrievedChunk } from "./retrieval.js";
 import type { ChatMessage } from "./schema.js";
 
@@ -27,14 +33,24 @@ export interface ChatDeps {
 /**
  * One grounded answer.
  *
- * `chunks` is the retrieved evidence, in the order it was given to the model.
- * NBK-10 does not use it — Citations are NBK-12 — but it is returned rather
- * than discarded precisely so NBK-12 can attach a Citation per Chunk without
- * re-running retrieval or restructuring this function.
+ * `chunks` is the retrieved evidence, in the order it was given to the model
+ * — which is the order its source markers are numbered in.
+ *
+ * `citations` is deliberately a value of its own rather than something
+ * encoded into `text`: the prose and its provenance travel side by side, so
+ * NBK-11 can stream `text` in paragraph-sized pieces and deliver the same
+ * Citations alongside it without having to parse a half-written answer.
  */
 export interface GroundedAnswer {
   text: string;
   chunks: RetrievedChunk[];
+  citations: ResolvedCitation[];
+  /**
+   * Markers the model emitted that matched no retrieved Chunk. Surfaced for
+   * the caller to log — see `resolveCitationMarkers` for why an answer with a
+   * dangling marker is kept rather than rejected.
+   */
+  unresolvedMarkers: number[];
 }
 
 /**
@@ -67,6 +83,10 @@ export const CHAT_SYSTEM_PROMPT = [
   "- Answer only from the provided sources. If they do not contain the answer, say so plainly.",
   "- Never invent figures, names, dates, or quotations. If a source is ambiguous, say what it does say.",
   "- Refer to sources by their filename when it helps the reader check you.",
+  // The marker notation is the machine-readable half of the same discipline:
+  // "answer only from the sources" is checkable by a reader only if each
+  // claim says which passage it came from (NBK-12).
+  CITATION_INSTRUCTIONS,
   "- Write prose in Markdown, organised into short paragraphs with headings when the answer has parts.",
   "- Be direct. No preamble about being an AI and no restating of the question.",
 ].join("\n");
@@ -92,8 +112,20 @@ export const HISTORY_MESSAGE_LIMIT = 10;
  * Grouping by source rather than listing chunks flat keeps a multi-document
  * answer attributable: the model can tell which document said what instead
  * of blending two sources into one claim.
+ *
+ * Each passage is additionally labelled with its **source marker** — its
+ * 1-based position in retrieval order — which is what the model is asked to
+ * cite with and what `resolveCitationMarkers` reads back. Numbering per
+ * passage rather than per document is what makes a Citation able to name "one
+ * specific chunk" (GLOSSARY.md) instead of just naming a file.
  */
 function formatSources(chunks: RetrievedChunk[]): string {
+  // A passage's marker is its position in retrieval order, assigned before
+  // the grouping rearranges them — so the numbering matches the chunk list
+  // `resolveCitationMarkers` later indexes into, whatever order the prompt
+  // happens to present them in.
+  const markers = new Map(chunks.map((chunk, index) => [chunk.chunkId, index + 1]));
+
   // Insertion order follows retrieval order, so the document holding the
   // closest passage is presented first.
   const bySource = new Map<string, { filename: string; chatSnippet: string | null; chunks: RetrievedChunk[] }>();
@@ -116,7 +148,7 @@ function formatSources(chunks: RetrievedChunk[]): string {
       if (source.chatSnippet) parts.push(`About this source: ${source.chatSnippet}`);
       for (const chunk of source.chunks) {
         const location = chunk.headingPath.length > 0 ? ` (under ${chunk.headingPath.join(" > ")})` : "";
-        parts.push(`Passage${location}:\n${chunk.text}`);
+        parts.push(`Passage [${markers.get(chunk.chunkId)}]${location}:\n${chunk.text}`);
       }
       return parts.join("\n\n");
     })
@@ -160,7 +192,9 @@ export async function answerQuestion(
   );
 
   if (chunks.length === 0) {
-    return { text: NO_SOURCES_ANSWER, chunks: [] };
+    // Nothing was retrieved, so there is nothing to cite — and the sentence
+    // is the application's own, not a claim about any Document.
+    return { text: NO_SOURCES_ANSWER, chunks: [], citations: [], unresolvedMarkers: [] };
   }
 
   const sections = ["## Sources", formatSources(chunks)];
@@ -178,5 +212,11 @@ export async function answerQuestion(
     temperature: 0.2,
   });
 
-  return { text, chunks };
+  // The markers the model wrote are resolved only against the Chunks that
+  // were just retrieved, so a Citation cannot name a passage this answer was
+  // not grounded in (NBK-12), and then located once in their Versions'
+  // Converted Markdown so following one can scroll to the passage.
+  const { citations, unresolvedMarkers } = resolveCitationMarkers(text, chunks);
+
+  return { text, chunks, citations: await locateCitations(pool, citations), unresolvedMarkers };
 }

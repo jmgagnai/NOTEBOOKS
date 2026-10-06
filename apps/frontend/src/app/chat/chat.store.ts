@@ -24,15 +24,47 @@ export interface ChatThread {
   createdAt: string;
 }
 
+// A Citation on an answer. See GLOSSARY.md: "a pointer into one specific
+// Document Version at one specific chunk, surfaced in a chat answer as a
+// source reference. Following a Citation opens that exact Version at that
+// location, even after newer Versions exist."
+//
+// `documentVersionId` and `chunkId` are what the UI must carry into the link
+// it builds — not just `documentId`, which would land a reader on whatever
+// Version is latest when they click. `charStart`/`charEnd` are the chunk's
+// character range in that Version's Converted Markdown, which is what
+// "scrolled to that chunk's location" resolves to; both are null for a
+// Version with no Converted Markdown, and the link then simply opens it
+// unscrolled.
+//
+// There is no label field by design: the display name is derived here from
+// `filename` and `headingPath` (NBK-12).
+export interface Citation {
+  id: string;
+  /** The marker as it appears in the answer text, e.g. 1 for "[1]". */
+  marker: number;
+  documentId: string;
+  documentVersionId: string;
+  versionNumber: number;
+  chunkId: string;
+  filename: string;
+  headingPath: string[];
+  charStart: number | null;
+  charEnd: number | null;
+}
+
 // One message. `askedBy` is set for both roles — for a question it is who
 // typed it, for an answer it is whose question produced it — so a Thread
 // several people have contributed to can say whose exchange each pair is.
+//
+// `citations` is the answer's sources (NBK-12); a question has none.
 export interface ChatMessage {
   id: string;
   threadId: string;
   role: 'user' | 'assistant';
   content: string;
   askedBy: ChatParticipant;
+  citations: Citation[];
   createdAt: string;
 }
 

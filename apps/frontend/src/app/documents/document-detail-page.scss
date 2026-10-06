@@ -74,4 +74,16 @@
     color: var(--mat-sys-on-surface-variant, #666);
     font-style: italic;
   }
+
+  // Shown only when a Citation led here and pinned a Version that is no
+  // longer the latest (NBK-12) — a notice, not a warning: this is the
+  // Citation working as GLOSSARY.md says it must.
+  &__cited-notice {
+    margin: 0 0 1rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: 0.375rem;
+    background: var(--mat-sys-primary-container, #e8def8);
+    color: var(--mat-sys-on-primary-container, #1d192b);
+    font-size: 0.85rem;
+  }
 }
