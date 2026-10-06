@@ -1,0 +1,120 @@
+<section class="chat-panel">
+  <div class="chat-panel__threads">
+    <h3>Chat Threads</h3>
+
+    <div class="chat-panel__new-thread">
+      <label class="chat-panel__field">
+        <span class="chat-panel__field-label">New Chat Thread title</span>
+        <input
+          type="text"
+          aria-label="New Chat Thread title"
+          [value]="newThreadTitle()"
+          (input)="newThreadTitle.set($any($event.target).value)"
+        />
+      </label>
+      <button mat-button type="button" (click)="startThread()">Start Chat Thread</button>
+    </div>
+
+    @if (store.threadsLoading()) {
+      <mat-progress-spinner mode="indeterminate" diameter="24" />
+    } @else if (store.threads().length === 0) {
+      <p class="chat-panel__empty">No Chat Threads yet.</p>
+    } @else {
+      <!--
+        Every Thread in the Notebook, whoever started it (GLOSSARY.md,
+        ADR-0001) — so each entry has to say whose it is, and none of them
+        is hidden or disabled for not being yours.
+      -->
+      <ul class="chat-panel__thread-list">
+        @for (thread of store.threads(); track thread.id) {
+          <li
+            [class]="
+              'chat-panel__thread' +
+              (thread.id === store.activeThreadId() ? ' chat-panel__thread--active' : '')
+            "
+          >
+            <button
+              type="button"
+              class="chat-panel__thread-open"
+              [attr.aria-label]="'Open ' + thread.title"
+              (click)="openThread(thread)"
+            >
+              <span class="chat-panel__thread-title">{{ thread.title }}</span>
+              <span class="chat-panel__thread-author">Started by {{ thread.author.email }}</span>
+            </button>
+          </li>
+        }
+      </ul>
+    }
+  </div>
+
+  <div class="chat-panel__conversation">
+    @if (activeThread(); as thread) {
+      <div class="chat-panel__conversation-head">
+        <h3>{{ thread.title }}</h3>
+        <!--
+          Renaming is open to anyone (ADR-0001), so this is not gated on
+          being the author — the author line stays as the record of who
+          started it.
+        -->
+        <div class="chat-panel__rename">
+          <label class="chat-panel__field">
+            <span class="chat-panel__field-label">Rename Chat Thread</span>
+            <input
+              type="text"
+              aria-label="Rename Chat Thread"
+              [value]="renameTitle()"
+              (input)="renameTitle.set($any($event.target).value)"
+            />
+          </label>
+          <button mat-button type="button" (click)="rename()">Rename</button>
+        </div>
+      </div>
+
+      @if (store.messagesLoading()) {
+        <mat-progress-spinner mode="indeterminate" diameter="32" />
+      } @else if (store.messages().length === 0) {
+        <p class="chat-panel__empty">No messages yet.</p>
+      } @else {
+        <ol class="chat-panel__messages">
+          @for (message of store.messages(); track message.id) {
+            <li [class]="'chat-panel__message chat-panel__message--' + message.role">
+              <!--
+                Per-message attribution: GLOSSARY.md requires every message
+                to record which user asked it, and a shared Thread is
+                unreadable without it.
+              -->
+              <span class="chat-panel__message-author" data-testid="chat-message-author">{{
+                author(message)
+              }}</span>
+              <p class="chat-panel__message-content">{{ message.content }}</p>
+            </li>
+          }
+        </ol>
+      }
+
+      <div class="chat-panel__composer">
+        <label class="chat-panel__field">
+          <span class="chat-panel__field-label">Ask a question</span>
+          <textarea
+            aria-label="Ask a question"
+            rows="3"
+            [value]="draft()"
+            (input)="draft.set($any($event.target).value)"
+          ></textarea>
+        </label>
+        <button mat-button type="button" [disabled]="store.sending()" (click)="send()">Send</button>
+        @if (store.sending()) {
+          <!-- One complete answer, so this is a wait, not a partial render. -->
+          <mat-progress-spinner mode="indeterminate" diameter="24" />
+        }
+      </div>
+    } @else {
+      <p class="chat-panel__empty">Open a Chat Thread, or start one, to ask a question.</p>
+    }
+
+    @if (store.error(); as error) {
+      <p class="chat-panel__error">{{ error }}</p>
+    }
+  </div>
+</section>

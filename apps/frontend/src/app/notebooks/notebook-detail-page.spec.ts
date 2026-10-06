@@ -3,6 +3,7 @@ import { fireEvent, render, screen } from '@testing-library/angular';
 import { Subject } from 'rxjs';
 import { NotebookDetailPage } from './notebook-detail-page';
 import { NotebooksService } from '../api/services/notebooks.service';
+import { ChatService } from '../api/services/chat.service';
 import { DocumentsService } from '../api/services/documents.service';
 import { DocumentTransferService } from '../documents/document-transfer.service';
 import { AppEvent, AppEventsService } from '../events/app-events.service';
@@ -13,6 +14,19 @@ function activatedRouteFor(notebookId: string) {
   return {
     provide: ActivatedRoute,
     useValue: { snapshot: { paramMap: convertToParamMap({ notebookId }) } },
+  };
+}
+
+/**
+ * Stands in for the generated chat client (NBK-10). The page embeds the chat
+ * panel, so rendering it reaches `ChatService`; what the panel does with it
+ * is covered by its own seam-3 test (chat-panel.spec.ts), so here it only
+ * has to not fail.
+ */
+function chatServiceStub() {
+  return {
+    provide: ChatService,
+    useValue: { listChatThreads: vi.fn().mockResolvedValue([]) },
   };
 }
 
@@ -75,6 +89,7 @@ describe('NotebookDetailPage', () => {
         activatedRouteFor(NOTEBOOK_ID),
         { provide: NotebooksService, useValue: { listNotebooks } },
         { provide: DocumentsService, useValue: { listDocuments } },
+        chatServiceStub(),
         { provide: DocumentTransferService, useValue: {} },
         appEventsStub().provider,
       ],
@@ -95,6 +110,7 @@ describe('NotebookDetailPage', () => {
         activatedRouteFor(NOTEBOOK_ID),
         { provide: NotebooksService, useValue: { listNotebooks } },
         { provide: DocumentsService, useValue: { listDocuments } },
+        chatServiceStub(),
         { provide: DocumentTransferService, useValue: {} },
         appEventsStub().provider,
       ],
@@ -127,6 +143,7 @@ describe('NotebookDetailPage', () => {
         activatedRouteFor(NOTEBOOK_ID),
         { provide: NotebooksService, useValue: { listNotebooks } },
         { provide: DocumentsService, useValue: { listDocuments } },
+        chatServiceStub(),
         { provide: DocumentTransferService, useValue: { uploadDocument } },
         appEventsStub().provider,
       ],
@@ -167,6 +184,7 @@ describe('NotebookDetailPage', () => {
         activatedRouteFor(NOTEBOOK_ID),
         { provide: NotebooksService, useValue: { listNotebooks } },
         { provide: DocumentsService, useValue: { listDocuments, deleteDocument, restoreDocument } },
+        chatServiceStub(),
         { provide: DocumentTransferService, useValue: {} },
         appEventsStub().provider,
       ],
@@ -211,6 +229,7 @@ describe('NotebookDetailPage', () => {
         activatedRouteFor(NOTEBOOK_ID),
         { provide: NotebooksService, useValue: { listNotebooks } },
         { provide: DocumentsService, useValue: { listDocuments } },
+        chatServiceStub(),
         { provide: DocumentTransferService, useValue: {} },
         appEvents.provider,
       ],
@@ -275,6 +294,7 @@ describe('NotebookDetailPage', () => {
         activatedRouteFor(NOTEBOOK_ID),
         { provide: NotebooksService, useValue: { listNotebooks } },
         { provide: DocumentsService, useValue: { listDocuments } },
+        chatServiceStub(),
         { provide: DocumentTransferService, useValue: {} },
         appEvents.provider,
       ],
@@ -329,6 +349,7 @@ describe('NotebookDetailPage', () => {
         activatedRouteFor(NOTEBOOK_ID),
         { provide: NotebooksService, useValue: { listNotebooks } },
         { provide: DocumentsService, useValue: { listDocuments } },
+        chatServiceStub(),
         { provide: DocumentTransferService, useValue: {} },
         appEvents.provider,
       ],
@@ -384,7 +405,8 @@ describe('NotebookDetailPage', () => {
           activatedRouteFor(NOTEBOOK_ID),
           { provide: NotebooksService, useValue: { listNotebooks } },
           { provide: DocumentsService, useValue: { listDocuments } },
-          { provide: DocumentTransferService, useValue: {} },
+          chatServiceStub(),
+        { provide: DocumentTransferService, useValue: {} },
           appEventsStub().provider,
         ],
       });
@@ -413,7 +435,8 @@ describe('NotebookDetailPage', () => {
           activatedRouteFor(NOTEBOOK_ID),
           { provide: NotebooksService, useValue: { listNotebooks } },
           { provide: DocumentsService, useValue: { listDocuments } },
-          { provide: DocumentTransferService, useValue: {} },
+          chatServiceStub(),
+        { provide: DocumentTransferService, useValue: {} },
           appEventsStub().provider,
         ],
       });
@@ -445,7 +468,8 @@ describe('NotebookDetailPage', () => {
           activatedRouteFor(NOTEBOOK_ID),
           { provide: NotebooksService, useValue: { listNotebooks } },
           { provide: DocumentsService, useValue: { listDocuments, getDocument } },
-          { provide: DocumentTransferService, useValue: {} },
+          chatServiceStub(),
+        { provide: DocumentTransferService, useValue: {} },
           appEvents.provider,
         ],
       });
@@ -508,6 +532,7 @@ describe('NotebookDetailPage', () => {
         activatedRouteFor(NOTEBOOK_ID),
         { provide: NotebooksService, useValue: { listNotebooks } },
         { provide: DocumentsService, useValue: { listDocuments } },
+        chatServiceStub(),
         { provide: DocumentTransferService, useValue: { downloadDocumentVersion } },
         appEventsStub().provider,
       ],

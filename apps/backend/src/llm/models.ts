@@ -23,6 +23,8 @@ export interface TaskModels {
   executiveSummary: string;
   /** The reduce pass for the Abstract (50-100 words, human-facing). */
   abstract: string;
+  /** One grounded chat answer, from retrieved Chunks and Chat Snippets. */
+  chatAnswer: string;
 }
 
 /**
@@ -41,6 +43,13 @@ export interface TaskModels {
  * - `chatSnippet` / `abstract` — short, tightly-constrained outputs where
  *   instruction-following (hitting a word range) matters more than prose
  *   flair; the same mid-size Qwen3 as metadata.
+ * - `chatAnswer` — the one output a user reads *as the product*, and the one
+ *   where an invented figure does real damage, so it gets the strongest open
+ *   model available (the same Qwen3-235B-A22B as the Executive Summary).
+ *   Unlike the ingestion tasks this is one call per question rather than
+ *   dozens per document, so unit cost barely matters next to answer quality
+ *   and grounding discipline. A sparse MoE also keeps latency acceptable for
+ *   a request a user is sitting and waiting on.
  */
 export const DEFAULT_TASK_MODELS: TaskModels = {
   metadata: "qwen/qwen3-30b-a3b-instruct-2507",
@@ -48,6 +57,7 @@ export const DEFAULT_TASK_MODELS: TaskModels = {
   chatSnippet: "qwen/qwen3-30b-a3b-instruct-2507",
   executiveSummary: "qwen/qwen3-235b-a22b-2507",
   abstract: "qwen/qwen3-30b-a3b-instruct-2507",
+  chatAnswer: "qwen/qwen3-235b-a22b-2507",
 };
 
 /** The environment variable that overrides each task's model. */
@@ -57,6 +67,7 @@ export const TASK_MODEL_ENV_VARS: Record<keyof TaskModels, string> = {
   chatSnippet: "OPENROUTER_MODEL_CHAT_SNIPPET",
   executiveSummary: "OPENROUTER_MODEL_EXECUTIVE_SUMMARY",
   abstract: "OPENROUTER_MODEL_ABSTRACT",
+  chatAnswer: "OPENROUTER_MODEL_CHAT_ANSWER",
 };
 
 /**

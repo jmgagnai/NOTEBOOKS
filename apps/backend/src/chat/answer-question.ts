@@ -1,0 +1,182 @@
+import type { Pool } from "pg";
+import type { Embedder } from "../llm/embeddings.js";
+import type { ChatCompleter } from "../llm/openrouter.js";
+import { DEFAULT_RETRIEVAL_LIMIT, retrieveChunks, type RetrievedChunk } from "./retrieval.js";
+import type { ChatMessage } from "./schema.js";
+
+/**
+ * What the chat module needs to answer a question.
+ *
+ * `complete` and `embed` are the same two seams ingestion uses (see
+ * src/llm/openrouter.ts and src/llm/embeddings.ts), so the seam-1 tests stub
+ * OpenRouter at `fetch` underneath them and the real request building stays
+ * under test. `model` is the fixed, server-side chat model — per NBK-1 a
+ * user-facing model picker is out of scope, so it is bound here and never
+ * read off a request.
+ */
+export interface ChatDeps {
+  complete: ChatCompleter;
+  /** Embeds the user's question, to retrieve against. */
+  embed: Embedder;
+  /** The OpenRouter model id for chat answers. From `resolveTaskModels()`. */
+  model: string;
+  /** Overrides how many Chunks one question retrieves. */
+  retrievalLimit?: number;
+}
+
+/**
+ * One grounded answer.
+ *
+ * `chunks` is the retrieved evidence, in the order it was given to the model.
+ * NBK-10 does not use it — Citations are NBK-12 — but it is returned rather
+ * than discarded precisely so NBK-12 can attach a Citation per Chunk without
+ * re-running retrieval or restructuring this function.
+ */
+export interface GroundedAnswer {
+  text: string;
+  chunks: RetrievedChunk[];
+}
+
+/**
+ * The answer given when a Notebook has nothing to answer from.
+ *
+ * Said by the application, not generated: with no grounding, a model's only
+ * possible output is a guess, and a guess in a shared Thread is worse than
+ * an admission. It also saves a paid call that could not have helped.
+ */
+export const NO_SOURCES_ANSWER =
+  "I have no sources to answer from yet. This Notebook has no Documents that have " +
+  "finished ingesting — upload one, or wait for an upload to reach the \"ready\" status, " +
+  "and ask again.";
+
+/**
+ * The role instruction. Grounding discipline is the whole job: an answer that
+ * silently invents a figure is worse than one that says the sources don't
+ * cover it, because the user came here to avoid re-reading the documents
+ * themselves.
+ *
+ * It asks for prose organised into paragraphs and headings on purpose. That
+ * is already the right shape for a reader, and it is the granularity NBK-11
+ * streams at ("paragraph/heading-sized chunks, not token-by-token") — so the
+ * upgrade changes how the text is delivered, not what the model is asked for.
+ */
+export const CHAT_SYSTEM_PROMPT = [
+  "You answer questions about a specific set of documents a team has collected.",
+  "",
+  "Rules:",
+  "- Answer only from the provided sources. If they do not contain the answer, say so plainly.",
+  "- Never invent figures, names, dates, or quotations. If a source is ambiguous, say what it does say.",
+  "- Refer to sources by their filename when it helps the reader check you.",
+  "- Write prose in Markdown, organised into short paragraphs with headings when the answer has parts.",
+  "- Be direct. No preamble about being an AI and no restating of the question.",
+].join("\n");
+
+/** How many of a Thread's most recent messages are carried into a question. */
+export const HISTORY_MESSAGE_LIMIT = 10;
+
+/**
+ * Lays out the grounding the model sees.
+ *
+ * Shaped around GLOSSARY.md's division of labour between the two artifacts,
+ * which are not interchangeable:
+ *
+ * - The **Chat Snippet** (150-300 words per Document, from ingestion stage 2)
+ *   is "written to be injected into the LLM's chat context as grounding about
+ *   that source" — so each source is introduced by its own, once, telling the
+ *   model what kind of document the passages below it came from.
+ * - The **Chunks** are "verbatim, contiguous slice[s] of the Converted
+ *   Markdown" — the actual evidence, quoted exactly, under the source they
+ *   belong to, with their heading path so the model can say where in the
+ *   document a passage sits.
+ *
+ * Grouping by source rather than listing chunks flat keeps a multi-document
+ * answer attributable: the model can tell which document said what instead
+ * of blending two sources into one claim.
+ */
+function formatSources(chunks: RetrievedChunk[]): string {
+  // Insertion order follows retrieval order, so the document holding the
+  // closest passage is presented first.
+  const bySource = new Map<string, { filename: string; chatSnippet: string | null; chunks: RetrievedChunk[] }>();
+  for (const chunk of chunks) {
+    const existing = bySource.get(chunk.documentVersionId);
+    if (existing) {
+      existing.chunks.push(chunk);
+    } else {
+      bySource.set(chunk.documentVersionId, {
+        filename: chunk.filename,
+        chatSnippet: chunk.chatSnippet,
+        chunks: [chunk],
+      });
+    }
+  }
+
+  return [...bySource.values()]
+    .map((source) => {
+      const parts = [`### Source: ${source.filename}`];
+      if (source.chatSnippet) parts.push(`About this source: ${source.chatSnippet}`);
+      for (const chunk of source.chunks) {
+        const location = chunk.headingPath.length > 0 ? ` (under ${chunk.headingPath.join(" > ")})` : "";
+        parts.push(`Passage${location}:\n${chunk.text}`);
+      }
+      return parts.join("\n\n");
+    })
+    .join("\n\n");
+}
+
+/** Renders the Thread so far, so a follow-up question's "it" refers to something. */
+function formatHistory(history: ChatMessage[]): string {
+  return history
+    .slice(-HISTORY_MESSAGE_LIMIT)
+    .map((message) => `${message.role === "user" ? "Question" : "Answer"}: ${message.content}`)
+    .join("\n\n");
+}
+
+/**
+ * Answers one question against a Notebook's Documents.
+ *
+ * The whole retrieval-augmented path in one call: embed the question,
+ * retrieve the closest Chunks from the Notebook's latest-version `ready`
+ * Documents, assemble the grounding, and generate one complete answer.
+ *
+ * Synchronous and complete, per NBK-10 — no streaming. NBK-11 upgrades the
+ * delivery of `text` to SSE paragraph/heading chunks; what it needs is a
+ * second way to run the final `complete` call, not a different retrieval or
+ * a different prompt, which is why those sit above it here.
+ *
+ * Throws if generation fails, so the caller can decline to record a question
+ * it has no answer for.
+ */
+export async function answerQuestion(
+  pool: Pool,
+  deps: ChatDeps,
+  input: { notebookId: string; question: string; history: ChatMessage[] },
+): Promise<GroundedAnswer> {
+  const [queryEmbedding] = await deps.embed([input.question]);
+  const chunks = await retrieveChunks(
+    pool,
+    input.notebookId,
+    queryEmbedding,
+    deps.retrievalLimit ?? DEFAULT_RETRIEVAL_LIMIT,
+  );
+
+  if (chunks.length === 0) {
+    return { text: NO_SOURCES_ANSWER, chunks: [] };
+  }
+
+  const sections = ["## Sources", formatSources(chunks)];
+  const history = formatHistory(input.history);
+  if (history) sections.push("## The conversation so far", history);
+  sections.push("## The question to answer now", input.question);
+
+  const text = await deps.complete({
+    model: deps.model,
+    system: CHAT_SYSTEM_PROMPT,
+    user: sections.join("\n\n"),
+    // Low, but not zero: this is an extraction-and-explanation task like the
+    // summarizers, where faithfulness to the sources matters more than
+    // variety. Matches the default the other LLM callers rely on.
+    temperature: 0.2,
+  });
+
+  return { text, chunks };
+}

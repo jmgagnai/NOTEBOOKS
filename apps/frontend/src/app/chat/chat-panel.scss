@@ -1,0 +1,149 @@
+// The chat panel of a Notebook (NBK-10). Two columns — the Notebook's Chat
+// Threads and the open conversation — collapsing to one on a narrow viewport
+// (NBK-1 scopes the frontend to "standard Material responsive layout only").
+.chat-panel {
+  display: grid;
+  grid-template-columns: minmax(12rem, 16rem) 1fr;
+  gap: 1.5rem;
+  align-items: start;
+
+  @media (max-width: 40rem) {
+    grid-template-columns: 1fr;
+  }
+
+  &__field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    flex: 1;
+
+    input,
+    textarea {
+      font: inherit;
+      padding: 0.4rem 0.5rem;
+      border: 1px solid var(--mat-sys-outline-variant, #ddd);
+      border-radius: 0.25rem;
+      background: transparent;
+      color: inherit;
+      resize: vertical;
+    }
+  }
+
+  &__field-label {
+    font-size: 0.75rem;
+    opacity: 0.75;
+  }
+
+  &__new-thread,
+  &__rename {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+  }
+
+  &__empty {
+    opacity: 0.75;
+  }
+
+  &__error {
+    color: var(--mat-sys-error);
+  }
+
+  &__thread-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  &__thread {
+    border: 1px solid var(--mat-sys-outline-variant, #ddd);
+    border-radius: 0.5rem;
+
+    // The open Thread, so a reader can tell which conversation they are in
+    // when several are listed.
+    &--active {
+      border-color: var(--mat-sys-primary, #3f51b5);
+    }
+  }
+
+  &__thread-open {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    width: 100%;
+    padding: 0.6rem 0.75rem;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  &__thread-title {
+    font-weight: 500;
+  }
+
+  // Attribution, not a heading: whose Thread this is matters, but it must not
+  // compete with the title it belongs to.
+  &__thread-author {
+    font-size: 0.75rem;
+    opacity: 0.7;
+  }
+
+  &__conversation-head {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+
+    h3 {
+      margin: 0 0 0.5rem;
+    }
+  }
+
+  &__messages {
+    list-style: none;
+    margin: 0 0 1rem;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  &__message {
+    padding: 0.6rem 0.75rem;
+    border-radius: 0.5rem;
+    background: var(--mat-sys-surface-container-low, #f4f4f4);
+
+    // Questions and answers are visually distinct, so a long conversation
+    // can be skimmed for where each exchange starts.
+    &--user {
+      background: var(--mat-sys-surface-container-high, #e7e7e7);
+    }
+  }
+
+  &__message-author {
+    display: block;
+    font-size: 0.75rem;
+    opacity: 0.7;
+    margin-bottom: 0.25rem;
+  }
+
+  &__message-content {
+    margin: 0;
+    // Answers are Markdown prose with blank-line paragraph breaks; rendering
+    // them as Markdown is NBK-11/NBK-12 territory, so for now the line
+    // structure at least has to survive.
+    white-space: pre-wrap;
+  }
+
+  &__composer {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.5rem;
+  }
+}

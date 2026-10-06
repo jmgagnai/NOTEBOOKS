@@ -20,9 +20,11 @@ const MINIO_SECRET_KEY = process.env.MINIO_SECRET_KEY ?? "rag_notebook_secret";
 const DOCUMENTS_BUCKET = process.env.DOCUMENTS_BUCKET ?? "rag-notebook-documents";
 
 // Ingestion stage 2 (NBK-7) calls OpenRouter for metadata extraction and the
-// three generated summaries, and stage 3 (NBK-8) calls it for chunk
-// embeddings. Which model runs which task is server-side configuration only
-// (see llm/models.ts) — never user-selectable, per NBK-1.
+// three generated summaries, stage 3 (NBK-8) calls it for chunk embeddings,
+// and chat (NBK-10) calls it twice per question — once to embed the question
+// for retrieval, once to generate the answer. Which model runs which task is
+// server-side configuration only (see llm/models.ts) — never user-selectable,
+// per NBK-1.
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 
 async function main(): Promise<void> {
@@ -51,10 +53,26 @@ async function main(): Promise<void> {
     // eslint-disable-next-line no-console
     console.warn(
       "OPENROUTER_API_KEY is not set: ingestion stage 2 (metadata + summaries) and stage 3 " +
-        "(chunking + embeddings) will not run, and Documents will stop at the \"converted\" " +
-        "status instead of reaching \"ready\".",
+        "(chunking + embeddings) will not run, Documents will stop at the \"converted\" " +
+        "status instead of reaching \"ready\", and asking a question in a Chat Thread will " +
+        "report 503.",
     );
   }
+
+  // The chat answer path (NBK-10). It shares the embedder with ingestion
+  // stage 3 deliberately: a question has to be embedded by the same model
+  // that embedded the Chunks, or the two vectors live in different spaces
+  // and similarity is meaningless.
+  const chat = OPENROUTER_API_KEY
+    ? {
+        complete: createOpenRouterCompleter({ apiKey: OPENROUTER_API_KEY }),
+        embed: createOpenRouterEmbedder({
+          apiKey: OPENROUTER_API_KEY,
+          model: resolveEmbeddingModel(),
+        }),
+        model: resolveTaskModels().chatAnswer,
+      }
+    : undefined;
 
   const jobs = await startJobQueue({
     connectionString: DATABASE_URL,
@@ -76,7 +94,7 @@ async function main(): Promise<void> {
     },
   });
 
-  const app = await buildApp({ pool, s3, documentsBucket: DOCUMENTS_BUCKET, jobs, appEvents });
+  const app = await buildApp({ pool, s3, documentsBucket: DOCUMENTS_BUCKET, jobs, appEvents, chat });
   await app.listen({ port: PORT, host: "0.0.0.0" });
   // eslint-disable-next-line no-console
   console.log(`Backend listening on :${PORT}`);

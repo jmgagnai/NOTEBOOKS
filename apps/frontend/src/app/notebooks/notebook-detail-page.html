@@ -89,5 +89,13 @@
         }
       </ul>
     }
+
+    <!--
+      The chat panel (NBK-10): this Notebook's Chat Threads and the open
+      conversation, asked against the Documents above. Per NBK-1 the
+      Notebook detail page is composed of a sources panel and a chat panel.
+    -->
+    <h2>Chat</h2>
+    <app-chat-panel [notebookId]="notebookId" />
   </mat-card-content>
 </mat-card>
