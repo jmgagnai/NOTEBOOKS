@@ -1,6 +1,9 @@
 import { buildApp } from "./app.js";
 import { runMigrations } from "./db/migrate.js";
 import { createPool } from "./db/pool.js";
+import { createAppEventSubscriber } from "./events/bus.js";
+import { createDoclingConverter } from "./ingestion/docling.js";
+import { startJobQueue } from "./jobs/queue.js";
 import { createS3Client, ensureBucket } from "./storage/s3-client.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
@@ -24,10 +27,39 @@ async function main(): Promise<void> {
   });
   await ensureBucket(s3, DOCUMENTS_BUCKET);
 
-  const app = await buildApp({ pool, s3, documentsBucket: DOCUMENTS_BUCKET });
+  // Live updates (NBK-6). The subscriber holds its own dedicated connection
+  // (LISTEN is per-connection, see events/bus.ts) and fans events out to
+  // whatever SSE clients this process is serving.
+  const appEvents = await createAppEventSubscriber(DATABASE_URL);
+
+  // This single process both serves HTTP and works jobs, which is the right
+  // shape for a dev/small deployment; splitting them later means starting
+  // one process without `worker` and one without `app.listen`.
+  const jobs = await startJobQueue({
+    connectionString: DATABASE_URL,
+    worker: {
+      pool,
+      s3,
+      documentsBucket: DOCUMENTS_BUCKET,
+      convertToMarkdown: createDoclingConverter(),
+    },
+  });
+
+  const app = await buildApp({ pool, s3, documentsBucket: DOCUMENTS_BUCKET, jobs, appEvents });
   await app.listen({ port: PORT, host: "0.0.0.0" });
   // eslint-disable-next-line no-console
   console.log(`Backend listening on :${PORT}`);
+
+  // Jobs in flight get a chance to finish, and the LISTEN connection is
+  // closed, instead of both being severed with the process.
+  const shutdown = async (): Promise<void> => {
+    await app.close();
+    await jobs.stop();
+    await appEvents.close();
+    await pool.end();
+  };
+  process.once("SIGINT", () => void shutdown());
+  process.once("SIGTERM", () => void shutdown());
 }
 
 main().catch((err) => {

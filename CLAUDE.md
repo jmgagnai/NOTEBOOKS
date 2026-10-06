@@ -1,3 +1,10 @@
+## Local setup
+
+`pnpm install` does not install everything. Ingestion stage 1 spawns a Python
+subprocess running Docling, which has to be installed separately — see
+`docs/ingestion-docling.md`. Tests stub that subprocess, so `pnpm test` is
+green without it; running the backend is not.
+
 ## Agent skills
 
 ### Issue tracker

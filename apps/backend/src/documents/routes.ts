@@ -5,6 +5,7 @@ import type { Pool } from "pg";
 import type { S3Client } from "@aws-sdk/client-s3";
 import { z } from "zod";
 import { createAuthGuard } from "../auth/guard.js";
+import type { JobQueue } from "../jobs/queue.js";
 import { errorResponseSchema } from "../auth/schema.js";
 import { getObject, putObject } from "../storage/s3-client.js";
 import { ACCEPTED_TYPES_DESCRIPTION, resolveAcceptedMimeType } from "./file-types.js";
@@ -28,6 +29,14 @@ export interface RegisterDocumentRoutesOptions {
   pool: Pool;
   s3: S3Client;
   documentsBucket: string;
+  /**
+   * Ingestion (NBK-6). Given, a successful upload enqueues stage 1 —
+   * conversion to Markdown — which is what moves the new Version off
+   * "queued". Omitted, the upload still succeeds and the Version stays
+   * "queued" until something works it, so the route is testable without
+   * standing up pg_boss.
+   */
+  jobs?: JobQueue;
 }
 
 /**
@@ -37,7 +46,7 @@ export interface RegisterDocumentRoutesOptions {
  */
 export function registerDocumentRoutes(
   app: FastifyInstance,
-  { pool, s3, documentsBucket }: RegisterDocumentRoutesOptions,
+  { pool, s3, documentsBucket, jobs }: RegisterDocumentRoutesOptions,
 ): void {
   const authGuard = createAuthGuard(pool);
 
@@ -115,6 +124,23 @@ export function registerDocumentRoutes(
         buffer.length,
         storageKey,
       );
+
+      // Enqueued after the row is committed, never before: a job that
+      // out-ran its own Document Version would find nothing to convert.
+      // Enqueueing failures must not fail an upload whose bytes are already
+      // stored — the Version stays "queued" and is the record of work still
+      // owed.
+      if (jobs) {
+        try {
+          await jobs.enqueueConvertToMarkdown({
+            documentId: document.id,
+            versionId: document.latestVersion.id,
+          });
+        } catch (err) {
+          request.log.error({ err }, "Could not enqueue Markdown conversion for the uploaded Document Version.");
+        }
+      }
+
       await reply.status(201).send(document);
     },
   );

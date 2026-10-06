@@ -43,7 +43,7 @@ export class DocumentsService extends BaseService {
 'id': string;
 'notebookId': string;
 'filename': string;
-'status': 'uploaded';
+'status': 'queued' | 'converting' | 'converted' | 'failed';
 'createdAt': string;
 'latestVersion': {
 'id': string;
@@ -71,7 +71,7 @@ export class DocumentsService extends BaseService {
 'id': string;
 'notebookId': string;
 'filename': string;
-'status': 'uploaded';
+'status': 'queued' | 'converting' | 'converted' | 'failed';
 'createdAt': string;
 'latestVersion': {
 'id': string;
@@ -86,7 +86,7 @@ export class DocumentsService extends BaseService {
 'id': string;
 'notebookId': string;
 'filename': string;
-'status': 'uploaded';
+'status': 'queued' | 'converting' | 'converted' | 'failed';
 'createdAt': string;
 'latestVersion': {
 'id': string;
@@ -99,7 +99,7 @@ export class DocumentsService extends BaseService {
 'id': string;
 'notebookId': string;
 'filename': string;
-'status': 'uploaded';
+'status': 'queued' | 'converting' | 'converted' | 'failed';
 'createdAt': string;
 'latestVersion': {
 'id': string;
@@ -128,7 +128,7 @@ export class DocumentsService extends BaseService {
 'id': string;
 'notebookId': string;
 'filename': string;
-'status': 'uploaded';
+'status': 'queued' | 'converting' | 'converted' | 'failed';
 'createdAt': string;
 'latestVersion': {
 'id': string;
@@ -156,7 +156,7 @@ export class DocumentsService extends BaseService {
 'id': string;
 'notebookId': string;
 'filename': string;
-'status': 'uploaded';
+'status': 'queued' | 'converting' | 'converted' | 'failed';
 'createdAt': string;
 'latestVersion': {
 'id': string;
@@ -171,7 +171,7 @@ export class DocumentsService extends BaseService {
 'id': string;
 'notebookId': string;
 'filename': string;
-'status': 'uploaded';
+'status': 'queued' | 'converting' | 'converted' | 'failed';
 'createdAt': string;
 'latestVersion': {
 'id': string;
@@ -184,7 +184,7 @@ export class DocumentsService extends BaseService {
 'id': string;
 'notebookId': string;
 'filename': string;
-'status': 'uploaded';
+'status': 'queued' | 'converting' | 'converted' | 'failed';
 'createdAt': string;
 'latestVersion': {
 'id': string;
@@ -246,7 +246,7 @@ export class DocumentsService extends BaseService {
 'id': string;
 'notebookId': string;
 'filename': string;
-'status': 'uploaded';
+'status': 'queued' | 'converting' | 'converted' | 'failed';
 'createdAt': string;
 'latestVersion': {
 'id': string;
@@ -274,7 +274,7 @@ export class DocumentsService extends BaseService {
 'id': string;
 'notebookId': string;
 'filename': string;
-'status': 'uploaded';
+'status': 'queued' | 'converting' | 'converted' | 'failed';
 'createdAt': string;
 'latestVersion': {
 'id': string;
@@ -289,7 +289,7 @@ export class DocumentsService extends BaseService {
 'id': string;
 'notebookId': string;
 'filename': string;
-'status': 'uploaded';
+'status': 'queued' | 'converting' | 'converted' | 'failed';
 'createdAt': string;
 'latestVersion': {
 'id': string;
@@ -302,7 +302,7 @@ export class DocumentsService extends BaseService {
 'id': string;
 'notebookId': string;
 'filename': string;
-'status': 'uploaded';
+'status': 'queued' | 'converting' | 'converted' | 'failed';
 'createdAt': string;
 'latestVersion': {
 'id': string;

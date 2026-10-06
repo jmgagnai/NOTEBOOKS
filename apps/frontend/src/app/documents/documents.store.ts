@@ -1,6 +1,8 @@
 import { inject } from '@angular/core';
 import { patchState, signalStore, withMethods, withState } from '@ngrx/signals';
+import { Subscription } from 'rxjs';
 import { DocumentsService } from '../api/services/documents.service';
+import { AppEvent, AppEventsService } from '../events/app-events.service';
 import { DocumentTransferService } from './document-transfer.service';
 
 export interface DocumentVersion {
@@ -11,17 +13,46 @@ export interface DocumentVersion {
   createdAt: string;
 }
 
+/**
+ * Where a Document's latest Version is in the ingestion pipeline (NBK-6).
+ * Mirrors the backend's `documentStatusSchema`.
+ */
+export type DocumentStatus = 'queued' | 'converting' | 'converted' | 'failed';
+
 // A Document as returned over the API. See GLOSSARY.md: "a source file
 // uploaded into a Notebook, tracked through successive Document Versions."
-// `status` is always 'uploaded' for now (NBK-5) — there's no ingestion
-// pipeline yet to report any further-along status.
+// `status` is its latest Version's ingestion status, which the background
+// pipeline (NBK-6) advances — so it changes under the UI's feet, which is
+// what `watchNotebook` below is for.
 export interface Document {
   id: string;
   notebookId: string;
   filename: string;
-  status: 'uploaded';
+  status: DocumentStatus;
   createdAt: string;
   latestVersion: DocumentVersion;
+}
+
+/**
+ * The payload of a `document-version-status-changed` app event (NBK-6).
+ * Mirrors what `apps/backend/src/ingestion/convert-to-markdown.ts` publishes.
+ */
+interface DocumentVersionStatusChanged {
+  documentId: string;
+  versionId: string;
+  status: DocumentStatus;
+}
+
+const DOCUMENT_VERSION_STATUS_CHANGED = 'document-version-status-changed';
+
+/** Narrows a generic app event to a Document Version status change, or null. */
+function asStatusChange(event: AppEvent): DocumentVersionStatusChanged | null {
+  if (event.type !== DOCUMENT_VERSION_STATUS_CHANGED) return null;
+  const { documentId, versionId, status } = event.data as Partial<DocumentVersionStatusChanged>;
+  if (typeof documentId !== 'string' || typeof versionId !== 'string' || typeof status !== 'string') {
+    return null;
+  }
+  return { documentId, versionId, status: status as DocumentStatus };
 }
 
 interface DocumentsState {
@@ -69,7 +100,14 @@ export const DocumentsStore = signalStore(
       store,
       documentsService = inject(DocumentsService),
       transferService = inject(DocumentTransferService),
-    ) => ({
+      appEvents = inject(AppEventsService),
+    ) => {
+      // The live subscription for whichever Notebook is currently being
+      // watched. Held outside the state because it is plumbing, not something
+      // a template renders.
+      let watching: Subscription | null = null;
+
+      return {
       async loadDocuments(notebookId: string): Promise<void> {
         patchState(store, { loading: true, error: null });
         try {
@@ -142,6 +180,39 @@ export const DocumentsStore = signalStore(
           patchState(store, { error: errorMessage(err, 'Failed to download Document.') });
         }
       },
-    }),
+
+      /**
+       * Follows one Notebook's live app events so a Document's status badge
+       * tracks the background pipeline with no page refresh (NBK-6).
+       *
+       * Only this Notebook's topic is requested, and only the event types
+       * this store understands are acted on — the stream itself carries
+       * everything, including event types belonging to other features.
+       */
+      watchNotebook(notebookId: string): void {
+        this.stopWatching();
+        watching = appEvents.stream([`notebook:${notebookId}`]).subscribe((event) => {
+          const change = asStatusChange(event);
+          if (!change) return;
+          patchState(store, {
+            documents: store.documents().map((document) => {
+              if (document.id !== change.documentId) return document;
+              // The badge shows the *latest* Version's status, so a late
+              // event about a Version that has since been superseded by a
+              // re-upload must not drag it backwards.
+              if (document.latestVersion.id !== change.versionId) return document;
+              return { ...document, status: change.status };
+            }),
+          });
+        });
+      },
+
+      /** Closes the live connection opened by `watchNotebook`. */
+      stopWatching(): void {
+        watching?.unsubscribe();
+        watching = null;
+      },
+      };
+    },
   ),
 );

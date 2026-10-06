@@ -1,9 +1,11 @@
 import { convertToParamMap, ActivatedRoute } from '@angular/router';
 import { fireEvent, render, screen } from '@testing-library/angular';
+import { Subject } from 'rxjs';
 import { NotebookDetailPage } from './notebook-detail-page';
 import { NotebooksService } from '../api/services/notebooks.service';
 import { DocumentsService } from '../api/services/documents.service';
 import { DocumentTransferService } from '../documents/document-transfer.service';
+import { AppEvent, AppEventsService } from '../events/app-events.service';
 
 const NOTEBOOK_ID = '11111111-1111-1111-1111-111111111111';
 
@@ -14,12 +16,38 @@ function activatedRouteFor(notebookId: string) {
   };
 }
 
+/**
+ * Stands in for the real SSE connection. `AppEventsService` is mocked rather
+ * than `EventSource` because it is the seam: jsdom has no `EventSource`, and
+ * the page's contract is "events arrive on this stream", not "an HTTP
+ * connection is opened in this particular way". That the real service turns
+ * a live SSE connection into these events is proven on the backend, by
+ * apps/backend/test/events.route.test.ts.
+ */
+function appEventsStub() {
+  const events = new Subject<AppEvent>();
+  const topics: string[][] = [];
+  return {
+    events,
+    topics,
+    provider: {
+      provide: AppEventsService,
+      useValue: {
+        stream: (requested: string[]) => {
+          topics.push(requested);
+          return events.asObservable();
+        },
+      },
+    },
+  };
+}
+
 // Seam-3 test (per NBK-1's testing decisions, and explicitly called for by
-// NBK-5's acceptance criteria): render the real page + SignalStore, mocking
-// only the generated ng-openapi-gen client interface (DocumentsService) and
-// the hand-written DocumentTransferService (see its file for why it exists
-// instead of a generated one) — never the store or any Angular service
-// internals directly.
+// NBK-5's and NBK-6's acceptance criteria): render the real page +
+// SignalStore, mocking only the generated ng-openapi-gen client interface
+// (DocumentsService), the hand-written DocumentTransferService (see its file
+// for why it exists instead of a generated one), and the SSE stream — never
+// the store or any Angular service internals directly.
 describe('NotebookDetailPage', () => {
   it("renders the Notebook's title and its Documents", async () => {
     const listNotebooks = vi
@@ -30,7 +58,7 @@ describe('NotebookDetailPage', () => {
         id: 'doc-1',
         notebookId: NOTEBOOK_ID,
         filename: 'report.txt',
-        status: 'uploaded',
+        status: 'queued',
         createdAt: '2026-01-01T00:00:00.000Z',
         latestVersion: {
           id: 'v-1',
@@ -48,12 +76,13 @@ describe('NotebookDetailPage', () => {
         { provide: NotebooksService, useValue: { listNotebooks } },
         { provide: DocumentsService, useValue: { listDocuments } },
         { provide: DocumentTransferService, useValue: {} },
+        appEventsStub().provider,
       ],
     });
 
     expect(await screen.findByText('Research')).toBeTruthy();
     expect(await screen.findByText('report.txt')).toBeTruthy();
-    expect(screen.getByText('uploaded')).toBeTruthy();
+    expect(screen.getByText('queued')).toBeTruthy();
     expect(screen.getByText('v1')).toBeTruthy();
   });
 
@@ -67,6 +96,7 @@ describe('NotebookDetailPage', () => {
         { provide: NotebooksService, useValue: { listNotebooks } },
         { provide: DocumentsService, useValue: { listDocuments } },
         { provide: DocumentTransferService, useValue: {} },
+        appEventsStub().provider,
       ],
     });
 
@@ -80,7 +110,7 @@ describe('NotebookDetailPage', () => {
       id: 'doc-2',
       notebookId: NOTEBOOK_ID,
       filename: 'notes.md',
-      status: 'uploaded',
+      status: 'queued',
       createdAt: '2026-01-01T00:00:00.000Z',
       latestVersion: {
         id: 'v-1',
@@ -98,6 +128,7 @@ describe('NotebookDetailPage', () => {
         { provide: NotebooksService, useValue: { listNotebooks } },
         { provide: DocumentsService, useValue: { listDocuments } },
         { provide: DocumentTransferService, useValue: { uploadDocument } },
+        appEventsStub().provider,
       ],
     });
 
@@ -117,7 +148,7 @@ describe('NotebookDetailPage', () => {
       id: 'doc-3',
       notebookId: NOTEBOOK_ID,
       filename: 'contract.pdf',
-      status: 'uploaded',
+      status: 'queued',
       createdAt: '2026-01-01T00:00:00.000Z',
       latestVersion: {
         id: 'v-1',
@@ -137,6 +168,7 @@ describe('NotebookDetailPage', () => {
         { provide: NotebooksService, useValue: { listNotebooks } },
         { provide: DocumentsService, useValue: { listDocuments, deleteDocument, restoreDocument } },
         { provide: DocumentTransferService, useValue: {} },
+        appEventsStub().provider,
       ],
     });
 
@@ -151,13 +183,122 @@ describe('NotebookDetailPage', () => {
     expect(await screen.findByText('contract.pdf')).toBeTruthy();
   });
 
+  // NBK-6: the status badge must follow the background conversion with no
+  // page refresh. Nothing is re-fetched here — the only new information is
+  // the app event, which is the whole point.
+  it('updates a Document status badge live from an app event', async () => {
+    const listNotebooks = vi.fn().mockResolvedValue([]);
+    const listDocuments = vi.fn().mockResolvedValue([
+      {
+        id: 'doc-5',
+        notebookId: NOTEBOOK_ID,
+        filename: 'thesis.pdf',
+        status: 'queued',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        latestVersion: {
+          id: 'v-7',
+          versionNumber: 1,
+          mimeType: 'application/pdf',
+          sizeBytes: 100,
+          createdAt: '2026-01-01T00:00:00.000Z',
+        },
+      },
+    ]);
+    const appEvents = appEventsStub();
+
+    await render(NotebookDetailPage, {
+      providers: [
+        activatedRouteFor(NOTEBOOK_ID),
+        { provide: NotebooksService, useValue: { listNotebooks } },
+        { provide: DocumentsService, useValue: { listDocuments } },
+        { provide: DocumentTransferService, useValue: {} },
+        appEvents.provider,
+      ],
+    });
+
+    await screen.findByText('thesis.pdf');
+    expect(screen.getByText('queued')).toBeTruthy();
+    // Only this Notebook's events are asked for.
+    expect(appEvents.topics).toEqual([[`notebook:${NOTEBOOK_ID}`]]);
+
+    appEvents.events.next({
+      id: 'event-1',
+      type: 'document-version-status-changed',
+      topic: `notebook:${NOTEBOOK_ID}`,
+      occurredAt: '2026-01-01T00:00:01.000Z',
+      data: { documentId: 'doc-5', versionId: 'v-7', status: 'converting' },
+    });
+    expect(await screen.findByText('converting')).toBeTruthy();
+
+    appEvents.events.next({
+      id: 'event-2',
+      type: 'document-version-status-changed',
+      topic: `notebook:${NOTEBOOK_ID}`,
+      occurredAt: '2026-01-01T00:00:02.000Z',
+      data: { documentId: 'doc-5', versionId: 'v-7', status: 'converted' },
+    });
+    const badge = await screen.findByText('converted');
+    // The badge is styled by outcome, so a failed conversion can't be
+    // mistaken for a finished one at a glance.
+    expect(badge.className).toContain('notebook-detail-page__badge--converted');
+    // Nothing was re-fetched: the event alone drove the change.
+    expect(listDocuments).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores a status event for a Version that is no longer the latest', async () => {
+    const listNotebooks = vi.fn().mockResolvedValue([]);
+    const listDocuments = vi.fn().mockResolvedValue([
+      {
+        id: 'doc-6',
+        notebookId: NOTEBOOK_ID,
+        filename: 'superseded.txt',
+        status: 'converted',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        latestVersion: {
+          id: 'v-2',
+          versionNumber: 2,
+          mimeType: 'text/plain',
+          sizeBytes: 10,
+          createdAt: '2026-01-01T00:00:00.000Z',
+        },
+      },
+    ]);
+    const appEvents = appEventsStub();
+
+    await render(NotebookDetailPage, {
+      providers: [
+        activatedRouteFor(NOTEBOOK_ID),
+        { provide: NotebooksService, useValue: { listNotebooks } },
+        { provide: DocumentsService, useValue: { listDocuments } },
+        { provide: DocumentTransferService, useValue: {} },
+        appEvents.provider,
+      ],
+    });
+
+    await screen.findByText('superseded.txt');
+
+    // A late event about version 1, which version 2 has already replaced.
+    // The badge shows the latest Version's status, so this must not move it
+    // backwards.
+    appEvents.events.next({
+      id: 'event-3',
+      type: 'document-version-status-changed',
+      topic: `notebook:${NOTEBOOK_ID}`,
+      occurredAt: '2026-01-01T00:00:01.000Z',
+      data: { documentId: 'doc-6', versionId: 'v-1', status: 'failed' },
+    });
+
+    expect(screen.getByText('converted')).toBeTruthy();
+    expect(screen.queryByText('failed')).toBeNull();
+  });
+
   it('downloads a Document Version through the transfer service', async () => {
     const listNotebooks = vi.fn().mockResolvedValue([]);
     const existingDocument = {
       id: 'doc-4',
       notebookId: NOTEBOOK_ID,
       filename: 'sheet.xlsx',
-      status: 'uploaded',
+      status: 'queued',
       createdAt: '2026-01-01T00:00:00.000Z',
       latestVersion: {
         id: 'v-9',
@@ -176,6 +317,7 @@ describe('NotebookDetailPage', () => {
         { provide: NotebooksService, useValue: { listNotebooks } },
         { provide: DocumentsService, useValue: { listDocuments } },
         { provide: DocumentTransferService, useValue: { downloadDocumentVersion } },
+        appEventsStub().provider,
       ],
     });
 

@@ -29,3 +29,5 @@ export type { RestoreDocument$Params as RestoreDocument$Params } from './fn/docu
 export { restoreDocument as restoreDocument } from './fn/documents/restore-document';
 export type { DownloadDocumentVersion$Params as DownloadDocumentVersion$Params } from './fn/documents/download-document-version';
 export { downloadDocumentVersion as downloadDocumentVersion } from './fn/documents/download-document-version';
+export type { StreamEvents$Params as StreamEvents$Params } from './fn/events/stream-events';
+export { streamEvents as streamEvents } from './fn/events/stream-events';

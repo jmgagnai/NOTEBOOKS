@@ -1,5 +1,5 @@
 import type { Pool } from "pg";
-import type { Document, DocumentVersion } from "./schema.js";
+import type { Document, DocumentStatus, DocumentVersion } from "./schema.js";
 
 interface DocumentWithLatestVersionRow {
   id: string;
@@ -11,6 +11,7 @@ interface DocumentWithLatestVersionRow {
   mime_type: string;
   size_bytes: string;
   version_created_at: Date;
+  ingestion_status: DocumentStatus;
 }
 
 // Joins each Document to its latest (highest version_number, non-deleted)
@@ -26,10 +27,11 @@ const SELECT_DOCUMENTS_WITH_LATEST_VERSION = `
     v.version_number,
     v.mime_type,
     v.size_bytes,
-    v.created_at AS version_created_at
+    v.created_at AS version_created_at,
+    v.ingestion_status
   FROM documents d
   JOIN LATERAL (
-    SELECT id, version_number, mime_type, size_bytes, created_at
+    SELECT id, version_number, mime_type, size_bytes, created_at, ingestion_status
     FROM document_versions
     WHERE document_id = d.id AND deleted_at IS NULL
     ORDER BY version_number DESC
@@ -49,7 +51,7 @@ function toDocument(row: DocumentWithLatestVersionRow): Document {
     id: row.id,
     notebookId: row.notebook_id,
     filename: row.filename,
-    status: "uploaded",
+    status: row.ingestion_status,
     createdAt: row.created_at.toISOString(),
     latestVersion,
   };

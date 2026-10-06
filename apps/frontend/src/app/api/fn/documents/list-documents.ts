@@ -16,7 +16,7 @@ export function listDocuments(http: HttpClient, rootUrl: string, params: ListDoc
 'id': string;
 'notebookId': string;
 'filename': string;
-'status': 'uploaded';
+'status': 'queued' | 'converting' | 'converted' | 'failed';
 'createdAt': string;
 'latestVersion': {
 'id': string;
@@ -40,7 +40,7 @@ export function listDocuments(http: HttpClient, rootUrl: string, params: ListDoc
       'id': string;
       'notebookId': string;
       'filename': string;
-      'status': 'uploaded';
+      'status': 'queued' | 'converting' | 'converted' | 'failed';
       'createdAt': string;
       'latestVersion': {
       'id': string;

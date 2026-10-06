@@ -17,7 +17,7 @@ export function restoreDocument(http: HttpClient, rootUrl: string, params: Resto
 'id': string;
 'notebookId': string;
 'filename': string;
-'status': 'uploaded';
+'status': 'queued' | 'converting' | 'converted' | 'failed';
 'createdAt': string;
 'latestVersion': {
 'id': string;
@@ -42,7 +42,7 @@ export function restoreDocument(http: HttpClient, rootUrl: string, params: Resto
       'id': string;
       'notebookId': string;
       'filename': string;
-      'status': 'uploaded';
+      'status': 'queued' | 'converting' | 'converted' | 'failed';
       'createdAt': string;
       'latestVersion': {
       'id': string;

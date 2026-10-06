@@ -42,6 +42,19 @@
     border-radius: 1rem;
     background: var(--mat-sys-secondary-container, #e0e0e0);
     color: var(--mat-sys-on-secondary-container, #333);
+
+    // Ingestion outcomes (NBK-6) need to be distinguishable at a glance —
+    // a failed conversion must not look like a finished one. The in-progress
+    // statuses (queued, converting) keep the neutral default.
+    &--converted {
+      background: var(--mat-sys-tertiary-container, #d7f0d7);
+      color: var(--mat-sys-on-tertiary-container, #1b4d1b);
+    }
+
+    &--failed {
+      background: var(--mat-sys-error-container, #f8d7d7);
+      color: var(--mat-sys-on-error-container, #6b1b1b);
+    }
   }
 
   &__version {

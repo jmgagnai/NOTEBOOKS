@@ -1,4 +1,4 @@
-import { Component, computed, inject, OnInit } from '@angular/core';
+import { Component, computed, inject, OnDestroy, OnInit } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
@@ -13,6 +13,9 @@ import { NotebooksStore } from './notebooks.store';
  * `GET /notebooks/:id` endpoint, so the Notebook itself (just its title,
  * for the page heading) is looked up from `NotebooksStore`'s already-loaded
  * list by route id, the same list the top-level Notebooks page uses.
+ *
+ * While open, it also follows this Notebook's live app events (NBK-6) so a
+ * Document's status badge tracks background conversion without a refresh.
  */
 @Component({
   selector: 'app-notebook-detail-page',
@@ -21,7 +24,7 @@ import { NotebooksStore } from './notebooks.store';
   templateUrl: './notebook-detail-page.html',
   styleUrl: './notebook-detail-page.scss',
 })
-export class NotebookDetailPage implements OnInit {
+export class NotebookDetailPage implements OnInit, OnDestroy {
   private readonly route = inject(ActivatedRoute);
 
   protected readonly notebooksStore = inject(NotebooksStore);
@@ -35,6 +38,14 @@ export class NotebookDetailPage implements OnInit {
   ngOnInit(): void {
     void this.notebooksStore.loadNotebooks();
     void this.store.loadDocuments(this.notebookId);
+    this.store.watchNotebook(this.notebookId);
+  }
+
+  ngOnDestroy(): void {
+    // The store is root-provided and outlives this page, so the live
+    // connection has to be closed explicitly or it would leak across
+    // navigations.
+    this.store.stopWatching();
   }
 
   protected onFileSelected(event: Event): void {

@@ -6,7 +6,9 @@ import type { Pool } from "pg";
 import { buildApp } from "../src/app.js";
 import { runMigrations } from "../src/db/migrate.js";
 import { createPool } from "../src/db/pool.js";
-import { createS3Client, ensureBucket } from "../src/storage/s3-client.js";
+import type { ConvertToMarkdownPayload } from "../src/ingestion/convert-to-markdown.js";
+import type { JobQueue } from "../src/jobs/queue.js";
+import { createS3Client, ensureBucket, type S3Config } from "../src/storage/s3-client.js";
 import { startMinio } from "./support/minio-container.js";
 
 const DOCUMENTS_BUCKET = "rag-notebook-documents-test";
@@ -21,6 +23,9 @@ describe("Document routes", () => {
   let minioContainer: StartedTestContainer;
   let pool: Pool;
   let app: FastifyInstance;
+  // Kept so the NBK-6 hand-off tests below can build a second app, with a
+  // JobQueue stub, against the same containers.
+  let s3Config: S3Config;
 
   beforeAll(async () => {
     pgContainer = await new PostgreSqlContainer("pgvector/pgvector:pg16").start();
@@ -29,11 +34,12 @@ describe("Document routes", () => {
 
     const minio = await startMinio();
     minioContainer = minio.container;
-    const s3 = createS3Client({
+    s3Config = {
       endpoint: minio.endpoint,
       accessKeyId: minio.accessKeyId,
       secretAccessKey: minio.secretAccessKey,
-    });
+    };
+    const s3 = createS3Client(s3Config);
     await ensureBucket(s3, DOCUMENTS_BUCKET);
 
     app = await buildApp({ pool, s3, documentsBucket: DOCUMENTS_BUCKET });
@@ -152,7 +158,7 @@ describe("Document routes", () => {
       expect(response.statusCode).toBe(404);
     });
 
-    it("uploads a text file, creating a Document with version 1 and status 'uploaded'", async () => {
+    it("uploads a text file, creating a Document with version 1 awaiting conversion", async () => {
       const session = await loginAsNewUser("uploader2@example.com");
       const notebookId = await createNotebook(session, "Research");
 
@@ -168,7 +174,9 @@ describe("Document routes", () => {
       };
       expect(body.filename).toBe("report.txt");
       expect(body.notebookId).toBe(notebookId);
-      expect(body.status).toBe("uploaded");
+      // NBK-6: an upload is immediately enqueued for Markdown conversion,
+      // so the Document Version starts out "queued" rather than terminal.
+      expect(body.status).toBe("queued");
       expect(body.latestVersion.versionNumber).toBe(1);
       expect(body.latestVersion.mimeType).toBe("text/plain");
       expect(body.latestVersion.sizeBytes).toBe(Buffer.byteLength("the contents"));
@@ -419,6 +427,81 @@ describe("Document routes", () => {
       });
 
       expect(response.statusCode).toBe(404);
+    });
+  });
+
+  // NBK-6: an upload is the ingestion pipeline's trigger. Only the hand-off
+  // is asserted here — that the job then converts anything belongs to
+  // test/convert-to-markdown.job.test.ts and test/job-queue.test.ts.
+  describe("ingestion hand-off", () => {
+    /** Builds a second app, sharing these containers, with a JobQueue stub. */
+    async function appWith(jobs: JobQueue): Promise<FastifyInstance> {
+      return buildApp({
+        pool,
+        s3: createS3Client(s3Config),
+        documentsBucket: DOCUMENTS_BUCKET,
+        jobs,
+      });
+    }
+
+    it("enqueues Markdown conversion for the Version it just created", async () => {
+      const enqueued: ConvertToMarkdownPayload[] = [];
+      const appWithJobs = await appWith({
+        enqueueConvertToMarkdown: async (payload) => {
+          enqueued.push(payload);
+        },
+        stop: async () => {},
+      });
+      try {
+        const session = await loginAsNewUser("ingestion-handoff@example.com");
+        const notebookId = await createNotebook(session, "Ingestion");
+
+        const { payload, contentType } = multipartUpload("pipeline.txt", "convert me");
+        const response = await appWithJobs.inject({
+          method: "POST",
+          url: `/notebooks/${notebookId}/documents`,
+          cookies: { session },
+          headers: { "content-type": contentType },
+          payload,
+        });
+
+        expect(response.statusCode).toBe(201);
+        const body = response.json() as { id: string; status: string; latestVersion: { id: string } };
+        expect(body.status).toBe("queued");
+        expect(enqueued).toEqual([{ documentId: body.id, versionId: body.latestVersion.id }]);
+      } finally {
+        await appWithJobs.close();
+      }
+    });
+
+    it("still stores the upload when enqueueing the job fails", async () => {
+      const appWithJobs = await appWith({
+        enqueueConvertToMarkdown: async () => {
+          throw new Error("pg_boss is down");
+        },
+        stop: async () => {},
+      });
+      try {
+        const session = await loginAsNewUser("ingestion-enqueue-fails@example.com");
+        const notebookId = await createNotebook(session, "Ingestion failure");
+
+        const { payload, contentType } = multipartUpload("orphan.txt", "stored anyway");
+        const response = await appWithJobs.inject({
+          method: "POST",
+          url: `/notebooks/${notebookId}/documents`,
+          cookies: { session },
+          headers: { "content-type": contentType },
+          payload,
+        });
+
+        // The bytes are already in object storage by the time the enqueue is
+        // attempted, so failing the request would strand them. The Version
+        // stays "queued" — the standing record of work still owed.
+        expect(response.statusCode).toBe(201);
+        expect((response.json() as { status: string }).status).toBe("queued");
+      } finally {
+        await appWithJobs.close();
+      }
     });
   });
 

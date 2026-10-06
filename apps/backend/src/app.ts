@@ -8,6 +8,9 @@ import { jsonSchemaTransform, serializerCompiler, validatorCompiler } from "fast
 import type { Pool } from "pg";
 import { registerAuthRoutes } from "./auth/routes.js";
 import { registerDocumentRoutes } from "./documents/routes.js";
+import type { AppEventSubscriber } from "./events/bus.js";
+import { registerEventRoutes } from "./events/routes.js";
+import type { JobQueue } from "./jobs/queue.js";
 import { registerNotebookRoutes } from "./notebooks/routes.js";
 
 export interface BuildAppOptions {
@@ -19,6 +22,15 @@ export interface BuildAppOptions {
   // Document routes (e.g. notebooks.route.test.ts) don't need to change.
   s3?: S3Client;
   documentsBucket?: string;
+  // Background jobs (NBK-6). Given, an upload enqueues ingestion stage 1;
+  // omitted, uploads just land and stay "queued" — which is what the
+  // Document route tests want, since they assert on the route, not the
+  // pipeline.
+  jobs?: JobQueue;
+  // The LISTEN subscriber the generic SSE endpoint forwards from (NBK-6).
+  // Omitted, `GET /events` isn't registered at all; a process that serves
+  // live updates always supplies it.
+  appEvents?: AppEventSubscriber;
 }
 
 /**
@@ -26,7 +38,13 @@ export interface BuildAppOptions {
  * Postgres pool as a dependency so tests can hand it a Testcontainers-backed
  * pool instead of a real deployment's.
  */
-export async function buildApp({ pool, s3, documentsBucket }: BuildAppOptions): Promise<FastifyInstance> {
+export async function buildApp({
+  pool,
+  s3,
+  documentsBucket,
+  jobs,
+  appEvents,
+}: BuildAppOptions): Promise<FastifyInstance> {
   const app = Fastify({ logger: false });
 
   app.setValidatorCompiler(validatorCompiler);
@@ -49,7 +67,10 @@ export async function buildApp({ pool, s3, documentsBucket }: BuildAppOptions): 
   registerAuthRoutes(app, pool);
   registerNotebookRoutes(app, pool);
   if (s3 && documentsBucket) {
-    registerDocumentRoutes(app, { pool, s3, documentsBucket });
+    registerDocumentRoutes(app, { pool, s3, documentsBucket, jobs });
+  }
+  if (appEvents) {
+    registerEventRoutes(app, { pool, appEvents });
   }
 
   return app;

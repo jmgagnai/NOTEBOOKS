@@ -13,7 +13,9 @@ const OUTPUT_PATH = join(__dirname, "..", "..", "openapi.json");
  * routes. Doesn't execute any route handler, so it doesn't need a reachable
  * Postgres or MinIO — the pool and S3 client are only ever constructed,
  * never queried, but must still be passed in so Document routes (NBK-5) are
- * registered and included in the document.
+ * registered and included in the document. `appEvents` is a no-op stub for
+ * the same reason: `GET /events` (NBK-6) should appear in the document, and
+ * nothing here ever subscribes.
  */
 async function main(): Promise<void> {
   const pool = createPool(process.env.DATABASE_URL ?? "postgres://unused:unused@localhost:5432/unused");
@@ -22,7 +24,12 @@ async function main(): Promise<void> {
     accessKeyId: "unused",
     secretAccessKey: "unused",
   });
-  const app = await buildApp({ pool, s3, documentsBucket: "unused" });
+  const app = await buildApp({
+    pool,
+    s3,
+    documentsBucket: "unused",
+    appEvents: { subscribe: () => () => undefined, close: async () => undefined },
+  });
   await app.ready();
 
   const document = app.swagger();

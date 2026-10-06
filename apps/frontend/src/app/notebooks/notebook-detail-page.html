@@ -35,7 +35,9 @@
         @for (document of store.documents(); track document.id) {
           <mat-list-item class="notebook-detail-page__item">
             <span class="notebook-detail-page__filename">{{ document.filename }}</span>
-            <span class="notebook-detail-page__badge">{{ document.status }}</span>
+            <span [class]="'notebook-detail-page__badge notebook-detail-page__badge--' + document.status">{{
+              document.status
+            }}</span>
             <span class="notebook-detail-page__version">v{{ document.latestVersion.versionNumber }}</span>
             <button
               mat-button

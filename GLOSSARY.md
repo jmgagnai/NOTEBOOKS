@@ -26,6 +26,20 @@ _Avoid_: source, reference.
 A named sequence of messages asked against a Notebook's Documents, started by one user (its author) but visible to every user who opens the Notebook, the same as Documents. Every message in it records which user asked it — this is attribution, not an access restriction: any user may read or continue any Chat Thread regardless of who started it or who asked a given message.
 _Avoid_: conversation, session.
 
+### Ingestion
+
+**Ingestion**:
+The background pipeline that turns an uploaded Document Version into something chat can be grounded in. It runs as a chain of independently retryable **Stages**, each one enqueuing the next on success; stage 1 is conversion to Markdown. A Document Version's progress through it is its status: `queued` → `converting` → `converted` or `failed`.
+_Avoid_: processing, indexing (reserve "indexing" for the embedding/retrieval stage specifically), import.
+
+**Converted Markdown**:
+The Markdown rendering of a Document Version's original file, produced by stage 1 of Ingestion and stored on that Version. The single input every later Stage and every Generated document artifact reads from — nothing downstream re-reads the original upload.
+_Avoid_: extracted text, plain text, content.
+
+**App Event**:
+One thing that happened on the backend and that connected clients are told about immediately — an Ingestion stage transition, and later chat answer chunks and other background-task progress. App Events are notifications, not state: they carry what changed, and a client that missed one re-reads the truth over the normal API.
+_Avoid_: message, notification (reserve "notification" for something addressed to a user), update.
+
 ### Generated document artifacts
 
 Every ingested document produces three distinct generated summaries, each sized and consumed differently. They are not interchangeable.
