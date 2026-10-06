@@ -1,4 +1,4 @@
-import { OPENROUTER_BASE_URL } from "./openrouter.js";
+import { OPENROUTER_BASE_URL } from './openrouter.js';
 
 /**
  * The seam between everything that needs embeddings and OpenRouter: hand it
@@ -73,7 +73,7 @@ function isRetryableStatus(status: number): boolean {
  * wait, not a re-chunk and re-embed of everything before it.
  */
 export function createOpenRouterEmbedder(options: OpenRouterEmbedderOptions): Embedder {
-  const baseUrl = (options.baseUrl ?? OPENROUTER_BASE_URL).replace(/\/+$/, "");
+  const baseUrl = (options.baseUrl ?? OPENROUTER_BASE_URL).replace(/\/+$/, '');
   const doFetch = options.fetch ?? globalThis.fetch;
   const retries = options.retries ?? 2;
   const retryDelayMs = options.retryDelayMs ?? 500;
@@ -81,19 +81,21 @@ export function createOpenRouterEmbedder(options: OpenRouterEmbedderOptions): Em
   const batchSize = Math.max(1, options.batchSize ?? DEFAULT_BATCH_SIZE);
 
   if (!options.apiKey) {
-    throw new Error("An OpenRouter API key is required. Set OPENROUTER_API_KEY.");
+    throw new Error('An OpenRouter API key is required. Set OPENROUTER_API_KEY.');
   }
 
-  async function attempt(batch: string[]): Promise<{ vectors?: number[][]; retryable: boolean; error?: string }> {
+  async function attempt(
+    batch: string[],
+  ): Promise<{ vectors?: number[][]; retryable: boolean; error?: string }> {
     const response = await doFetch(`${baseUrl}/embeddings`, {
-      method: "POST",
+      method: 'POST',
       headers: {
         authorization: `Bearer ${options.apiKey}`,
-        "content-type": "application/json",
+        'content-type': 'application/json',
         // Same attribution headers as the chat completer: harmless, and it
         // makes this app's spend identifiable in the OpenRouter dashboard.
-        "http-referer": "https://github.com/rag-notebook",
-        "x-title": "RAG Notebook",
+        'http-referer': 'https://github.com/rag-notebook',
+        'x-title': 'RAG Notebook',
       },
       body: JSON.stringify({ model: options.model, input: batch }),
       // AbortSignal.timeout rather than a manual timer: a hung connection must
@@ -102,7 +104,7 @@ export function createOpenRouterEmbedder(options: OpenRouterEmbedderOptions): Em
     });
 
     if (!response.ok) {
-      const body = await response.text().catch(() => "");
+      const body = await response.text().catch(() => '');
       return {
         retryable: isRetryableStatus(response.status),
         error: `OpenRouter returned ${response.status} for embedding model ${options.model}: ${body.slice(0, 500)}`,
@@ -112,7 +114,10 @@ export function createOpenRouterEmbedder(options: OpenRouterEmbedderOptions): Em
     const payload = (await response.json()) as EmbeddingsResponse;
     if (payload.error?.message) {
       // OpenRouter can report an upstream provider failure in a 200 body.
-      return { retryable: true, error: `OpenRouter error for embedding model ${options.model}: ${payload.error.message}` };
+      return {
+        retryable: true,
+        error: `OpenRouter error for embedding model ${options.model}: ${payload.error.message}`,
+      };
     }
 
     const entries = payload.data;
@@ -132,8 +137,16 @@ export function createOpenRouterEmbedder(options: OpenRouterEmbedderOptions): Em
     const vectors = new Array<number[]>(batch.length);
     for (const [position, entry] of entries.entries()) {
       const index = entry.index ?? position;
-      if (!Array.isArray(entry.embedding) || index < 0 || index >= batch.length || vectors[index] !== undefined) {
-        return { retryable: true, error: `OpenRouter returned a malformed embedding for model ${options.model}.` };
+      if (
+        !Array.isArray(entry.embedding) ||
+        index < 0 ||
+        index >= batch.length ||
+        vectors[index] !== undefined
+      ) {
+        return {
+          retryable: true,
+          error: `OpenRouter returned a malformed embedding for model ${options.model}.`,
+        };
       }
       vectors[index] = entry.embedding;
     }

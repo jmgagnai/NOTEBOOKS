@@ -1,16 +1,16 @@
-import type { FastifyInstance } from "fastify";
-import type { ZodTypeProvider } from "fastify-type-provider-zod";
-import type { Pool } from "pg";
-import { createAuthGuard } from "../auth/guard.js";
-import { errorResponseSchema } from "../auth/schema.js";
-import { notebookExists } from "../notebooks/repository.js";
-import type { Embedder } from "../llm/embeddings.js";
-import { searchNotebook } from "./repository.js";
+import type { FastifyInstance } from 'fastify';
+import type { ZodTypeProvider } from 'fastify-type-provider-zod';
+import type { Pool } from 'pg';
+import { createAuthGuard } from '../auth/guard.js';
+import { errorResponseSchema } from '../auth/schema.js';
+import { notebookExists } from '../notebooks/repository.js';
+import type { Embedder } from '../llm/embeddings.js';
+import { searchNotebook } from './repository.js';
 import {
   searchNotebookParamsSchema,
   searchNotebookQuerySchema,
   searchNotebookResponseSchema,
-} from "./schema.js";
+} from './schema.js';
 
 export interface RegisterSearchRoutesOptions {
   pool: Pool;
@@ -31,16 +31,19 @@ export interface RegisterSearchRoutesOptions {
  * per ADR-0001, with no ownership check — the same shared-access model as
  * Notebooks and Documents.
  */
-export function registerSearchRoutes(app: FastifyInstance, { pool, embed }: RegisterSearchRoutesOptions): void {
+export function registerSearchRoutes(
+  app: FastifyInstance,
+  { pool, embed }: RegisterSearchRoutesOptions,
+): void {
   const authGuard = createAuthGuard(pool);
 
   app.withTypeProvider<ZodTypeProvider>().get(
-    "/notebooks/:notebookId/search",
+    '/notebooks/:notebookId/search',
     {
       preHandler: authGuard,
       schema: {
-        operationId: "searchNotebook",
-        tags: ["search"],
+        operationId: 'searchNotebook',
+        tags: ['search'],
         summary:
           "Search a Notebook's Documents semantically. Matches Chunks by vector similarity, rolls them up to their parent Document, and returns each matched Document with its Abstract.",
         params: searchNotebookParamsSchema,
@@ -55,7 +58,8 @@ export function registerSearchRoutes(app: FastifyInstance, { pool, embed }: Regi
     async (request, reply) => {
       if (!embed) {
         await reply.status(503).send({
-          message: "Search is unavailable: no embedding model is configured. Set OPENROUTER_API_KEY.",
+          message:
+            'Search is unavailable: no embedding model is configured. Set OPENROUTER_API_KEY.',
         });
         return;
       }
@@ -64,7 +68,7 @@ export function registerSearchRoutes(app: FastifyInstance, { pool, embed }: Regi
       // cost nothing, and an empty result set would otherwise be
       // indistinguishable from a Notebook that doesn't exist.
       if (!(await notebookExists(pool, request.params.notebookId))) {
-        await reply.status(404).send({ message: "Notebook not found." });
+        await reply.status(404).send({ message: 'Notebook not found.' });
         return;
       }
 
@@ -76,7 +80,14 @@ export function registerSearchRoutes(app: FastifyInstance, { pool, embed }: Regi
 
       await reply
         .status(200)
-        .send(await searchNotebook(pool, request.params.notebookId, queryEmbedding, request.query.limit));
+        .send(
+          await searchNotebook(
+            pool,
+            request.params.notebookId,
+            queryEmbedding,
+            request.query.limit,
+          ),
+        );
     },
   );
 }

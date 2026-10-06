@@ -55,10 +55,15 @@
           <li class="notebook-detail-page__card">
             <div class="notebook-detail-page__card-head">
               <span class="notebook-detail-page__filename">{{ document.filename }}</span>
-              <span [class]="'notebook-detail-page__badge notebook-detail-page__badge--' + document.status">{{
-                document.status
-              }}</span>
-              <span class="notebook-detail-page__version">v{{ document.latestVersion.versionNumber }}</span>
+              <span
+                [class]="
+                  'notebook-detail-page__badge notebook-detail-page__badge--' + document.status
+                "
+                >{{ document.status }}</span
+              >
+              <span class="notebook-detail-page__version"
+                >v{{ document.latestVersion.versionNumber }}</span
+              >
             </div>
 
             @if (document.abstract) {

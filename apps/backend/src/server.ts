@@ -1,23 +1,23 @@
-import { buildApp } from "./app.js";
-import { runMigrations } from "./db/migrate.js";
-import { createPool } from "./db/pool.js";
-import { createAppEventSubscriber } from "./events/bus.js";
-import { createDoclingConverter } from "./ingestion/docling.js";
-import { startJobQueue } from "./jobs/queue.js";
-import { resolveEmbeddingModel, resolveTaskModels } from "./llm/models.js";
-import { createOpenRouterEmbedder } from "./llm/embeddings.js";
-import { createOpenRouterCompleter, createOpenRouterStreamer } from "./llm/openrouter.js";
-import { createS3Client, ensureBucket } from "./storage/s3-client.js";
+import { buildApp } from './app.js';
+import { runMigrations } from './db/migrate.js';
+import { createPool } from './db/pool.js';
+import { createAppEventSubscriber } from './events/bus.js';
+import { createDoclingConverter } from './ingestion/docling.js';
+import { startJobQueue } from './jobs/queue.js';
+import { resolveEmbeddingModel, resolveTaskModels } from './llm/models.js';
+import { createOpenRouterEmbedder } from './llm/embeddings.js';
+import { createOpenRouterCompleter, createOpenRouterStreamer } from './llm/openrouter.js';
+import { createS3Client, ensureBucket } from './storage/s3-client.js';
 
 const PORT = Number(process.env.PORT ?? 3000);
 const DATABASE_URL =
-  process.env.DATABASE_URL ?? "postgres://rag_notebook:rag_notebook@localhost:5432/rag_notebook";
+  process.env.DATABASE_URL ?? 'postgres://rag_notebook:rag_notebook@localhost:5432/rag_notebook';
 
 // Defaults match the MinIO service in the root docker-compose.yml (NBK-2).
-const MINIO_ENDPOINT = process.env.MINIO_ENDPOINT ?? "http://localhost:9000";
-const MINIO_ACCESS_KEY = process.env.MINIO_ACCESS_KEY ?? "rag_notebook";
-const MINIO_SECRET_KEY = process.env.MINIO_SECRET_KEY ?? "rag_notebook_secret";
-const DOCUMENTS_BUCKET = process.env.DOCUMENTS_BUCKET ?? "rag-notebook-documents";
+const MINIO_ENDPOINT = process.env.MINIO_ENDPOINT ?? 'http://localhost:9000';
+const MINIO_ACCESS_KEY = process.env.MINIO_ACCESS_KEY ?? 'rag_notebook';
+const MINIO_SECRET_KEY = process.env.MINIO_SECRET_KEY ?? 'rag_notebook_secret';
+const DOCUMENTS_BUCKET = process.env.DOCUMENTS_BUCKET ?? 'rag-notebook-documents';
 
 // Ingestion stage 2 (NBK-7) calls OpenRouter for metadata extraction and the
 // three generated summaries, stage 3 (NBK-8) calls it for chunk embeddings,
@@ -52,11 +52,11 @@ async function main(): Promise<void> {
   if (!OPENROUTER_API_KEY) {
     // eslint-disable-next-line no-console
     console.warn(
-      "OPENROUTER_API_KEY is not set: ingestion stage 2 (metadata + summaries) and stage 3 " +
-        "(chunking + embeddings) will not run, Documents will stop at the \"converted\" " +
-        "status instead of reaching \"ready\", and asking a question in a Chat Thread or " +
-        "running a search will report 503 — both have to embed their text with the same " +
-        "model that embedded the chunks.",
+      'OPENROUTER_API_KEY is not set: ingestion stage 2 (metadata + summaries) and stage 3 ' +
+        '(chunking + embeddings) will not run, Documents will stop at the "converted" ' +
+        'status instead of reaching "ready", and asking a question in a Chat Thread or ' +
+        'running a search will report 503 — both have to embed their text with the same ' +
+        'model that embedded the chunks.',
     );
   }
 
@@ -110,7 +110,7 @@ async function main(): Promise<void> {
     chat,
     embed,
   });
-  await app.listen({ port: PORT, host: "0.0.0.0" });
+  await app.listen({ port: PORT, host: '0.0.0.0' });
   // eslint-disable-next-line no-console
   console.log(`Backend listening on :${PORT}`);
 
@@ -122,8 +122,8 @@ async function main(): Promise<void> {
     await appEvents.close();
     await pool.end();
   };
-  process.once("SIGINT", () => void shutdown());
-  process.once("SIGTERM", () => void shutdown());
+  process.once('SIGINT', () => void shutdown());
+  process.once('SIGTERM', () => void shutdown());
 }
 
 main().catch((err) => {

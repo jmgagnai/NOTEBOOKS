@@ -18,13 +18,11 @@ class DummyHomePage {}
 // shell/guard test instead).
 describe('LoginPage', () => {
   it('logs in and navigates to the home route on success', async () => {
-    const login = vi
-      .fn()
-      .mockResolvedValue({
-        id: '1',
-        email: 'ada@example.com',
-        createdAt: '2026-01-01T00:00:00.000Z',
-      });
+    const login = vi.fn().mockResolvedValue({
+      id: '1',
+      email: 'ada@example.com',
+      createdAt: '2026-01-01T00:00:00.000Z',
+    });
 
     await render(LoginPage, {
       providers: [{ provide: AuthService, useValue: { login } }],

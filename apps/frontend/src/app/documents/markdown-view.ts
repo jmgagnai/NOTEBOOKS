@@ -113,7 +113,9 @@ export class MarkdownView {
     // breaking a render over.
     afterRenderEffect(() => {
       if (this.highlightFrom() === null || this.blocks().length === 0) return;
-      const cited = this.host.nativeElement.querySelector<HTMLElement>('[data-testid="cited-passage"]');
+      const cited = this.host.nativeElement.querySelector<HTMLElement>(
+        '[data-testid="cited-passage"]',
+      );
       cited?.scrollIntoView?.({ block: 'center' });
     });
   }

@@ -44,15 +44,15 @@ export function splitMarkdownSections(markdown: string): MarkdownSection[] {
   const sections: MarkdownSection[] = [];
   // Index i holds the heading text currently open at level i+1.
   const openHeadings: (string | undefined)[] = [];
-  let current: MarkdownSection = { headingPath: [], heading: null, level: 0, content: "" };
+  let current: MarkdownSection = { headingPath: [], heading: null, level: 0, content: '' };
   let body: string[] = [];
   let openFence: string | null = null;
 
   const flush = (): void => {
-    current.content = body.join("\n").trim();
+    current.content = body.join('\n').trim();
     // The implicit preamble section is only real if it has text; a document
     // starting straight with `# Title` should not get an empty first section.
-    if (current.level > 0 || current.content !== "") sections.push(current);
+    if (current.level > 0 || current.content !== '') sections.push(current);
     body = [];
   };
 
@@ -90,7 +90,7 @@ export function splitMarkdownSections(markdown: string): MarkdownSection[] {
       headingPath: openHeadings.slice(0, level).filter((h): h is string => h !== undefined),
       heading: text,
       level,
-      content: "",
+      content: '',
     };
   }
   flush();

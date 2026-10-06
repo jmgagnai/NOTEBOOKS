@@ -1,6 +1,6 @@
-import { spawn } from "node:child_process";
-import { access, rename } from "node:fs/promises";
-import { basename, dirname, join, parse } from "node:path";
+import { spawn } from 'node:child_process';
+import { access, rename } from 'node:fs/promises';
+import { basename, dirname, join, parse } from 'node:path';
 
 async function fileExists(path: string): Promise<boolean> {
   try {
@@ -41,7 +41,7 @@ export type MarkdownConverter = (request: MarkdownConversionRequest) => Promise<
  * everything downstream, so the converter must not change under the app
  * without someone deciding to change it.
  */
-export const DOCLING_IMAGE = "ghcr.io/docling-project/docling-serve-cpu:v1.1.0";
+export const DOCLING_IMAGE = 'ghcr.io/docling-project/docling-serve-cpu:v1.1.0';
 
 export interface DoclingOptions {
   /** Container image to run. Defaults to `DOCLING_IMAGE`, overridable by `DOCLING_IMAGE` in the env. */
@@ -53,8 +53,8 @@ export interface DoclingOptions {
 }
 
 /** Mount points inside the container. Nothing outside them is visible to it. */
-const CONTAINER_INPUT_DIR = "/work/in";
-const CONTAINER_OUTPUT_DIR = "/work/out";
+const CONTAINER_INPUT_DIR = '/work/in';
+const CONTAINER_OUTPUT_DIR = '/work/out';
 
 /**
  * Builds the real Docling-backed converter: a `docker run --rm` per
@@ -76,10 +76,13 @@ const CONTAINER_OUTPUT_DIR = "/work/out";
  */
 export function createDoclingConverter(options: DoclingOptions = {}): MarkdownConverter {
   const image = options.image ?? process.env.DOCLING_IMAGE ?? DOCLING_IMAGE;
-  const docker = options.docker ?? process.env.DOCKER_BIN ?? "docker";
+  const docker = options.docker ?? process.env.DOCKER_BIN ?? 'docker';
   const timeoutMs = options.timeoutMs ?? Number(process.env.DOCLING_TIMEOUT_MS ?? 600_000);
 
-  return async function convertWithDocling({ inputPath, outputPath }: MarkdownConversionRequest): Promise<void> {
+  return async function convertWithDocling({
+    inputPath,
+    outputPath,
+  }: MarkdownConversionRequest): Promise<void> {
     const inputName = basename(inputPath);
     const outputDir = dirname(outputPath);
 
@@ -91,34 +94,34 @@ export function createDoclingConverter(options: DoclingOptions = {}): MarkdownCo
     const producedName = `${parse(inputName).name}.md`;
 
     const args = [
-      "run",
-      "--rm",
+      'run',
+      '--rm',
       // No network: conversion is pure local computation, and the models are
       // baked into the image. This also makes a malformed document unable to
       // reach anything.
-      "--network",
-      "none",
+      '--network',
+      'none',
       // The input is mounted read-only and on its own, so the container can
       // neither modify the file the rest of the job still relies on nor see
       // any other document's scratch space.
-      "--volume",
+      '--volume',
       `${inputPath}:${CONTAINER_INPUT_DIR}/${inputName}:ro`,
-      "--volume",
+      '--volume',
       `${outputDir}:${CONTAINER_OUTPUT_DIR}`,
       // The image's entrypoint starts the docling-serve HTTP server; this
       // runs the CLI that ships in the same image instead and exits.
-      "--entrypoint",
-      "docling",
+      '--entrypoint',
+      'docling',
       image,
-      "--to",
-      "md",
-      "--output",
+      '--to',
+      'md',
+      '--output',
       CONTAINER_OUTPUT_DIR,
       `${CONTAINER_INPUT_DIR}/${inputName}`,
     ];
 
     const diagnostics = await new Promise<string>((resolvePromise, reject) => {
-      const child = spawn(docker, args, { stdio: ["ignore", "pipe", "pipe"] });
+      const child = spawn(docker, args, { stdio: ['ignore', 'pipe', 'pipe'] });
 
       // Captured only for error messages — never parsed as the conversion
       // result. Bounded so a chatty dependency can't make this process grow
@@ -128,35 +131,37 @@ export function createDoclingConverter(options: DoclingOptions = {}): MarkdownCo
       const capture = (chunk: Buffer): void => {
         if (diagnosticsBytes >= 8_000) return;
         diagnosticsBytes += chunk.length;
-        captured.push(chunk.toString("utf8"));
+        captured.push(chunk.toString('utf8'));
       };
-      child.stdout?.on("data", capture);
-      child.stderr?.on("data", capture);
+      child.stdout?.on('data', capture);
+      child.stderr?.on('data', capture);
 
       const timer = setTimeout(() => {
-        child.kill("SIGKILL");
+        child.kill('SIGKILL');
         reject(new Error(`Docling timed out after ${timeoutMs}ms converting ${inputName}.`));
       }, timeoutMs);
 
-      child.on("error", (err) => {
+      child.on('error', (err) => {
         clearTimeout(timer);
         reject(
           new Error(
             `Could not start Docling via ${docker}: ${err.message}. ` +
-              "See docs/ingestion-docling.md for the setup step.",
+              'See docs/ingestion-docling.md for the setup step.',
           ),
         );
       });
 
-      child.on("close", (code, signal) => {
+      child.on('close', (code, signal) => {
         clearTimeout(timer);
-        const output = captured.join("").trim();
+        const output = captured.join('').trim();
         if (code === 0) {
           resolvePromise(output);
           return;
         }
         reject(
-          new Error(`Docling exited with ${signal ? `signal ${signal}` : `code ${code}`}: ${output}`),
+          new Error(
+            `Docling exited with ${signal ? `signal ${signal}` : `code ${code}`}: ${output}`,
+          ),
         );
       });
     });
@@ -172,7 +177,7 @@ export function createDoclingConverter(options: DoclingOptions = {}): MarkdownCo
     const produced = join(outputDir, producedName);
     if (!(await fileExists(produced))) {
       throw new Error(
-        `Docling exited 0 but produced no Markdown for ${inputName}. Diagnostics: ${diagnostics || "(none)"}`,
+        `Docling exited 0 but produced no Markdown for ${inputName}. Diagnostics: ${diagnostics || '(none)'}`,
       );
     }
 
@@ -186,5 +191,5 @@ export function createDoclingConverter(options: DoclingOptions = {}): MarkdownCo
 
 /** The filename the converter writes its Markdown to, inside a temp dir. */
 export function markdownOutputPath(directory: string): string {
-  return join(directory, "converted.md");
+  return join(directory, 'converted.md');
 }

@@ -1,23 +1,23 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
-import type { FastifyInstance } from "fastify";
-import type { Pool } from "pg";
-import { buildApp } from "../src/app.js";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql';
+import type { FastifyInstance } from 'fastify';
+import type { Pool } from 'pg';
+import { buildApp } from '../src/app.js';
 import {
   CHAT_ANSWER_CHUNK,
   CHAT_ANSWER_COMPLETED,
   CHAT_ANSWER_FAILED,
-} from "../src/chat/streaming.js";
-import { runMigrations } from "../src/db/migrate.js";
-import { createPool } from "../src/db/pool.js";
+} from '../src/chat/streaming.js';
+import { runMigrations } from '../src/db/migrate.js';
+import { createPool } from '../src/db/pool.js';
 import {
   createAppEventSubscriber,
   type AppEvent,
   type AppEventSubscriber,
-} from "../src/events/bus.js";
-import { createOpenRouterEmbedder } from "../src/llm/embeddings.js";
-import { EMBEDDING_DIMENSIONS } from "../src/llm/models.js";
-import { createOpenRouterCompleter, createOpenRouterStreamer } from "../src/llm/openrouter.js";
+} from '../src/events/bus.js';
+import { createOpenRouterEmbedder } from '../src/llm/embeddings.js';
+import { EMBEDDING_DIMENSIONS } from '../src/llm/models.js';
+import { createOpenRouterCompleter, createOpenRouterStreamer } from '../src/llm/openrouter.js';
 
 /**
  * Seam-1 test for NBK-11 (progressive streamed answers), per NBK-1's testing
@@ -36,14 +36,14 @@ import { createOpenRouterCompleter, createOpenRouterStreamer } from "../src/llm/
  *
  * No MinIO container: chat reads Chunks and Chat Snippets off Postgres.
  */
-describe("Chat answer streaming", () => {
+describe('Chat answer streaming', () => {
   let container: StartedPostgreSqlContainer;
   let pool: Pool;
   let app: FastifyInstance;
   let subscriber: AppEventSubscriber;
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("pgvector/pgvector:pg16").start();
+    container = await new PostgreSqlContainer('pgvector/pgvector:pg16').start();
     pool = createPool(container.getConnectionUri());
     await runMigrations(pool);
     subscriber = await createAppEventSubscriber(container.getConnectionUri());
@@ -62,22 +62,26 @@ describe("Chat answer streaming", () => {
   // point of NBK-11 is that the *delivery* changes and nothing else does.
   // ---------------------------------------------------------------------
 
-  const PASSWORD = "correct-horse-battery-staple";
+  const PASSWORD = 'correct-horse-battery-staple';
 
   async function loginAsNewUser(email: string): Promise<string> {
-    await app.inject({ method: "POST", url: "/auth/register", payload: { email, password: PASSWORD } });
-    const login = await app.inject({
-      method: "POST",
-      url: "/auth/login",
+    await app.inject({
+      method: 'POST',
+      url: '/auth/register',
       payload: { email, password: PASSWORD },
     });
-    return login.cookies.find((c) => c.name === "session")!.value;
+    const login = await app.inject({
+      method: 'POST',
+      url: '/auth/login',
+      payload: { email, password: PASSWORD },
+    });
+    return login.cookies.find((c) => c.name === 'session')!.value;
   }
 
   async function createNotebook(session: string, title: string): Promise<string> {
     const response = await app.inject({
-      method: "POST",
-      url: "/notebooks",
+      method: 'POST',
+      url: '/notebooks',
       cookies: { session },
       payload: { title },
     });
@@ -88,7 +92,7 @@ describe("Chat answer streaming", () => {
   // a chunk and a question about the same topic are distance 0 apart and
   // everything else is distance 1, so retrieval order is reasoned about
   // rather than inherited from a real model's geometry.
-  const TOPICS = ["revenue", "supply chain"];
+  const TOPICS = ['revenue', 'supply chain'];
 
   function vectorFor(text: string): number[] {
     const vector = new Array<number>(EMBEDDING_DIMENSIONS).fill(0);
@@ -106,7 +110,7 @@ describe("Chat answer streaming", () => {
   /** Writes a Document straight into Postgres in the state ingestion leaves it. */
   async function seedDocument(notebookId: string, spec: SeededDocument): Promise<void> {
     const { rows: docRows } = await pool.query<{ id: string }>(
-      "INSERT INTO documents (notebook_id, filename) VALUES ($1, $2) RETURNING id",
+      'INSERT INTO documents (notebook_id, filename) VALUES ($1, $2) RETURNING id',
       [notebookId, spec.filename],
     );
     const documentId = docRows[0].id;
@@ -116,20 +120,31 @@ describe("Chat answer streaming", () => {
           ingestion_status, markdown, chat_snippet)
        VALUES ($1, 1, 'text/markdown', 10, $2, 'ready', $3, $4)
        RETURNING id`,
-      [documentId, `${documentId}/1`, spec.chunks.map((c) => c.text).join("\n\n"), spec.chatSnippet],
+      [
+        documentId,
+        `${documentId}/1`,
+        spec.chunks.map((c) => c.text).join('\n\n'),
+        spec.chatSnippet,
+      ],
     );
     for (const [index, chunk] of spec.chunks.entries()) {
       await pool.query(
         `INSERT INTO chunks (document_version_id, chunk_index, heading_path, text, embedding)
          VALUES ($1, $2, $3, $4, $5::vector)`,
-        [versionRows[0].id, index, chunk.headingPath ?? [], chunk.text, `[${vectorFor(chunk.text).join(",")}]`],
+        [
+          versionRows[0].id,
+          index,
+          chunk.headingPath ?? [],
+          chunk.text,
+          `[${vectorFor(chunk.text).join(',')}]`,
+        ],
       );
     }
   }
 
   async function startThread(session: string, notebookId: string, title: string): Promise<string> {
     const response = await app.inject({
-      method: "POST",
+      method: 'POST',
       url: `/notebooks/${notebookId}/threads`,
       cookies: { session },
       payload: { title },
@@ -157,7 +172,7 @@ describe("Chat answer streaming", () => {
       const content = text.slice(at, at + deltaSize);
       frames.push(`data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`);
     }
-    frames.push("data: [DONE]\n\n");
+    frames.push('data: [DONE]\n\n');
     return new ReadableStream<Uint8Array>({
       start(controller) {
         for (const frame of frames) controller.enqueue(encoder.encode(frame));
@@ -180,14 +195,16 @@ describe("Chat answer streaming", () => {
       const url = String(input);
       const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
 
-      if (url.endsWith("/embeddings")) {
+      if (url.endsWith('/embeddings')) {
         const texts = (Array.isArray(body.input) ? body.input : [body.input]) as string[];
         return new Response(
-          JSON.stringify({ data: texts.map((text, index) => ({ index, embedding: vectorFor(text) })) }),
-          { status: 200, headers: { "content-type": "application/json" } },
+          JSON.stringify({
+            data: texts.map((text, index) => ({ index, embedding: vectorFor(text) })),
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
         );
       }
-      if (url.endsWith("/chat/completions")) {
+      if (url.endsWith('/chat/completions')) {
         completionRequests.push({ model: body.model as string, stream: body.stream });
         if (truncateAfter !== undefined) {
           // A body that dies partway: the provider accepted the request and
@@ -199,17 +216,19 @@ describe("Chat answer streaming", () => {
             new ReadableStream<Uint8Array>({
               start(controller) {
                 controller.enqueue(
-                  encoder.encode(`data: ${JSON.stringify({ choices: [{ delta: { content: prefix } }] })}\n\n`),
+                  encoder.encode(
+                    `data: ${JSON.stringify({ choices: [{ delta: { content: prefix } }] })}\n\n`,
+                  ),
                 );
-                controller.error(new Error("the provider hung up"));
+                controller.error(new Error('the provider hung up'));
               },
             }),
-            { status: 200, headers: { "content-type": "text/event-stream" } },
+            { status: 200, headers: { 'content-type': 'text/event-stream' } },
           );
         }
         return new Response(openAiStreamBody(answer, deltaSize), {
           status: 200,
-          headers: { "content-type": "text/event-stream" },
+          headers: { 'content-type': 'text/event-stream' },
         });
       }
       throw new Error(`The chat path called an unexpected OpenRouter endpoint: ${url}`);
@@ -223,19 +242,21 @@ describe("Chat answer streaming", () => {
    * OpenRouter clients — streaming and non-streaming both — their `fetch`
    * replaced by the stub.
    */
-  async function appWithStreamingChat(stubFetch: typeof globalThis.fetch): Promise<FastifyInstance> {
+  async function appWithStreamingChat(
+    stubFetch: typeof globalThis.fetch,
+  ): Promise<FastifyInstance> {
     return buildApp({
       pool,
       chat: {
-        complete: createOpenRouterCompleter({ apiKey: "test-key", fetch: stubFetch, retries: 0 }),
-        stream: createOpenRouterStreamer({ apiKey: "test-key", fetch: stubFetch, retries: 0 }),
+        complete: createOpenRouterCompleter({ apiKey: 'test-key', fetch: stubFetch, retries: 0 }),
+        stream: createOpenRouterStreamer({ apiKey: 'test-key', fetch: stubFetch, retries: 0 }),
         embed: createOpenRouterEmbedder({
-          apiKey: "test-key",
-          model: "test/embedding-model",
+          apiKey: 'test-key',
+          model: 'test/embedding-model',
           fetch: stubFetch,
           retries: 0,
         }),
-        model: "test/chat-model",
+        model: 'test/chat-model',
       },
     });
   }
@@ -270,7 +291,7 @@ describe("Chat answer streaming", () => {
       await new Promise((resolve) => setTimeout(resolve, 25));
     }
     throw new Error(
-      `No "${type}" app event arrived within 10s. Saw: ${collected.map((e) => e.type).join(", ") || "nothing"}`,
+      `No "${type}" app event arrived within 10s. Saw: ${collected.map((e) => e.type).join(', ') || 'nothing'}`,
     );
   }
 
@@ -287,22 +308,22 @@ describe("Chat answer streaming", () => {
   // records twice ("not token-by-token", "without a jarring word-by-word
   // flicker"): the model's tokens are buffered and released only on a
   // paragraph or heading boundary.
-  it("emits the answer over the app-event channel in paragraph/heading-sized chunks", async () => {
-    const session = await loginAsNewUser("streaming-chunks@example.com");
-    const notebookId = await createNotebook(session, "Streaming");
+  it('emits the answer over the app-event channel in paragraph/heading-sized chunks', async () => {
+    const session = await loginAsNewUser('streaming-chunks@example.com');
+    const notebookId = await createNotebook(session, 'Streaming');
     await seedDocument(notebookId, {
-      filename: "q3.md",
-      chatSnippet: "The Q3 revenue report.",
-      chunks: [{ text: "Revenue reached 12.4M in Q3.", headingPath: ["Q3", "Revenue"] }],
+      filename: 'q3.md',
+      chatSnippet: 'The Q3 revenue report.',
+      chunks: [{ text: 'Revenue reached 12.4M in Q3.', headingPath: ['Q3', 'Revenue'] }],
     });
-    const threadId = await startThread(session, notebookId, "Revenue");
+    const threadId = await startThread(session, notebookId, 'Revenue');
 
     const answer = [
-      "## Revenue",
-      "Revenue reached 12.4M in Q3 [1].",
-      "## What that means",
-      "It is the strongest quarter on record, and the trend is upward.",
-    ].join("\n\n");
+      '## Revenue',
+      'Revenue reached 12.4M in Q3 [1].',
+      '## What that means',
+      'It is the strongest quarter on record, and the trend is upward.',
+    ].join('\n\n');
 
     const { completionRequests, stubFetch } = openRouterStub({ answer });
     const streamingApp = await appWithStreamingChat(stubFetch);
@@ -310,10 +331,10 @@ describe("Chat answer streaming", () => {
 
     try {
       const response = await streamingApp.inject({
-        method: "POST",
+        method: 'POST',
         url: `/notebooks/${notebookId}/threads/${threadId}/messages`,
         cookies: { session },
-        payload: { content: "What was revenue in Q3?" },
+        payload: { content: 'What was revenue in Q3?' },
       });
       expect(response.statusCode).toBe(201);
 
@@ -323,10 +344,10 @@ describe("Chat answer streaming", () => {
       // heading and one per paragraph — not the ~40 three-character deltas
       // the stubbed model actually produced.
       expect(chunkTexts(collected)).toEqual([
-        "## Revenue",
-        "Revenue reached 12.4M in Q3 [1].",
-        "## What that means",
-        "It is the strongest quarter on record, and the trend is upward.",
+        '## Revenue',
+        'Revenue reached 12.4M in Q3 [1].',
+        '## What that means',
+        'It is the strongest quarter on record, and the trend is upward.',
       ]);
 
       // And the request really did ask OpenRouter to stream, so the chunking
@@ -343,27 +364,27 @@ describe("Chat answer streaming", () => {
   // chat_messages row" is the load-bearing word: a reader opening the Thread
   // later must find one answer, indistinguishable from one the synchronous
   // path (NBK-10) wrote — not one row per streamed chunk.
-  it("persists the assembled answer as one chat_messages row with its Citations", async () => {
-    const session = await loginAsNewUser("streaming-persist@example.com");
-    const notebookId = await createNotebook(session, "Streaming persistence");
+  it('persists the assembled answer as one chat_messages row with its Citations', async () => {
+    const session = await loginAsNewUser('streaming-persist@example.com');
+    const notebookId = await createNotebook(session, 'Streaming persistence');
     await seedDocument(notebookId, {
-      filename: "q3.md",
-      chatSnippet: "The Q3 revenue report.",
-      chunks: [{ text: "Revenue reached 12.4M in Q3.", headingPath: ["Q3", "Revenue"] }],
+      filename: 'q3.md',
+      chatSnippet: 'The Q3 revenue report.',
+      chunks: [{ text: 'Revenue reached 12.4M in Q3.', headingPath: ['Q3', 'Revenue'] }],
     });
-    const threadId = await startThread(session, notebookId, "Revenue");
+    const threadId = await startThread(session, notebookId, 'Revenue');
 
-    const answer = ["## Revenue", "Revenue reached 12.4M in Q3 [1]."].join("\n\n");
+    const answer = ['## Revenue', 'Revenue reached 12.4M in Q3 [1].'].join('\n\n');
     const { stubFetch } = openRouterStub({ answer });
     const streamingApp = await appWithStreamingChat(stubFetch);
     const collected = collectEvents(`notebook:${notebookId}`);
 
     try {
       const response = await streamingApp.inject({
-        method: "POST",
+        method: 'POST',
         url: `/notebooks/${notebookId}/threads/${threadId}/messages`,
         cookies: { session },
-        payload: { content: "What was revenue in Q3?" },
+        payload: { content: 'What was revenue in Q3?' },
       });
       expect(response.statusCode).toBe(201);
       const exchange = response.json() as {
@@ -380,7 +401,7 @@ describe("Chat answer streaming", () => {
       // Exactly two rows — the question and one answer — read back over the
       // normal API, with the streamed prose assembled whole.
       const conversation = await streamingApp.inject({
-        method: "GET",
+        method: 'GET',
         url: `/notebooks/${notebookId}/threads/${threadId}/messages`,
         cookies: { session },
       });
@@ -390,9 +411,9 @@ describe("Chat answer streaming", () => {
         content: string;
         citations: { marker: number; filename: string }[];
       }[];
-      expect(messages.map((m) => m.role)).toEqual(["user", "assistant"]);
+      expect(messages.map((m) => m.role)).toEqual(['user', 'assistant']);
       expect(messages[1].content).toBe(answer);
-      expect(messages[1].citations.map((c) => [c.marker, c.filename])).toEqual([[1, "q3.md"]]);
+      expect(messages[1].citations.map((c) => [c.marker, c.filename])).toEqual([[1, 'q3.md']]);
 
       // The completion event names the row that was written, so a client
       // that was rendering chunks knows which persisted message replaces its
@@ -412,34 +433,34 @@ describe("Chat answer streaming", () => {
   // "nothing is recorded, asking again is the retry" — has to survive the
   // upgrade. Clients that were rendering the partial answer are told to drop
   // it, because nothing they can re-read will ever contain it.
-  it("records nothing and says so when the stream fails partway", async () => {
-    const session = await loginAsNewUser("streaming-failure@example.com");
-    const notebookId = await createNotebook(session, "Streaming failure");
+  it('records nothing and says so when the stream fails partway', async () => {
+    const session = await loginAsNewUser('streaming-failure@example.com');
+    const notebookId = await createNotebook(session, 'Streaming failure');
     await seedDocument(notebookId, {
-      filename: "q3.md",
-      chatSnippet: "The Q3 revenue report.",
-      chunks: [{ text: "Revenue reached 12.4M in Q3.", headingPath: ["Q3", "Revenue"] }],
+      filename: 'q3.md',
+      chatSnippet: 'The Q3 revenue report.',
+      chunks: [{ text: 'Revenue reached 12.4M in Q3.', headingPath: ['Q3', 'Revenue'] }],
     });
-    const threadId = await startThread(session, notebookId, "Revenue");
+    const threadId = await startThread(session, notebookId, 'Revenue');
 
     const { stubFetch } = openRouterStub({
-      answer: "## Revenue\n\nRevenue reached",
-      truncateAfter: "## Revenue\n\n".length,
+      answer: '## Revenue\n\nRevenue reached',
+      truncateAfter: '## Revenue\n\n'.length,
     });
     const streamingApp = await appWithStreamingChat(stubFetch);
     const collected = collectEvents(`notebook:${notebookId}`);
 
     try {
       const response = await streamingApp.inject({
-        method: "POST",
+        method: 'POST',
         url: `/notebooks/${notebookId}/threads/${threadId}/messages`,
         cookies: { session },
-        payload: { content: "What was revenue in Q3?" },
+        payload: { content: 'What was revenue in Q3?' },
       });
       expect(response.statusCode).toBe(502);
 
       const conversation = await streamingApp.inject({
-        method: "GET",
+        method: 'GET',
         url: `/notebooks/${notebookId}/threads/${threadId}/messages`,
         cookies: { session },
       });

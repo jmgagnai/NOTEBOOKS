@@ -1,4 +1,4 @@
-export const SESSION_COOKIE_NAME = "session";
+export const SESSION_COOKIE_NAME = 'session';
 
 /**
  * Cookie options for issuing the session cookie on login.
@@ -11,16 +11,16 @@ export const SESSION_COOKIE_NAME = "session";
  */
 export function sessionCookieOptions(): {
   httpOnly: true;
-  sameSite: "lax";
+  sameSite: 'lax';
   secure: boolean;
-  path: "/";
+  path: '/';
   maxAge: number;
 } {
   return {
     httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    path: '/',
     maxAge: 60 * 60 * 24 * 7, // 7 days, in seconds
   };
 }

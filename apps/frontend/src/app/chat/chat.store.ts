@@ -156,254 +156,262 @@ function eventCitations(event: AppEvent): Citation[] {
 export const ChatStore = signalStore(
   { providedIn: 'root' },
   withState(initialState),
-  withMethods(
-    (store, chatService = inject(ChatService), appEvents = inject(AppEventsService)) => {
-      // The live subscription for whichever Notebook is open. Held outside
-      // the state because it is plumbing, not something a template renders —
-      // the same shape as DocumentsStore's.
-      let watching: Subscription | null = null;
+  withMethods((store, chatService = inject(ChatService), appEvents = inject(AppEventsService)) => {
+    // The live subscription for whichever Notebook is open. Held outside
+    // the state because it is plumbing, not something a template renders —
+    // the same shape as DocumentsStore's.
+    let watching: Subscription | null = null;
 
-      function stopWatching(): void {
-        watching?.unsubscribe();
-        watching = null;
-      }
+    function stopWatching(): void {
+      watching?.unsubscribe();
+      watching = null;
+    }
 
-      /**
-       * Re-reads the open Thread's messages over the normal REST route and drops
-       * the preview it replaces.
-       *
-       * This is GLOSSARY.md's rule about an App Event, applied: the events
-       * "carry what changed, and a client that missed one re-reads the truth
-       * over the normal API". Used when the answer was not this client's own
-       * ask — someone else asked in the shared Thread, or this client joined
-       * the stream late — because there is no response in flight that would
-       * otherwise deliver the recorded messages.
-       */
-      async function refreshThreadMessages(notebookId: string, threadId: string, streamId: string): Promise<void> {
-        try {
-          const messages = (await chatService.listChatMessages({ notebookId, threadId })) as ChatMessage[];
-          if (store.activeThreadId() !== threadId) return;
-          patchState(store, {
-            messages,
-            // Only if it is still the same answer: a newer one may have
-            // started streaming while this request was out.
-            ...(store.streamingAnswer()?.streamId === streamId ? { streamingAnswer: null } : {}),
-          });
-        } catch {
-          // The preview stays up rather than vanishing into nothing. It is
-          // the right prose; only its persisted form failed to load, and the
-          // next open of the Thread will fetch it.
-        }
-      }
-
-      return {
-    async loadThreads(notebookId: string): Promise<void> {
-      patchState(store, { threadsLoading: true, error: null });
+    /**
+     * Re-reads the open Thread's messages over the normal REST route and drops
+     * the preview it replaces.
+     *
+     * This is GLOSSARY.md's rule about an App Event, applied: the events
+     * "carry what changed, and a client that missed one re-reads the truth
+     * over the normal API". Used when the answer was not this client's own
+     * ask — someone else asked in the shared Thread, or this client joined
+     * the stream late — because there is no response in flight that would
+     * otherwise deliver the recorded messages.
+     */
+    async function refreshThreadMessages(
+      notebookId: string,
+      threadId: string,
+      streamId: string,
+    ): Promise<void> {
       try {
-        const threads = (await chatService.listChatThreads({ notebookId })) as ChatThread[];
-        patchState(store, { threads, threadsLoading: false });
-      } catch (err) {
-        patchState(store, {
-          threadsLoading: false,
-          error: errorMessage(err, 'Failed to load Chat Threads.'),
-        });
-      }
-    },
-
-    async createThread(notebookId: string, title: string): Promise<void> {
-      patchState(store, { error: null });
-      try {
-        const thread = (await chatService.createChatThread({
+        const messages = (await chatService.listChatMessages({
           notebookId,
-          body: { title },
-        })) as ChatThread;
-        // Newest first, matching the backend's ordering, so a Thread just
-        // started is where the user is already looking.
+          threadId,
+        })) as ChatMessage[];
+        if (store.activeThreadId() !== threadId) return;
         patchState(store, {
-          threads: [thread, ...store.threads()],
-          activeThreadId: thread.id,
+          messages,
+          // Only if it is still the same answer: a newer one may have
+          // started streaming while this request was out.
+          ...(store.streamingAnswer()?.streamId === streamId ? { streamingAnswer: null } : {}),
+        });
+      } catch {
+        // The preview stays up rather than vanishing into nothing. It is
+        // the right prose; only its persisted form failed to load, and the
+        // next open of the Thread will fetch it.
+      }
+    }
+
+    return {
+      async loadThreads(notebookId: string): Promise<void> {
+        patchState(store, { threadsLoading: true, error: null });
+        try {
+          const threads = (await chatService.listChatThreads({ notebookId })) as ChatThread[];
+          patchState(store, { threads, threadsLoading: false });
+        } catch (err) {
+          patchState(store, {
+            threadsLoading: false,
+            error: errorMessage(err, 'Failed to load Chat Threads.'),
+          });
+        }
+      },
+
+      async createThread(notebookId: string, title: string): Promise<void> {
+        patchState(store, { error: null });
+        try {
+          const thread = (await chatService.createChatThread({
+            notebookId,
+            body: { title },
+          })) as ChatThread;
+          // Newest first, matching the backend's ordering, so a Thread just
+          // started is where the user is already looking.
+          patchState(store, {
+            threads: [thread, ...store.threads()],
+            activeThreadId: thread.id,
+            messages: [],
+            streamingAnswer: null,
+          });
+        } catch (err) {
+          patchState(store, { error: errorMessage(err, 'Failed to start a Chat Thread.') });
+        }
+      },
+
+      async renameThread(notebookId: string, threadId: string, title: string): Promise<void> {
+        patchState(store, { error: null });
+        try {
+          const renamed = (await chatService.renameChatThread({
+            notebookId,
+            threadId,
+            body: { title },
+          })) as ChatThread;
+          patchState(store, {
+            threads: store.threads().map((t) => (t.id === renamed.id ? renamed : t)),
+          });
+        } catch (err) {
+          patchState(store, { error: errorMessage(err, 'Failed to rename the Chat Thread.') });
+        }
+      },
+
+      /** Opens a Chat Thread and loads its messages. */
+      async openThread(notebookId: string, threadId: string): Promise<void> {
+        patchState(store, {
+          activeThreadId: threadId,
+          // The previous Thread's messages belong to a different Chat Thread,
+          // and so does anything that was streaming into it.
           messages: [],
           streamingAnswer: null,
+          messagesLoading: true,
+          error: null,
         });
-      } catch (err) {
-        patchState(store, { error: errorMessage(err, 'Failed to start a Chat Thread.') });
-      }
-    },
+        try {
+          const messages = (await chatService.listChatMessages({
+            notebookId,
+            threadId,
+          })) as ChatMessage[];
+          patchState(store, { messages, messagesLoading: false });
+        } catch (err) {
+          patchState(store, {
+            messagesLoading: false,
+            error: errorMessage(err, 'Failed to load the Chat Thread.'),
+          });
+        }
+      },
 
-    async renameThread(notebookId: string, threadId: string, title: string): Promise<void> {
-      patchState(store, { error: null });
-      try {
-        const renamed = (await chatService.renameChatThread({
-          notebookId,
-          threadId,
-          body: { title },
-        })) as ChatThread;
-        patchState(store, {
-          threads: store.threads().map((t) => (t.id === renamed.id ? renamed : t)),
-        });
-      } catch (err) {
-        patchState(store, { error: errorMessage(err, 'Failed to rename the Chat Thread.') });
-      }
-    },
+      /**
+       * Asks a question and appends the exchange.
+       *
+       * The response carries both messages, so nothing is re-fetched and
+       * nothing is rendered optimistically: the question the user sees is the
+       * one the server recorded, with its id and attribution. Resolves `true`
+       * when the exchange landed, so the caller knows whether to clear the
+       * box — a failed ask records nothing server-side, which makes asking
+       * again the retry, and that only works if the text survives.
+       *
+       * While this request is out, the answer's chunks are arriving on the
+       * live stream and `streamingAnswer` is being rendered (NBK-11). That
+       * preview is dropped here, whichever way the request ends: on success
+       * the recorded messages take its place, and on failure there is nothing
+       * to show — the backend persisted no half answer.
+       */
+      async sendMessage(notebookId: string, threadId: string, content: string): Promise<boolean> {
+        patchState(store, { sending: true, error: null });
+        try {
+          const exchange = (await chatService.sendChatMessage({
+            notebookId,
+            threadId,
+            body: { content },
+          })) as { question: ChatMessage; answer: ChatMessage };
+          patchState(store, {
+            sending: false,
+            messages: [...store.messages(), exchange.question, exchange.answer],
+            streamingAnswer: null,
+          });
+          return true;
+        } catch (err) {
+          patchState(store, {
+            sending: false,
+            streamingAnswer: null,
+            error: errorMessage(err, 'Failed to send the message.'),
+          });
+          return false;
+        }
+      },
 
-    /** Opens a Chat Thread and loads its messages. */
-    async openThread(notebookId: string, threadId: string): Promise<void> {
-      patchState(store, {
-        activeThreadId: threadId,
-        // The previous Thread's messages belong to a different Chat Thread,
-        // and so does anything that was streaming into it.
-        messages: [],
-        streamingAnswer: null,
-        messagesLoading: true,
-        error: null,
-      });
-      try {
-        const messages = (await chatService.listChatMessages({ notebookId, threadId })) as ChatMessage[];
-        patchState(store, { messages, messagesLoading: false });
-      } catch (err) {
-        patchState(store, {
-          messagesLoading: false,
-          error: errorMessage(err, 'Failed to load the Chat Thread.'),
-        });
-      }
-    },
+      /**
+       * Follows one Notebook's live app events so a streamed answer renders as
+       * it is written (NBK-11).
+       *
+       * Only this Notebook's topic is requested, and only the three chat
+       * answer event types are acted on — the stream carries everything,
+       * including the Document status events DocumentsStore watches.
+       *
+       * Note what this does *not* do: it never treats a chunk as the record.
+       * The answer becomes a message when a `chat_messages` row exists, which
+       * the completion event announces and the REST routes serve; until then
+       * it is a preview that can be dropped at any moment.
+       */
+      watchNotebook(notebookId: string): void {
+        stopWatching();
+        watching = appEvents.stream([`notebook:${notebookId}`]).subscribe((event) => {
+          const fields = streamFields(event);
+          if (!fields) return;
+          // A Notebook can hold several Threads, and everyone watching it sees
+          // every Thread's answers (they are shared, per GLOSSARY.md). Only
+          // the open one is rendered.
+          if (fields.threadId !== store.activeThreadId()) return;
 
-    /**
-     * Asks a question and appends the exchange.
-     *
-     * The response carries both messages, so nothing is re-fetched and
-     * nothing is rendered optimistically: the question the user sees is the
-     * one the server recorded, with its id and attribution. Resolves `true`
-     * when the exchange landed, so the caller knows whether to clear the
-     * box — a failed ask records nothing server-side, which makes asking
-     * again the retry, and that only works if the text survives.
-     *
-     * While this request is out, the answer's chunks are arriving on the
-     * live stream and `streamingAnswer` is being rendered (NBK-11). That
-     * preview is dropped here, whichever way the request ends: on success
-     * the recorded messages take its place, and on failure there is nothing
-     * to show — the backend persisted no half answer.
-     */
-    async sendMessage(notebookId: string, threadId: string, content: string): Promise<boolean> {
-      patchState(store, { sending: true, error: null });
-      try {
-        const exchange = (await chatService.sendChatMessage({
-          notebookId,
-          threadId,
-          body: { content },
-        })) as { question: ChatMessage; answer: ChatMessage };
-        patchState(store, {
-          sending: false,
-          messages: [...store.messages(), exchange.question, exchange.answer],
-          streamingAnswer: null,
-        });
-        return true;
-      } catch (err) {
-        patchState(store, {
-          sending: false,
-          streamingAnswer: null,
-          error: errorMessage(err, 'Failed to send the message.'),
-        });
-        return false;
-      }
-    },
+          const current = store.streamingAnswer();
+          const isCurrent = current?.streamId === fields.streamId;
 
-    /**
-     * Follows one Notebook's live app events so a streamed answer renders as
-     * it is written (NBK-11).
-     *
-     * Only this Notebook's topic is requested, and only the three chat
-     * answer event types are acted on — the stream carries everything,
-     * including the Document status events DocumentsStore watches.
-     *
-     * Note what this does *not* do: it never treats a chunk as the record.
-     * The answer becomes a message when a `chat_messages` row exists, which
-     * the completion event announces and the REST routes serve; until then
-     * it is a preview that can be dropped at any moment.
-     */
-    watchNotebook(notebookId: string): void {
-      stopWatching();
-      watching = appEvents.stream([`notebook:${notebookId}`]).subscribe((event) => {
-        const fields = streamFields(event);
-        if (!fields) return;
-        // A Notebook can hold several Threads, and everyone watching it sees
-        // every Thread's answers (they are shared, per GLOSSARY.md). Only
-        // the open one is rendered.
-        if (fields.threadId !== store.activeThreadId()) return;
+          if (event.type === CHAT_ANSWER_CHUNK) {
+            const index = event.data['index'];
+            const text = event.data['text'];
+            if (typeof index !== 'number' || typeof text !== 'string') return;
 
-        const current = store.streamingAnswer();
-        const isCurrent = current?.streamId === fields.streamId;
+            if (!isCurrent) {
+              // A stream this client has not seen before. It is only rendered
+              // from its first chunk: an index above 0 means this client
+              // joined mid-answer — a reconnect, or a question someone else
+              // asked before the page was open — and NOTIFY has no replay, so
+              // the opening of the answer is gone for good. Rendering an
+              // answer with its beginning missing would be worse than
+              // rendering none; the completion event below re-reads it whole.
+              if (index !== 0) return;
+              patchState(store, {
+                streamingAnswer: {
+                  threadId: fields.threadId,
+                  streamId: fields.streamId,
+                  chunks: [text],
+                  citations: [],
+                  done: false,
+                },
+              });
+              return;
+            }
 
-        if (event.type === CHAT_ANSWER_CHUNK) {
-          const index = event.data['index'];
-          const text = event.data['text'];
-          if (typeof index !== 'number' || typeof text !== 'string') return;
-
-          if (!isCurrent) {
-            // A stream this client has not seen before. It is only rendered
-            // from its first chunk: an index above 0 means this client
-            // joined mid-answer — a reconnect, or a question someone else
-            // asked before the page was open — and NOTIFY has no replay, so
-            // the opening of the answer is gone for good. Rendering an
-            // answer with its beginning missing would be worse than
-            // rendering none; the completion event below re-reads it whole.
-            if (index !== 0) return;
-            patchState(store, {
-              streamingAnswer: {
-                threadId: fields.threadId,
-                streamId: fields.streamId,
-                chunks: [text],
-                citations: [],
-                done: false,
-              },
-            });
+            // Indexed rather than appended, so a duplicate event (or two
+            // arriving out of order) cannot reorder or double the prose.
+            const chunks = [...current!.chunks];
+            chunks[index] = text;
+            patchState(store, { streamingAnswer: { ...current!, chunks } });
             return;
           }
 
-          // Indexed rather than appended, so a duplicate event (or two
-          // arriving out of order) cannot reorder or double the prose.
-          const chunks = [...current!.chunks];
-          chunks[index] = text;
-          patchState(store, { streamingAnswer: { ...current!, chunks } });
-          return;
-        }
-
-        if (event.type === CHAT_ANSWER_COMPLETED) {
-          // The Citations land here and nowhere earlier, so the preview's
-          // markers become links at the same moment the answer stops
-          // growing.
-          if (isCurrent) {
-            patchState(store, {
-              streamingAnswer: { ...current!, done: true, citations: eventCitations(event) },
-            });
+          if (event.type === CHAT_ANSWER_COMPLETED) {
+            // The Citations land here and nowhere earlier, so the preview's
+            // markers become links at the same moment the answer stops
+            // growing.
+            if (isCurrent) {
+              patchState(store, {
+                streamingAnswer: { ...current!, done: true, citations: eventCitations(event) },
+              });
+            }
+            // This client's own ask already has the recorded exchange coming
+            // back in `sendMessage`'s response, so re-reading would be a
+            // wasted round trip. Any other case — someone else asked, or this
+            // client joined late — has no response in flight, and the event is
+            // only a hint: the truth comes from the REST route.
+            if (!store.sending()) {
+              void refreshThreadMessages(notebookId, fields.threadId, fields.streamId);
+            }
+            return;
           }
-          // This client's own ask already has the recorded exchange coming
-          // back in `sendMessage`'s response, so re-reading would be a
-          // wasted round trip. Any other case — someone else asked, or this
-          // client joined late — has no response in flight, and the event is
-          // only a hint: the truth comes from the REST route.
-          if (!store.sending()) {
-            void refreshThreadMessages(notebookId, fields.threadId, fields.streamId);
+
+          if (event.type === CHAT_ANSWER_FAILED && isCurrent) {
+            // Nothing was persisted, so there is nothing to replace the
+            // preview with: it goes. The asking client also gets a 502 with a
+            // message to show; a watching one simply sees the half answer
+            // disappear, which is honest — it was never a message.
+            patchState(store, { streamingAnswer: null });
           }
-          return;
-        }
+        });
+      },
 
-        if (event.type === CHAT_ANSWER_FAILED && isCurrent) {
-          // Nothing was persisted, so there is nothing to replace the
-          // preview with: it goes. The asking client also gets a 502 with a
-          // message to show; a watching one simply sees the half answer
-          // disappear, which is honest — it was never a message.
-          patchState(store, { streamingAnswer: null });
-        }
-      });
-    },
-
-    /** Drops the open Chat Thread, so navigating away doesn't leak it. */
-    reset(): void {
-      stopWatching();
-      patchState(store, initialState);
-    },
-      };
-    },
-  ),
+      /** Drops the open Chat Thread, so navigating away doesn't leak it. */
+      reset(): void {
+        stopWatching();
+        patchState(store, initialState);
+      },
+    };
+  }),
 );

@@ -24,7 +24,9 @@ describe('NotebooksPage', () => {
   it('offers an Open link into each Notebook (NBK-5 detail view)', async () => {
     const listNotebooks = vi
       .fn()
-      .mockResolvedValue([{ id: '1', title: 'Q3 Contracts', createdAt: '2026-01-01T00:00:00.000Z' }]);
+      .mockResolvedValue([
+        { id: '1', title: 'Q3 Contracts', createdAt: '2026-01-01T00:00:00.000Z' },
+      ]);
 
     await render(NotebooksPage, {
       providers: [{ provide: NotebooksService, useValue: { listNotebooks } }],

@@ -1,7 +1,7 @@
-import { z } from "zod";
-import type { ChatCompleter } from "../llm/openrouter.js";
-import type { TaskModels } from "../llm/models.js";
-import { splitMarkdownSections, type MarkdownSection } from "./markdown-sections.js";
+import { z } from 'zod';
+import type { ChatCompleter } from '../llm/openrouter.js';
+import type { TaskModels } from '../llm/models.js';
+import { splitMarkdownSections, type MarkdownSection } from './markdown-sections.js';
 
 /**
  * Metadata extracted from a Document Version's Converted Markdown.
@@ -52,7 +52,7 @@ export type DocumentMetadata = z.infer<typeof documentMetadataSchema>;
  *   content that is no longer there, so the section is the smallest unit that
  *   can be removed without producing something that reads as broken.
  */
-export type TrimStrategy = "sentences" | "sections";
+export type TrimStrategy = 'sentences' | 'sections';
 
 export interface ArtifactSpec {
   minWords: number;
@@ -74,12 +74,12 @@ export const ARTIFACT_SPECS = {
     minWords: 150,
     maxWords: 300,
     brief:
-      "a Chat Snippet: a dense, factual description of this document that will be injected into another " +
+      'a Chat Snippet: a dense, factual description of this document that will be injected into another ' +
       "language model's context as grounding about this source. Write it for a model to read, not a human: " +
-      "no preamble, no hedging, no marketing tone. State what the document is, what it covers, the entities, " +
-      "dates and figures that identify it, and what kinds of question it can answer.",
+      'no preamble, no hedging, no marketing tone. State what the document is, what it covers, the entities, ' +
+      'dates and figures that identify it, and what kinds of question it can answer.',
     // Prose by definition, so whole trailing sentences can go.
-    trim: "sentences",
+    trim: 'sentences',
   },
   // "Shown first when a user opens a document" (GLOSSARY.md).
   executiveSummary: {
@@ -87,15 +87,15 @@ export const ARTIFACT_SPECS = {
     maxWords: 1000,
     brief:
       "an Executive Summary: a one-to-two-page summary of this document's key points for a human reader who " +
-      "will decide from it whether to read the full document. Use short Markdown sections with headings and " +
+      'will decide from it whether to read the full document. Use short Markdown sections with headings and ' +
       "bullet points where they help. Cover the document's purpose, its main findings or provisions, and any " +
-      "conclusions, obligations or figures a reader must not miss.",
+      'conclusions, obligations or figures a reader must not miss.',
     // Structured Markdown, so the cut is at a section boundary: whole
     // heading-delimited sections go, never part of one. Cutting its trailing
     // *sentences* instead would end the summary mid-table or on a heading
     // over nothing — which is why this used to have no backstop at all, and
     // why it needed a different one rather than none.
-    trim: "sections",
+    trim: 'sections',
   },
   // "Written to be skimmed in a list, not to stand in for the full document"
   // (GLOSSARY.md).
@@ -103,12 +103,12 @@ export const ARTIFACT_SPECS = {
     minWords: 50,
     maxWords: 100,
     brief:
-      "an Abstract: a single short paragraph describing what this document is, to be skimmed in a list of " +
-      "search results and on a document card. Plain prose, no headings, no bullet points, no Markdown. It " +
-      "must help a reader judge relevance at a glance — it does not stand in for the document.",
+      'an Abstract: a single short paragraph describing what this document is, to be skimmed in a list of ' +
+      'search results and on a document card. Plain prose, no headings, no bullet points, no Markdown. It ' +
+      'must help a reader judge relevance at a glance — it does not stand in for the document.',
     // "Plain prose, no headings" above is exactly what makes a sentence cut
     // safe.
-    trim: "sentences",
+    trim: 'sentences',
   },
 } as const satisfies Record<string, ArtifactSpec>;
 
@@ -120,7 +120,7 @@ export type GeneratedArtifacts = Record<ArtifactName, string>;
 /** Counts words the way the prompts and the specs mean them. */
 export function countWords(text: string): number {
   const trimmed = text.trim();
-  return trimmed === "" ? 0 : trimmed.split(/\s+/).length;
+  return trimmed === '' ? 0 : trimmed.split(/\s+/).length;
 }
 
 /**
@@ -130,9 +130,9 @@ export function countWords(text: string): number {
  * a whole ingestion stage.
  */
 function parseJsonObject(text: string): unknown {
-  const withoutFence = text.replace(/^\s*```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "");
-  const start = withoutFence.indexOf("{");
-  const end = withoutFence.lastIndexOf("}");
+  const withoutFence = text.replace(/^\s*```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '');
+  const start = withoutFence.indexOf('{');
+  const end = withoutFence.lastIndexOf('}');
   if (start === -1 || end <= start) {
     throw new Error(`Expected a JSON object in the model's answer, got: ${text.slice(0, 200)}`);
   }
@@ -183,16 +183,16 @@ function splitIntoSections(text: string): string[] {
   let current: string[] = [];
   let inFence = false;
 
-  for (const line of text.split("\n")) {
+  for (const line of text.split('\n')) {
     if (/^\s*(```|~~~)/.test(line)) inFence = !inFence;
     const isHeading = !inFence && /^#{1,6}\s/.test(line);
-    if (isHeading && current.some((l) => l.trim() !== "")) {
-      sections.push(current.join("\n"));
+    if (isHeading && current.some((l) => l.trim() !== '')) {
+      sections.push(current.join('\n'));
       current = [];
     }
     current.push(line);
   }
-  if (current.some((l) => l.trim() !== "")) sections.push(current.join("\n"));
+  if (current.some((l) => l.trim() !== '')) sections.push(current.join('\n'));
   return sections;
 }
 
@@ -228,10 +228,10 @@ export function trimToWordRange(text: string, spec: ArtifactSpec): string {
   if (countWords(text) <= spec.maxWords) return text;
 
   const units =
-    spec.trim === "sections" ? splitIntoSections(text) : (text.match(/[^.!?]+(?:[.!?]+|$)/g) ?? []);
+    spec.trim === 'sections' ? splitIntoSections(text) : (text.match(/[^.!?]+(?:[.!?]+|$)/g) ?? []);
   if (units.length <= 1) return text;
 
-  const separator = spec.trim === "sections" ? "\n\n" : "";
+  const separator = spec.trim === 'sections' ? '\n\n' : '';
   const kept: string[] = [];
   let words = 0;
   for (const unit of units) {
@@ -247,7 +247,7 @@ export function trimToWordRange(text: string, spec: ArtifactSpec): string {
 
 /** `"Annual Report > Risks"`, or a placeholder for the pre-heading preamble. */
 export function describeSection(section: MarkdownSection): string {
-  return section.headingPath.length > 0 ? section.headingPath.join(" > ") : "(document preamble)";
+  return section.headingPath.length > 0 ? section.headingPath.join(' > ') : '(document preamble)';
 }
 
 /**
@@ -319,7 +319,11 @@ export interface ArtifactWarning {
  * order. Bounded because the map pass over a 200-page document is dozens of
  * calls and firing them all at once is the fastest way to get rate-limited.
  */
-async function mapWithConcurrency<T, R>(items: T[], limit: number, worker: (item: T, index: number) => Promise<R>): Promise<R[]> {
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  worker: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
   const results = new Array<R>(items.length);
   let next = 0;
   const runners = Array.from({ length: Math.min(limit, items.length) }, async () => {
@@ -345,33 +349,37 @@ async function mapWithConcurrency<T, R>(items: T[], limit: number, worker: (item
  */
 export async function extractMetadata(
   deps: GenerationDeps,
-  { filename, markdown, sections }: { filename: string; markdown: string; sections: MarkdownSection[] },
+  {
+    filename,
+    markdown,
+    sections,
+  }: { filename: string; markdown: string; sections: MarkdownSection[] },
 ): Promise<DocumentMetadata> {
   const outline = sections
     .filter((section) => section.heading !== null)
     .slice(0, 80)
-    .map((section) => `${"  ".repeat(Math.max(0, section.level - 1))}- ${section.heading}`)
-    .join("\n");
+    .map((section) => `${'  '.repeat(Math.max(0, section.level - 1))}- ${section.heading}`)
+    .join('\n');
 
   const answer = await deps.complete({
     model: deps.models.metadata,
     system:
-      "You extract bibliographic metadata from documents. Answer with a single JSON object and nothing else. " +
+      'You extract bibliographic metadata from documents. Answer with a single JSON object and nothing else. ' +
       'Schema: {"title": string|null, "authors": string[], "documentType": string|null, "language": string|null, ' +
       '"publishedOn": string|null, "subject": string|null, "keywords": string[]}. ' +
-      "`documentType` is a short noun phrase such as \"contract\", \"annual report\", \"research paper\", " +
+      '`documentType` is a short noun phrase such as "contract", "annual report", "research paper", ' +
       '"meeting notes". `language` is a BCP-47 code such as "en". `publishedOn` is whatever date or year the ' +
-      "document states, copied verbatim. Use null or [] for anything the document does not state — never guess, " +
-      "and never infer an author from the filename.",
+      'document states, copied verbatim. Use null or [] for anything the document does not state — never guess, ' +
+      'and never infer an author from the filename.',
     user: [
       `Filename: ${filename}`,
-      "",
-      "Heading outline:",
-      outline || "(no headings)",
-      "",
-      "Beginning of the document:",
+      '',
+      'Heading outline:',
+      outline || '(no headings)',
+      '',
+      'Beginning of the document:',
       truncate(markdown, METADATA_CHAR_BUDGET),
-    ].join("\n"),
+    ].join('\n'),
     maxOutputTokens: 800,
   });
 
@@ -390,48 +398,59 @@ export async function extractMetadata(
  * recorded as it completes. So a job that dies in the reduce pass costs its
  * retry three calls instead of forty.
  */
-export async function summarizeSections(deps: GenerationDeps, sections: MarkdownSection[]): Promise<string[]> {
+export async function summarizeSections(
+  deps: GenerationDeps,
+  sections: MarkdownSection[],
+): Promise<string[]> {
   const store = deps.sectionSummaries;
-  return mapWithConcurrency(sections, deps.mapConcurrency ?? DEFAULT_MAP_CONCURRENCY, async (section, index) => {
-    // Already paid for on an earlier attempt. Checked before the
-    // passthrough below so one branch decides reuse for every section,
-    // whatever produced its text.
-    const done = store?.completed.get(index);
-    if (done !== undefined) return done;
+  return mapWithConcurrency(
+    sections,
+    deps.mapConcurrency ?? DEFAULT_MAP_CONCURRENCY,
+    async (section, index) => {
+      // Already paid for on an earlier attempt. Checked before the
+      // passthrough below so one branch decides reuse for every section,
+      // whatever produced its text.
+      const done = store?.completed.get(index);
+      if (done !== undefined) return done;
 
-    // Shorter than a summary would be: pass it through rather than asking a
-    // model to "shorten" it (see SECTION_PASSTHROUGH_CHARS).
-    if (section.content.length <= SECTION_PASSTHROUGH_CHARS) {
-      const passedThrough = `## ${describeSection(section)}\n${section.content}`;
-      // Recorded like any other: it costs nothing to regenerate, but the
-      // store's keys have to stay dense so a partial cache is still a
-      // faithful picture of which sections are done.
-      await store?.record(index, passedThrough);
-      return passedThrough;
-    }
+      // Shorter than a summary would be: pass it through rather than asking a
+      // model to "shorten" it (see SECTION_PASSTHROUGH_CHARS).
+      if (section.content.length <= SECTION_PASSTHROUGH_CHARS) {
+        const passedThrough = `## ${describeSection(section)}\n${section.content}`;
+        // Recorded like any other: it costs nothing to regenerate, but the
+        // store's keys have to stay dense so a partial cache is still a
+        // faithful picture of which sections are done.
+        await store?.record(index, passedThrough);
+        return passedThrough;
+      }
 
-    const summary = await deps.complete({
-      model: deps.models.sectionSummary,
-      system:
-        "You summarize one section of a larger document. Produce a compact factual summary of at most 120 " +
-        "words covering this section's specific claims, figures, names and dates. Do not editorialise, do not " +
-        "add context the section does not contain, and do not mention that you are summarizing. " +
-        // Added after live verification against OpenRouter: without this, the
-        // map pass silently restated "3,140 km" as "315 miles" and
-        // "13.3 per 100 km" as "18 per 100 miles" — both wrong. A summary of
-        // a technical document whose numbers have quietly changed is worse
-        // than no summary, and it poisons every reduce pass downstream.
-        "Copy every number, unit and currency exactly as the section states it. Never convert between units, " +
-        "never round, and never restate a figure in a different measurement system.",
-      user: [`Section: ${describeSection(section)}`, "", truncate(section.content, SECTION_CHAR_BUDGET)].join("\n"),
-      maxOutputTokens: 400,
-    });
-    const text = `## ${describeSection(section)}\n${summary.trim()}`;
-    // Recorded before this runner moves on to the next section, so whatever
-    // has completed when a later call fails is already durable.
-    await store?.record(index, text);
-    return text;
-  });
+      const summary = await deps.complete({
+        model: deps.models.sectionSummary,
+        system:
+          'You summarize one section of a larger document. Produce a compact factual summary of at most 120 ' +
+          "words covering this section's specific claims, figures, names and dates. Do not editorialise, do not " +
+          'add context the section does not contain, and do not mention that you are summarizing. ' +
+          // Added after live verification against OpenRouter: without this, the
+          // map pass silently restated "3,140 km" as "315 miles" and
+          // "13.3 per 100 km" as "18 per 100 miles" — both wrong. A summary of
+          // a technical document whose numbers have quietly changed is worse
+          // than no summary, and it poisons every reduce pass downstream.
+          'Copy every number, unit and currency exactly as the section states it. Never convert between units, ' +
+          'never round, and never restate a figure in a different measurement system.',
+        user: [
+          `Section: ${describeSection(section)}`,
+          '',
+          truncate(section.content, SECTION_CHAR_BUDGET),
+        ].join('\n'),
+        maxOutputTokens: 400,
+      });
+      const text = `## ${describeSection(section)}\n${summary.trim()}`;
+      // Recorded before this runner moves on to the next section, so whatever
+      // has completed when a later call fails is already durable.
+      await store?.record(index, text);
+      return text;
+    },
+  );
 }
 
 /**
@@ -443,28 +462,38 @@ export async function summarizeSections(deps: GenerationDeps, sections: Markdown
  * and the fold repeats. Without this a sufficiently enormous Document would
  * fail at exactly the step that was supposed to make it possible.
  */
-export async function foldSectionSummaries(deps: GenerationDeps, sectionSummaries: string[]): Promise<string> {
+export async function foldSectionSummaries(
+  deps: GenerationDeps,
+  sectionSummaries: string[],
+): Promise<string> {
   let current = sectionSummaries;
-  let joined = current.join("\n\n");
+  let joined = current.join('\n\n');
 
   while (joined.length > REDUCE_CHAR_BUDGET && current.length > 1) {
-    const groupSize = Math.max(2, Math.ceil(current.length / Math.ceil(joined.length / REDUCE_CHAR_BUDGET)));
-    const groups: string[][] = [];
-    for (let i = 0; i < current.length; i += groupSize) groups.push(current.slice(i, i + groupSize));
-
-    current = await mapWithConcurrency(groups, deps.mapConcurrency ?? DEFAULT_MAP_CONCURRENCY, async (group) =>
-      (
-        await deps.complete({
-          model: deps.models.sectionSummary,
-          system:
-            "You merge several section summaries of one document into a single shorter summary of at most 250 " +
-            "words, keeping the concrete facts, figures and names and dropping repetition.",
-          user: group.join("\n\n"),
-          maxOutputTokens: 700,
-        })
-      ).trim(),
+    const groupSize = Math.max(
+      2,
+      Math.ceil(current.length / Math.ceil(joined.length / REDUCE_CHAR_BUDGET)),
     );
-    joined = current.join("\n\n");
+    const groups: string[][] = [];
+    for (let i = 0; i < current.length; i += groupSize)
+      groups.push(current.slice(i, i + groupSize));
+
+    current = await mapWithConcurrency(
+      groups,
+      deps.mapConcurrency ?? DEFAULT_MAP_CONCURRENCY,
+      async (group) =>
+        (
+          await deps.complete({
+            model: deps.models.sectionSummary,
+            system:
+              'You merge several section summaries of one document into a single shorter summary of at most 250 ' +
+              'words, keeping the concrete facts, figures and names and dropping repetition.',
+            user: group.join('\n\n'),
+            maxOutputTokens: 700,
+          })
+        ).trim(),
+    );
+    joined = current.join('\n\n');
   }
 
   return joined;
@@ -484,7 +513,11 @@ export async function foldSectionSummaries(deps: GenerationDeps, sectionSummarie
 export async function reduceToArtifact(
   deps: GenerationDeps,
   artifact: ArtifactName,
-  { filename, metadata, summaryContext }: { filename: string; metadata: DocumentMetadata; summaryContext: string },
+  {
+    filename,
+    metadata,
+    summaryContext,
+  }: { filename: string; metadata: DocumentMetadata; summaryContext: string },
 ): Promise<{ text: string; warning: ArtifactWarning | null }> {
   const spec = ARTIFACT_SPECS[artifact];
   const model = deps.models[artifact];
@@ -493,21 +526,21 @@ export async function reduceToArtifact(
     // Same grounding discipline as the map pass, for the same reason: these
     // artifacts are read as statements about the document, so a figure that
     // is not in the section summaries must not appear in them.
-    "Use only what the section summaries below state. Do not add facts, do not infer figures, and copy every " +
-    "number, unit and currency exactly as given — never converting between units or measurement systems.\n\n" +
+    'Use only what the section summaries below state. Do not add facts, do not infer figures, and copy every ' +
+    'number, unit and currency exactly as given — never converting between units or measurement systems.\n\n' +
     `Length: between ${spec.minWords} and ${spec.maxWords} words. Answer with the ${artifact} text only — no ` +
-    "title, no preamble, no explanation of what you produced.";
+    'title, no preamble, no explanation of what you produced.';
   const user = [
     `Document: ${metadata.title ?? filename}`,
     metadata.documentType ? `Type: ${metadata.documentType}` : null,
-    metadata.authors.length > 0 ? `Authors: ${metadata.authors.join(", ")}` : null,
-    "",
-    "Section summaries of the document, in order:",
-    "",
+    metadata.authors.length > 0 ? `Authors: ${metadata.authors.join(', ')}` : null,
+    '',
+    'Section summaries of the document, in order:',
+    '',
     summaryContext,
   ]
     .filter((line) => line !== null)
-    .join("\n");
+    .join('\n');
 
   /** An artifact's size, as something to store or `null` when it fitted. */
   const check = (text: string): ArtifactWarning | null => {
@@ -517,7 +550,12 @@ export async function reduceToArtifact(
   };
 
   const first = (
-    await deps.complete({ model, system, user, maxOutputTokens: Math.ceil(spec.maxWords * 2) + 200 })
+    await deps.complete({
+      model,
+      system,
+      user,
+      maxOutputTokens: Math.ceil(spec.maxWords * 2) + 200,
+    })
   ).trim();
   const count = countWords(first);
   if (count >= spec.minWords && count <= spec.maxWords) return { text: first, warning: null };
@@ -529,8 +567,8 @@ export async function reduceToArtifact(
       user:
         `${user}\n\nA previous attempt came out at ${count} words, which is outside the required ` +
         `${spec.minWords}-${spec.maxWords} word range. Rewrite it to land inside that range, ` +
-        `${count > spec.maxWords ? "cutting the least important material" : "adding the detail that is missing"}. ` +
-        "Keep it factual and grounded in the section summaries above.\n\nPrevious attempt:\n" +
+        `${count > spec.maxWords ? 'cutting the least important material' : 'adding the detail that is missing'}. ` +
+        'Keep it factual and grounded in the section summaries above.\n\nPrevious attempt:\n' +
         first,
       maxOutputTokens: Math.ceil(spec.maxWords * 2) + 200,
     })
@@ -604,11 +642,12 @@ export async function generateArtifacts(
   // handed an empty section, the summarizer invents a plausible one, and
   // those fabricated figures then flow into all three reduced artifacts.
   // There is nothing to summarize, so there is nothing to ask.
-  const summarizable = sections.filter((section) => section.content !== "");
+  const summarizable = sections.filter((section) => section.content !== '');
 
   // A document with no headings at all (a plain .txt, say) still has to be
   // summarized, as does one that is nothing but an outline.
-  const effectiveSections: MarkdownSection[] = summarizable.length > 0 ? summarizable : [wholeDocument];
+  const effectiveSections: MarkdownSection[] =
+    summarizable.length > 0 ? summarizable : [wholeDocument];
 
   const metadata = await extractMetadata(deps, {
     filename,
@@ -622,9 +661,17 @@ export async function generateArtifacts(
   // easy to follow in a log and in a test's recorded call list. They are also
   // three different models, so parallelism would buy little beyond latency on
   // a path that is already a background job.
-  const chatSnippet = await reduceToArtifact(deps, "chatSnippet", { filename, metadata, summaryContext });
-  const executiveSummary = await reduceToArtifact(deps, "executiveSummary", { filename, metadata, summaryContext });
-  const abstract = await reduceToArtifact(deps, "abstract", { filename, metadata, summaryContext });
+  const chatSnippet = await reduceToArtifact(deps, 'chatSnippet', {
+    filename,
+    metadata,
+    summaryContext,
+  });
+  const executiveSummary = await reduceToArtifact(deps, 'executiveSummary', {
+    filename,
+    metadata,
+    summaryContext,
+  });
+  const abstract = await reduceToArtifact(deps, 'abstract', { filename, metadata, summaryContext });
 
   return {
     metadata,

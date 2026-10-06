@@ -1,8 +1,8 @@
-import type { Pool } from "pg";
-import { toVectorLiteral } from "../db/vector.js";
-import { toDocument, type DocumentRow } from "../documents/repository.js";
-import { SEARCHABLE_VERSIONS_CTE } from "../documents/searchable-versions.js";
-import type { SearchResult } from "./schema.js";
+import type { Pool } from 'pg';
+import { toVectorLiteral } from '../db/vector.js';
+import { toDocument, type DocumentRow } from '../documents/repository.js';
+import { SEARCHABLE_VERSIONS_CTE } from '../documents/searchable-versions.js';
+import type { SearchResult } from './schema.js';
 
 /**
  * Retrieval, as one statement (ADR-0003: raw SQL, no ORM).

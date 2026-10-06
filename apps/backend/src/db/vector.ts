@@ -9,5 +9,5 @@
  * blames the column rather than the caller.
  */
 export function toVectorLiteral(vector: number[]): string {
-  return `[${vector.join(",")}]`;
+  return `[${vector.join(',')}]`;
 }

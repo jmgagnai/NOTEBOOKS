@@ -1,5 +1,5 @@
-import { z } from "zod";
-import { documentSchema } from "../documents/schema.js";
+import { z } from 'zod';
+import { documentSchema } from '../documents/schema.js';
 
 export const searchNotebookParamsSchema = z.object({
   notebookId: z.string().uuid(),
@@ -17,14 +17,14 @@ export const searchNotebookQuerySchema = z.object({
     .trim()
     .min(1)
     .max(1000)
-    .describe("What to search for — keywords or a topic, matched semantically, not literally."),
+    .describe('What to search for — keywords or a topic, matched semantically, not literally.'),
   limit: z.coerce
     .number()
     .int()
     .positive()
     .max(MAX_SEARCH_LIMIT)
     .default(DEFAULT_SEARCH_LIMIT)
-    .describe("How many Documents to return, best match first."),
+    .describe('How many Documents to return, best match first.'),
 });
 export type SearchNotebookQuery = z.infer<typeof searchNotebookQuerySchema>;
 
@@ -42,7 +42,7 @@ export const searchResultSchema = documentSchema.extend({
     .number()
     .describe(
       "Cosine similarity of this Document's best-matching Chunk to the query, 1 being identical. " +
-        "Results are ordered by it, best first.",
+        'Results are ordered by it, best first.',
     ),
 });
 export type SearchResult = z.infer<typeof searchResultSchema>;

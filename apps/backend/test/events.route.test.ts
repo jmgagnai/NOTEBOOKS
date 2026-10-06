@@ -1,11 +1,15 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
-import type { FastifyInstance } from "fastify";
-import type { Pool } from "pg";
-import { buildApp } from "../src/app.js";
-import { runMigrations } from "../src/db/migrate.js";
-import { createPool } from "../src/db/pool.js";
-import { createAppEventSubscriber, publishAppEvent, type AppEventSubscriber } from "../src/events/bus.js";
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql';
+import type { FastifyInstance } from 'fastify';
+import type { Pool } from 'pg';
+import { buildApp } from '../src/app.js';
+import { runMigrations } from '../src/db/migrate.js';
+import { createPool } from '../src/db/pool.js';
+import {
+  createAppEventSubscriber,
+  publishAppEvent,
+  type AppEventSubscriber,
+} from '../src/events/bus.js';
 
 /**
  * NBK-6's acceptance criteria ask for "a test confirms the SSE event reaches a
@@ -19,7 +23,7 @@ import { createAppEventSubscriber, publishAppEvent, type AppEventSubscriber } fr
  * worker's event travels: NOTIFY → the serving process's LISTEN subscriber →
  * SSE frame on the wire.
  */
-describe("GET /events (SSE)", () => {
+describe('GET /events (SSE)', () => {
   let container: StartedPostgreSqlContainer;
   let pool: Pool;
   let subscriber: AppEventSubscriber;
@@ -27,15 +31,15 @@ describe("GET /events (SSE)", () => {
   let baseUrl: string;
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("pgvector/pgvector:pg16").start();
+    container = await new PostgreSqlContainer('pgvector/pgvector:pg16').start();
     pool = createPool(container.getConnectionUri());
     await runMigrations(pool);
     subscriber = await createAppEventSubscriber(container.getConnectionUri());
 
     app = await buildApp({ pool, appEvents: subscriber });
-    await app.listen({ port: 0, host: "127.0.0.1" });
+    await app.listen({ port: 0, host: '127.0.0.1' });
     const address = app.server.address();
-    if (!address || typeof address === "string") throw new Error("Expected a TCP address.");
+    if (!address || typeof address === 'string') throw new Error('Expected a TCP address.');
     baseUrl = `http://127.0.0.1:${address.port}`;
   }, 180_000);
 
@@ -47,13 +51,17 @@ describe("GET /events (SSE)", () => {
   });
 
   async function loginAsNewUser(email: string): Promise<string> {
-    await app.inject({ method: "POST", url: "/auth/register", payload: { email, password: "correct-horse-battery-staple" } });
-    const login = await app.inject({
-      method: "POST",
-      url: "/auth/login",
-      payload: { email, password: "correct-horse-battery-staple" },
+    await app.inject({
+      method: 'POST',
+      url: '/auth/register',
+      payload: { email, password: 'correct-horse-battery-staple' },
     });
-    return login.cookies.find((c) => c.name === "session")!.value;
+    const login = await app.inject({
+      method: 'POST',
+      url: '/auth/login',
+      payload: { email, password: 'correct-horse-battery-staple' },
+    });
+    return login.cookies.find((c) => c.name === 'session')!.value;
   }
 
   /**
@@ -68,15 +76,15 @@ describe("GET /events (SSE)", () => {
   ): Promise<{ type: string; data: Record<string, unknown> }> {
     const controller = new AbortController();
     const response = await fetch(url, {
-      headers: { cookie: `session=${session}`, accept: "text/event-stream" },
+      headers: { cookie: `session=${session}`, accept: 'text/event-stream' },
       signal: controller.signal,
     });
     expect(response.status).toBe(200);
-    expect(response.headers.get("content-type")).toContain("text/event-stream");
+    expect(response.headers.get('content-type')).toContain('text/event-stream');
 
     const reader = response.body!.getReader();
     const decoder = new TextDecoder();
-    let buffer = "";
+    let buffer = '';
 
     // Only publish once the stream is actually open: NOTIFY has no replay, so
     // an event published before the subscription exists is simply missed.
@@ -86,14 +94,14 @@ describe("GET /events (SSE)", () => {
     try {
       for (;;) {
         const { done, value } = await reader.read();
-        if (done) throw new Error("SSE stream closed before a matching event arrived.");
+        if (done) throw new Error('SSE stream closed before a matching event arrived.');
         buffer += decoder.decode(value, { stream: true });
 
-        let separator = buffer.indexOf("\n\n");
+        let separator = buffer.indexOf('\n\n');
         while (separator !== -1) {
           const frame = buffer.slice(0, separator);
           buffer = buffer.slice(separator + 2);
-          separator = buffer.indexOf("\n\n");
+          separator = buffer.indexOf('\n\n');
 
           const dataLine = /^data: (.*)$/m.exec(frame)?.[1];
           if (!dataLine) continue; // a keepalive comment, not an event
@@ -107,18 +115,18 @@ describe("GET /events (SSE)", () => {
     }
   }
 
-  it("rejects an unauthenticated connection with 401", async () => {
+  it('rejects an unauthenticated connection with 401', async () => {
     const response = await fetch(`${baseUrl}/events`);
     expect(response.status).toBe(401);
     await response.body?.cancel();
   });
 
-  it("keeps the CORS headers a cross-origin EventSource needs", async () => {
-    const session = await loginAsNewUser("sse-cors@example.com");
+  it('keeps the CORS headers a cross-origin EventSource needs', async () => {
+    const session = await loginAsNewUser('sse-cors@example.com');
     const controller = new AbortController();
     try {
       const response = await fetch(`${baseUrl}/events`, {
-        headers: { cookie: `session=${session}`, origin: "http://localhost:4200" },
+        headers: { cookie: `session=${session}`, origin: 'http://localhost:4200' },
         signal: controller.signal,
       });
 
@@ -126,37 +134,37 @@ describe("GET /events (SSE)", () => {
       // the session cookie is httpOnly, so a browser EventSource needs both
       // of these or it never connects. They're set by @fastify/cors on the
       // reply — which `reply.hijack()` in the handler must not discard.
-      expect(response.headers.get("access-control-allow-origin")).toBe("http://localhost:4200");
-      expect(response.headers.get("access-control-allow-credentials")).toBe("true");
+      expect(response.headers.get('access-control-allow-origin')).toBe('http://localhost:4200');
+      expect(response.headers.get('access-control-allow-credentials')).toBe('true');
     } finally {
       controller.abort();
     }
   });
 
-  it("delivers an event published elsewhere to a connected client", async () => {
-    const session = await loginAsNewUser("sse-listener@example.com");
+  it('delivers an event published elsewhere to a connected client', async () => {
+    const session = await loginAsNewUser('sse-listener@example.com');
 
     const frame = await firstEventFrom(
       `${baseUrl}/events`,
       session,
-      (data) => data.marker === "reaches-the-client",
+      (data) => data.marker === 'reaches-the-client',
       async () => {
         await publishAppEvent(pool, {
-          type: "test-sse-delivery",
-          topic: "notebook:22222222-2222-2222-2222-222222222222",
-          data: { marker: "reaches-the-client" },
+          type: 'test-sse-delivery',
+          topic: 'notebook:22222222-2222-2222-2222-222222222222',
+          data: { marker: 'reaches-the-client' },
         });
       },
     );
 
-    expect(frame.type).toBe("test-sse-delivery");
-    expect(frame.data).toEqual({ marker: "reaches-the-client" });
+    expect(frame.type).toBe('test-sse-delivery');
+    expect(frame.data).toEqual({ marker: 'reaches-the-client' });
   });
 
-  it("delivers only the topics a client asked for", async () => {
-    const session = await loginAsNewUser("sse-filtered@example.com");
-    const wanted = "notebook:33333333-3333-3333-3333-333333333333";
-    const unwanted = "notebook:44444444-4444-4444-4444-444444444444";
+  it('delivers only the topics a client asked for', async () => {
+    const session = await loginAsNewUser('sse-filtered@example.com');
+    const wanted = 'notebook:33333333-3333-3333-3333-333333333333';
+    const unwanted = 'notebook:44444444-4444-4444-4444-444444444444';
 
     const frame = await firstEventFrom(
       `${baseUrl}/events?topic=${encodeURIComponent(wanted)}`,
@@ -166,19 +174,19 @@ describe("GET /events (SSE)", () => {
         // Published first, and never asked for: if topic filtering didn't
         // work this is the frame that would arrive.
         await publishAppEvent(pool, {
-          type: "test-sse-unwanted",
+          type: 'test-sse-unwanted',
           topic: unwanted,
-          data: { marker: "should-not-arrive" },
+          data: { marker: 'should-not-arrive' },
         });
         await publishAppEvent(pool, {
-          type: "test-sse-wanted",
+          type: 'test-sse-wanted',
           topic: wanted,
-          data: { marker: "should-arrive" },
+          data: { marker: 'should-arrive' },
         });
       },
     );
 
-    expect(frame.type).toBe("test-sse-wanted");
-    expect(frame.data).toEqual({ marker: "should-arrive" });
+    expect(frame.type).toBe('test-sse-wanted');
+    expect(frame.data).toEqual({ marker: 'should-arrive' });
   });
 });

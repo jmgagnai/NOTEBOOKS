@@ -1,8 +1,8 @@
-import type { Pool, PoolClient } from "pg";
-import { inTransaction } from "../db/transaction.js";
-import { notebookIsActive } from "../notebooks/active-notebooks.js";
-import type { ResolvedCitation } from "./citations.js";
-import type { ChatMessage, ChatMessageRole, ChatThread, Citation } from "./schema.js";
+import type { Pool, PoolClient } from 'pg';
+import { inTransaction } from '../db/transaction.js';
+import { notebookIsActive } from '../notebooks/active-notebooks.js';
+import type { ResolvedCitation } from './citations.js';
+import type { ChatMessage, ChatMessageRole, ChatThread, Citation } from './schema.js';
 
 interface ChatThreadRow {
   id: string;
@@ -159,11 +159,11 @@ export async function createChatThread(
   authorId: string,
 ): Promise<ChatThread> {
   const { rows } = await pool.query<{ id: string }>(
-    "INSERT INTO chat_threads (notebook_id, title, created_by) VALUES ($1, $2, $3) RETURNING id",
+    'INSERT INTO chat_threads (notebook_id, title, created_by) VALUES ($1, $2, $3) RETURNING id',
     [notebookId, title, authorId],
   );
   const thread = await findChatThread(pool, notebookId, rows[0].id);
-  if (!thread) throw new Error("Chat Thread vanished immediately after it was created.");
+  if (!thread) throw new Error('Chat Thread vanished immediately after it was created.');
   return thread;
 }
 
@@ -185,7 +185,7 @@ export async function findChatThread(
 ): Promise<ChatThread | null> {
   const { rows } = await pool.query<ChatThreadRow>(
     `${SELECT_THREAD}
-     WHERE t.id = $1 AND t.notebook_id = $2 AND ${notebookIsActive("t.notebook_id")}`,
+     WHERE t.id = $1 AND t.notebook_id = $2 AND ${notebookIsActive('t.notebook_id')}`,
     [threadId, notebookId],
   );
   return rows[0] ? toChatThread(rows[0]) : null;
@@ -209,7 +209,7 @@ export async function renameChatThread(
 ): Promise<ChatThread | null> {
   const { rowCount } = await pool.query(
     `UPDATE chat_threads SET title = $3
-     WHERE id = $1 AND notebook_id = $2 AND ${notebookIsActive("notebook_id")}`,
+     WHERE id = $1 AND notebook_id = $2 AND ${notebookIsActive('notebook_id')}`,
     [threadId, notebookId, title],
   );
   if (rowCount !== 1) return null;
@@ -278,13 +278,13 @@ export async function appendQuestionAndAnswer(
     const questionRows = await client.query<ChatMessageRow>(INSERT_MESSAGE, [
       threadId,
       askerId,
-      "user",
+      'user',
       question,
     ]);
     const answerRows = await client.query<ChatMessageRow>(INSERT_MESSAGE, [
       threadId,
       askerId,
-      "assistant",
+      'assistant',
       answer,
     ]);
     const answerId = answerRows.rows[0].id;

@@ -47,11 +47,7 @@
               <button mat-button type="button" (click)="cancelRename()">Cancel</button>
             } @else {
               <span class="notebooks-page__title">{{ notebook.title }}</span>
-              <button
-                mat-button
-                type="button"
-                [routerLink]="['/notebooks', notebook.id]"
-              >
+              <button mat-button type="button" [routerLink]="['/notebooks', notebook.id]">
                 Open
               </button>
               <button

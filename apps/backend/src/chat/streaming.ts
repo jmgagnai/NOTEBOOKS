@@ -1,8 +1,8 @@
-import { randomUUID } from "node:crypto";
-import type { Pool } from "pg";
-import { publishAppEvent } from "../events/bus.js";
-import { notebookTopic } from "../events/schema.js";
-import type { Citation } from "./schema.js";
+import { randomUUID } from 'node:crypto';
+import type { Pool } from 'pg';
+import { publishAppEvent } from '../events/bus.js';
+import { notebookTopic } from '../events/schema.js';
+import type { Citation } from './schema.js';
 
 /**
  * The three app-event types a streamed answer travels as (NBK-11).
@@ -18,9 +18,9 @@ import type { Citation } from "./schema.js";
  * answer arrive, and a client that cares about only one Thread filters on the
  * `threadId` in the payload.
  */
-export const CHAT_ANSWER_CHUNK = "chat-answer-chunk";
-export const CHAT_ANSWER_COMPLETED = "chat-answer-completed";
-export const CHAT_ANSWER_FAILED = "chat-answer-failed";
+export const CHAT_ANSWER_CHUNK = 'chat-answer-chunk';
+export const CHAT_ANSWER_COMPLETED = 'chat-answer-completed';
+export const CHAT_ANSWER_FAILED = 'chat-answer-failed';
 
 /**
  * The ceiling on one chunk's characters.
@@ -81,7 +81,7 @@ export interface AnswerChunker {
 function dropLeadingBlankLines(text: string): string {
   let at = 0;
   for (;;) {
-    const newline = text.indexOf("\n", at);
+    const newline = text.indexOf('\n', at);
     if (newline === -1) break;
     if (!BLANK_LINE.test(text.slice(at, newline))) break;
     at = newline + 1;
@@ -91,12 +91,12 @@ function dropLeadingBlankLines(text: string): string {
 
 /** A chunk as it goes on the wire: no trailing blank space, never empty. */
 function present(block: string): string | null {
-  const trimmed = block.replace(/\s+$/, "");
-  return trimmed === "" ? null : trimmed;
+  const trimmed = block.replace(/\s+$/, '');
+  return trimmed === '' ? null : trimmed;
 }
 
 export function createAnswerChunker(maxChars = MAX_CHUNK_CHARS): AnswerChunker {
-  let buffer = "";
+  let buffer = '';
   // Fence state spans deltas *and* chunks: a code block that survives a
   // forced cap-cut is still open on the next line.
   let insideFence = false;
@@ -111,7 +111,7 @@ export function createAnswerChunker(maxChars = MAX_CHUNK_CHARS): AnswerChunker {
   function boundary(): number | null {
     let at = 0;
     for (;;) {
-      const newline = buffer.indexOf("\n", at);
+      const newline = buffer.indexOf('\n', at);
       if (newline === -1) break;
       const line = buffer.slice(at, newline);
       const end = newline + 1;
@@ -166,7 +166,7 @@ export function createAnswerChunker(maxChars = MAX_CHUNK_CHARS): AnswerChunker {
     push(delta: string): string[] {
       // Normalised so the line scanning above only has to know about "\n";
       // a \r surviving into a chunk would also be noise on the wire.
-      buffer += delta.replace(/\r\n/g, "\n");
+      buffer += delta.replace(/\r\n/g, '\n');
       return drain();
     },
 
@@ -175,11 +175,11 @@ export function createAnswerChunker(maxChars = MAX_CHUNK_CHARS): AnswerChunker {
       // the buffer with one makes the final block complete and lets the same
       // rules apply to it as to every block before it — including a closing
       // fence the model never wrote.
-      if (buffer !== "" && !buffer.endsWith("\n")) buffer += "\n";
+      if (buffer !== '' && !buffer.endsWith('\n')) buffer += '\n';
       insideFence = false;
       const chunks = drain();
       const last = present(buffer);
-      buffer = "";
+      buffer = '';
       if (last) chunks.push(last);
       return chunks;
     },
@@ -199,7 +199,11 @@ export interface AnswerStream {
   /** Announces one rendered chunk. Index is the chunk's position, from 0. */
   chunk(text: string): Promise<void>;
   /** Announces the persisted answer, with the Citations resolved for it. */
-  completed(answer: { messageId: string; questionId: string; citations: Citation[] }): Promise<void>;
+  completed(answer: {
+    messageId: string;
+    questionId: string;
+    citations: Citation[];
+  }): Promise<void>;
   /** Announces that the answer will never arrive, so a preview can be dropped. */
   failed(reason: string): Promise<void>;
 }
@@ -209,7 +213,10 @@ export interface AnswerStreamTarget {
   threadId: string;
 }
 
-export function createAnswerStream(pool: Pool, { notebookId, threadId }: AnswerStreamTarget): AnswerStream {
+export function createAnswerStream(
+  pool: Pool,
+  { notebookId, threadId }: AnswerStreamTarget,
+): AnswerStream {
   const streamId = randomUUID();
   let index = 0;
 

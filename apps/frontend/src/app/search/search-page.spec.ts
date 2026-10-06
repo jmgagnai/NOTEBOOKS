@@ -56,7 +56,7 @@ async function searchFor(query: string): Promise<void> {
 // only the generated ng-openapi-gen client interface (SearchService) — never
 // the store or any Angular service internals.
 describe('SearchPage', () => {
-  it("shows each matched Document with its Abstract", async () => {
+  it('shows each matched Document with its Abstract', async () => {
     const searchNotebook = vi.fn().mockResolvedValue([
       result(),
       result({

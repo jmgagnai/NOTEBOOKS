@@ -1,7 +1,7 @@
-import { z } from "zod";
-import type { AppEventDraft } from "../events/bus.js";
-import { notebookTopic } from "../events/schema.js";
-import type { DocumentStatus } from "../documents/schema.js";
+import { z } from 'zod';
+import type { AppEventDraft } from '../events/bus.js';
+import { notebookTopic } from '../events/schema.js';
+import type { DocumentStatus } from '../documents/schema.js';
 
 /**
  * What the three ingestion Stages have genuinely in common, and nothing else.
@@ -60,7 +60,7 @@ export const documentVersionRefSchema = z.object({
 export type DocumentVersionRef = z.infer<typeof documentVersionRefSchema>;
 
 /** The app-event type every Document Version lifecycle change is published as. */
-export const DOCUMENT_VERSION_STATUS_CHANGED = "document-version-status-changed";
+export const DOCUMENT_VERSION_STATUS_CHANGED = 'document-version-status-changed';
 
 /**
  * The context a Stage needs in order to announce a transition: the Version it

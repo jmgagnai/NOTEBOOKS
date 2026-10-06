@@ -24,7 +24,8 @@ export const routes: Routes = [
   // fetched by the users who actually open a Document.
   {
     path: 'notebooks/:notebookId/documents/:documentId',
-    loadComponent: () => import('./documents/document-detail-page').then((m) => m.DocumentDetailPage),
+    loadComponent: () =>
+      import('./documents/document-detail-page').then((m) => m.DocumentDetailPage),
     canActivate: [authGuard],
   },
   { path: 'login', component: LoginPage },

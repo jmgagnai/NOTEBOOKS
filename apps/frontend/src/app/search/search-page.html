@@ -4,7 +4,9 @@
   </mat-card-header>
 
   <mat-card-content>
-    <a class="search-page__back" [routerLink]="['/notebooks', notebookId]">&larr; Back to the Notebook</a>
+    <a class="search-page__back" [routerLink]="['/notebooks', notebookId]"
+      >&larr; Back to the Notebook</a
+    >
 
     <form class="search-page__form" (submit)="$event.preventDefault(); submit()">
       <label class="search-page__field">

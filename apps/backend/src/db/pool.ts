@@ -1,4 +1,4 @@
-import { Pool } from "pg";
+import { Pool } from 'pg';
 
 /**
  * Creates a `pg` connection pool. Per ADR-0003, the app talks to Postgres via

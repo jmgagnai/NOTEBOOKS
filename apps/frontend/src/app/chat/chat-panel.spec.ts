@@ -124,8 +124,16 @@ describe('ChatPanel', () => {
   // they are.
   it('lists every Thread with its author, whoever started it', async () => {
     const listChatThreads = vi.fn().mockResolvedValue([
-      thread({ id: 'thread-1', title: 'Alice asks about revenue', author: participant('alice@example.com') }),
-      thread({ id: 'thread-2', title: 'Bob asks about risk', author: participant('bob@example.com') }),
+      thread({
+        id: 'thread-1',
+        title: 'Alice asks about revenue',
+        author: participant('alice@example.com'),
+      }),
+      thread({
+        id: 'thread-2',
+        title: 'Bob asks about risk',
+        author: participant('bob@example.com'),
+      }),
     ]);
 
     await renderPanel({ listChatThreads: listChatThreads as never });
@@ -211,7 +219,11 @@ describe('ChatPanel', () => {
     // A shared Thread several people contributed to has to say who asked
     // what — that is the whole point of recording it (ADR-0001).
     const askers = screen.getAllByTestId('chat-message-author').map((el) => el.textContent?.trim());
-    expect(askers).toEqual(['alice@example.com', 'Assistant, for alice@example.com', 'bob@example.com']);
+    expect(askers).toEqual([
+      'alice@example.com',
+      'Assistant, for alice@example.com',
+      'bob@example.com',
+    ]);
   });
 
   it('sends a question and appends both it and the answer to the Chat Thread', async () => {
@@ -455,11 +467,19 @@ describe('ChatPanel', () => {
       };
     }
 
-    const chunk = (index: number, text: string, overrides: Record<string, unknown> = {}): AppEvent =>
-      appEvent('chat-answer-chunk', { index, text, ...overrides });
+    const chunk = (
+      index: number,
+      text: string,
+      overrides: Record<string, unknown> = {},
+    ): AppEvent => appEvent('chat-answer-chunk', { index, text, ...overrides });
 
     const completed = (data: Record<string, unknown> = {}): AppEvent =>
-      appEvent('chat-answer-completed', { messageId: 'a1', questionId: 'q1', citations: [], ...data });
+      appEvent('chat-answer-completed', {
+        messageId: 'a1',
+        questionId: 'q1',
+        citations: [],
+        ...data,
+      });
 
     const failed = (data: Record<string, unknown> = {}): AppEvent =>
       appEvent('chat-answer-failed', { reason: 'the provider hung up', ...data });

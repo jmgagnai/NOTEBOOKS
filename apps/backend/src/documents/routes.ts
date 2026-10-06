@@ -1,15 +1,15 @@
-import { randomUUID } from "node:crypto";
-import type { FastifyInstance } from "fastify";
-import type { ZodTypeProvider } from "fastify-type-provider-zod";
-import type { Pool } from "pg";
-import type { S3Client } from "@aws-sdk/client-s3";
-import { z } from "zod";
-import { createAuthGuard } from "../auth/guard.js";
-import type { JobQueue } from "../jobs/queue.js";
-import { errorResponseSchema } from "../auth/schema.js";
-import { getObject, putObject } from "../storage/s3-client.js";
-import { notebookExists } from "../notebooks/repository.js";
-import { describeRejectedFileType, resolveAcceptedMimeType } from "./file-types.js";
+import { randomUUID } from 'node:crypto';
+import type { FastifyInstance } from 'fastify';
+import type { ZodTypeProvider } from 'fastify-type-provider-zod';
+import type { Pool } from 'pg';
+import type { S3Client } from '@aws-sdk/client-s3';
+import { z } from 'zod';
+import { createAuthGuard } from '../auth/guard.js';
+import type { JobQueue } from '../jobs/queue.js';
+import { errorResponseSchema } from '../auth/schema.js';
+import { getObject, putObject } from '../storage/s3-client.js';
+import { notebookExists } from '../notebooks/repository.js';
+import { describeRejectedFileType, resolveAcceptedMimeType } from './file-types.js';
 import {
   createDocumentVersion,
   findDocumentContent,
@@ -19,7 +19,7 @@ import {
   listDocuments,
   restoreDocument,
   softDeleteDocument,
-} from "./repository.js";
+} from './repository.js';
 import {
   documentContentSchema,
   documentDetailSchema,
@@ -31,7 +31,7 @@ import {
   documentVersionParamsSchema,
   listDocumentsResponseSchema,
   notebookIdParamsSchema,
-} from "./schema.js";
+} from './schema.js';
 
 export interface RegisterDocumentRoutesOptions {
   pool: Pool;
@@ -59,13 +59,13 @@ export function registerDocumentRoutes(
   const authGuard = createAuthGuard(pool);
 
   app.withTypeProvider<ZodTypeProvider>().get(
-    "/notebooks/:notebookId/documents",
+    '/notebooks/:notebookId/documents',
     {
       preHandler: authGuard,
       schema: {
-        operationId: "listDocuments",
-        tags: ["documents"],
-        summary: "List all Documents in a Notebook",
+        operationId: 'listDocuments',
+        tags: ['documents'],
+        summary: 'List all Documents in a Notebook',
         params: notebookIdParamsSchema,
         response: {
           200: listDocumentsResponseSchema,
@@ -75,7 +75,7 @@ export function registerDocumentRoutes(
     },
     async (request, reply) => {
       if (!(await notebookExists(pool, request.params.notebookId))) {
-        await reply.status(404).send({ message: "Notebook not found." });
+        await reply.status(404).send({ message: 'Notebook not found.' });
         return;
       }
       await reply.status(200).send(await listDocuments(pool, request.params.notebookId));
@@ -86,12 +86,12 @@ export function registerDocumentRoutes(
   // Snippet and extracted metadata — everything but the full Converted
   // Markdown, which is a separate request because it can run past 200 pages.
   app.withTypeProvider<ZodTypeProvider>().get(
-    "/notebooks/:notebookId/documents/:documentId",
+    '/notebooks/:notebookId/documents/:documentId',
     {
       preHandler: authGuard,
       schema: {
-        operationId: "getDocument",
-        tags: ["documents"],
+        operationId: 'getDocument',
+        tags: ['documents'],
         summary:
           "Get one Document with its latest Version's extracted metadata and generated summaries (Abstract, Executive Summary, Chat Snippet)",
         params: documentIdParamsSchema,
@@ -102,9 +102,13 @@ export function registerDocumentRoutes(
       },
     },
     async (request, reply) => {
-      const document = await findDocumentDetail(pool, request.params.notebookId, request.params.documentId);
+      const document = await findDocumentDetail(
+        pool,
+        request.params.notebookId,
+        request.params.documentId,
+      );
       if (!document) {
-        await reply.status(404).send({ message: "Document not found." });
+        await reply.status(404).send({ message: 'Document not found.' });
         return;
       }
       await reply.status(200).send(document);
@@ -118,20 +122,20 @@ export function registerDocumentRoutes(
   // that Version's own Executive Summary, metadata and version number, not
   // the current Version's wrapped around the old one's content.
   app.withTypeProvider<ZodTypeProvider>().get(
-    "/notebooks/:notebookId/documents/:documentId/versions/:versionId",
+    '/notebooks/:notebookId/documents/:documentId/versions/:versionId',
     {
       preHandler: authGuard,
       schema: {
-        operationId: "getDocumentVersion",
-        tags: ["documents"],
+        operationId: 'getDocumentVersion',
+        tags: ['documents'],
         summary:
-          "Get one Document Version with its own extracted metadata and generated summaries (Abstract, Executive Summary, Chat Snippet)",
+          'Get one Document Version with its own extracted metadata and generated summaries (Abstract, Executive Summary, Chat Snippet)',
         description:
           "Every field describes the Version named in the path, not the Document's latest Version — this is " +
-          "what following a Citation reads, so an answer recorded against a superseded Version stays " +
-          "checkable against what that Version actually said. `isLatestVersion` and `latestVersionNumber` " +
-          "say where that Version stands. Succeeds for a Version whose Document has since been " +
-          "soft-deleted, and 404s once its Notebook is.",
+          'what following a Citation reads, so an answer recorded against a superseded Version stays ' +
+          'checkable against what that Version actually said. `isLatestVersion` and `latestVersionNumber` ' +
+          'say where that Version stands. Succeeds for a Version whose Document has since been ' +
+          'soft-deleted, and 404s once its Notebook is.',
         params: documentVersionParamsSchema,
         response: {
           200: documentVersionDetailSchema,
@@ -147,7 +151,7 @@ export function registerDocumentRoutes(
         request.params.versionId,
       );
       if (!version) {
-        await reply.status(404).send({ message: "Document Version not found." });
+        await reply.status(404).send({ message: 'Document Version not found.' });
         return;
       }
       await reply.status(200).send(version);
@@ -158,13 +162,13 @@ export function registerDocumentRoutes(
   // HTML: the client renders the structure (headings, tables) itself, so the
   // structure has to reach it intact.
   app.withTypeProvider<ZodTypeProvider>().get(
-    "/notebooks/:notebookId/documents/:documentId/versions/:versionId/content",
+    '/notebooks/:notebookId/documents/:documentId/versions/:versionId/content',
     {
       preHandler: authGuard,
       schema: {
-        operationId: "getDocumentVersionContent",
-        tags: ["documents"],
-        summary: "Get the Converted Markdown of a Document Version",
+        operationId: 'getDocumentVersionContent',
+        tags: ['documents'],
+        summary: 'Get the Converted Markdown of a Document Version',
         params: documentVersionContentParamsSchema,
         response: {
           200: documentContentSchema,
@@ -180,7 +184,7 @@ export function registerDocumentRoutes(
         request.params.versionId,
       );
       if (!content) {
-        await reply.status(404).send({ message: "Document Version not found." });
+        await reply.status(404).send({ message: 'Document Version not found.' });
         return;
       }
       await reply.status(200).send(content);
@@ -188,15 +192,15 @@ export function registerDocumentRoutes(
   );
 
   app.withTypeProvider<ZodTypeProvider>().post(
-    "/notebooks/:notebookId/documents",
+    '/notebooks/:notebookId/documents',
     {
       preHandler: authGuard,
       schema: {
-        operationId: "uploadDocument",
-        tags: ["documents"],
+        operationId: 'uploadDocument',
+        tags: ['documents'],
         summary:
-          "Upload a Document. Re-uploading an existing, undeleted filename within the same Notebook adds a new Version to that Document instead of creating a new one.",
-        consumes: ["multipart/form-data"],
+          'Upload a Document. Re-uploading an existing, undeleted filename within the same Notebook adds a new Version to that Document instead of creating a new one.',
+        consumes: ['multipart/form-data'],
         params: notebookIdParamsSchema,
         response: {
           201: documentSchema,
@@ -207,13 +211,13 @@ export function registerDocumentRoutes(
     },
     async (request, reply) => {
       if (!(await notebookExists(pool, request.params.notebookId))) {
-        await reply.status(404).send({ message: "Notebook not found." });
+        await reply.status(404).send({ message: 'Notebook not found.' });
         return;
       }
 
       const file = await request.file();
       if (!file) {
-        await reply.status(400).send({ message: "No file was uploaded." });
+        await reply.status(400).send({ message: 'No file was uploaded.' });
         return;
       }
 
@@ -251,7 +255,10 @@ export function registerDocumentRoutes(
             versionId: document.latestVersion.id,
           });
         } catch (err) {
-          request.log.error({ err }, "Could not enqueue Markdown conversion for the uploaded Document Version.");
+          request.log.error(
+            { err },
+            'Could not enqueue Markdown conversion for the uploaded Document Version.',
+          );
         }
       }
 
@@ -260,24 +267,28 @@ export function registerDocumentRoutes(
   );
 
   app.withTypeProvider<ZodTypeProvider>().delete(
-    "/notebooks/:notebookId/documents/:documentId",
+    '/notebooks/:notebookId/documents/:documentId',
     {
       preHandler: authGuard,
       schema: {
-        operationId: "deleteDocument",
-        tags: ["documents"],
-        summary: "Soft-delete a Document",
+        operationId: 'deleteDocument',
+        tags: ['documents'],
+        summary: 'Soft-delete a Document',
         params: documentIdParamsSchema,
         response: {
-          204: z.null().describe("No content"),
+          204: z.null().describe('No content'),
           404: errorResponseSchema,
         },
       },
     },
     async (request, reply) => {
-      const deleted = await softDeleteDocument(pool, request.params.notebookId, request.params.documentId);
+      const deleted = await softDeleteDocument(
+        pool,
+        request.params.notebookId,
+        request.params.documentId,
+      );
       if (!deleted) {
-        await reply.status(404).send({ message: "Document not found." });
+        await reply.status(404).send({ message: 'Document not found.' });
         return;
       }
       await reply.status(204).send(null);
@@ -285,17 +296,17 @@ export function registerDocumentRoutes(
   );
 
   app.withTypeProvider<ZodTypeProvider>().post(
-    "/notebooks/:notebookId/documents/:documentId/restore",
+    '/notebooks/:notebookId/documents/:documentId/restore',
     {
       preHandler: authGuard,
       schema: {
-        operationId: "restoreDocument",
-        tags: ["documents"],
-        summary: "Restore a soft-deleted Document",
+        operationId: 'restoreDocument',
+        tags: ['documents'],
+        summary: 'Restore a soft-deleted Document',
         description:
-          "Reports 409 if the Notebook has since acquired another Document under the same filename — " +
-          "a re-upload after the delete created one, and only one non-deleted Document per filename can " +
-          "exist in a Notebook.",
+          'Reports 409 if the Notebook has since acquired another Document under the same filename — ' +
+          'a re-upload after the delete created one, and only one non-deleted Document per filename can ' +
+          'exist in a Notebook.',
         params: documentIdParamsSchema,
         response: {
           200: documentSchema,
@@ -305,18 +316,22 @@ export function registerDocumentRoutes(
       },
     },
     async (request, reply) => {
-      const result = await restoreDocument(pool, request.params.notebookId, request.params.documentId);
-      if (result.outcome === "not-found") {
-        await reply.status(404).send({ message: "Document not found." });
+      const result = await restoreDocument(
+        pool,
+        request.params.notebookId,
+        request.params.documentId,
+      );
+      if (result.outcome === 'not-found') {
+        await reply.status(404).send({ message: 'Document not found.' });
         return;
       }
-      if (result.outcome === "filename-taken") {
+      if (result.outcome === 'filename-taken') {
         // A conflict, not a server error: the Notebook's current contents are
         // what make the restore impossible, and the user can resolve it.
         await reply.status(409).send({
           message:
             `A Document named "${result.filename}" already exists in this Notebook, so the deleted one ` +
-            "cannot be restored under that name. Delete the current one first, then restore this one.",
+            'cannot be restored under that name. Delete the current one first, then restore this one.',
         });
         return;
       }
@@ -325,13 +340,13 @@ export function registerDocumentRoutes(
   );
 
   app.withTypeProvider<ZodTypeProvider>().get(
-    "/notebooks/:notebookId/documents/:documentId/versions/:versionId/download",
+    '/notebooks/:notebookId/documents/:documentId/versions/:versionId/download',
     {
       preHandler: authGuard,
       schema: {
-        operationId: "downloadDocumentVersion",
-        tags: ["documents"],
-        summary: "Download the exact original bytes uploaded for a Document Version",
+        operationId: 'downloadDocumentVersion',
+        tags: ['documents'],
+        summary: 'Download the exact original bytes uploaded for a Document Version',
         params: documentVersionDownloadParamsSchema,
         response: {
           // The 200 response is the raw file stream, not JSON — there's no
@@ -354,15 +369,18 @@ export function registerDocumentRoutes(
         request.params.versionId,
       );
       if (!version) {
-        await reply.status(404).send({ message: "Document Version not found." });
+        await reply.status(404).send({ message: 'Document Version not found.' });
         return;
       }
 
       const stored = await getObject(s3, documentsBucket, version.storageKey);
-      reply.header("Content-Type", version.mimeType);
-      reply.header("Content-Disposition", `attachment; filename="${encodeURIComponent(version.filename)}"`);
+      reply.header('Content-Type', version.mimeType);
+      reply.header(
+        'Content-Disposition',
+        `attachment; filename="${encodeURIComponent(version.filename)}"`,
+      );
       if (stored.contentLength !== undefined) {
-        reply.header("Content-Length", stored.contentLength);
+        reply.header('Content-Length', stored.contentLength);
       }
       await reply.status(200).send(stored.body);
     },

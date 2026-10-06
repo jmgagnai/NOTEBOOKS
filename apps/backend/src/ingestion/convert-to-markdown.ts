@@ -1,21 +1,21 @@
-import { createWriteStream } from "node:fs";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
-import { pipeline } from "node:stream/promises";
-import type { S3Client } from "@aws-sdk/client-s3";
-import type { Pool } from "pg";
-import { inTransaction } from "../db/transaction.js";
-import { publishAppEvent } from "../events/bus.js";
-import { getObject } from "../storage/s3-client.js";
-import type { DocumentStatus } from "../documents/schema.js";
-import { markdownOutputPath, type MarkdownConverter } from "./docling.js";
+import { createWriteStream } from 'node:fs';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { basename, join } from 'node:path';
+import { pipeline } from 'node:stream/promises';
+import type { S3Client } from '@aws-sdk/client-s3';
+import type { Pool } from 'pg';
+import { inTransaction } from '../db/transaction.js';
+import { publishAppEvent } from '../events/bus.js';
+import { getObject } from '../storage/s3-client.js';
+import type { DocumentStatus } from '../documents/schema.js';
+import { markdownOutputPath, type MarkdownConverter } from './docling.js';
 import {
   documentVersionRefSchema,
   versionStatusChanged,
   type DocumentVersionRef,
   type IngestionVersion,
-} from "./stage.js";
+} from './stage.js';
 
 /**
  * The pg_boss queue name for ingestion stage 1. Each pipeline stage gets its
@@ -23,11 +23,11 @@ import {
  * next on success (NBK-6); hyphens only, because pg_boss rejects anything
  * outside `[\w-]`.
  */
-export const CONVERT_TO_MARKDOWN_QUEUE = "convert-to-markdown";
+export const CONVERT_TO_MARKDOWN_QUEUE = 'convert-to-markdown';
 
 // Re-exported from `stage.ts`, where the three Stages' shared job payload and
 // event envelope live.
-export { DOCUMENT_VERSION_STATUS_CHANGED } from "./stage.js";
+export { DOCUMENT_VERSION_STATUS_CHANGED } from './stage.js';
 
 /** A convert job's payload: the Document Version to convert, and nothing else. */
 export const convertToMarkdownPayloadSchema = documentVersionRefSchema;
@@ -144,9 +144,9 @@ export async function runConvertToMarkdownJob(
     documentId: payload.documentId,
     versionId: payload.versionId,
   };
-  await transitionTo(pool, version, "converting");
+  await transitionTo(pool, version, 'converting');
 
-  const workDir = await mkdtemp(join(deps.tempDir ?? tmpdir(), "nbk-convert-"));
+  const workDir = await mkdtemp(join(deps.tempDir ?? tmpdir(), 'nbk-convert-'));
   try {
     // Keep the original extension: Docling picks its conversion backend from
     // it, so a .pdf must still look like a .pdf on disk. `basename` strips any
@@ -159,8 +159,8 @@ export async function runConvertToMarkdownJob(
 
     await convertToMarkdown({ inputPath, outputPath });
 
-    const markdown = await readFile(outputPath, "utf8");
-    await transitionTo(pool, version, "converted", { markdown, error: null });
+    const markdown = await readFile(outputPath, 'utf8');
+    await transitionTo(pool, version, 'converted', { markdown, error: null });
 
     // Enqueued after the Converted Markdown is committed, never before: a
     // stage-2 job that out-ran its own input would find nothing to read.
@@ -181,7 +181,7 @@ export async function runConvertToMarkdownJob(
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    await transitionTo(pool, version, willRetry ? "queued" : "failed", { error: message });
+    await transitionTo(pool, version, willRetry ? 'queued' : 'failed', { error: message });
     throw err;
   } finally {
     await rm(workDir, { recursive: true, force: true });

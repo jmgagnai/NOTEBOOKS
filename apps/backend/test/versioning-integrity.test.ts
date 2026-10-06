@@ -1,24 +1,24 @@
-import { readFile, writeFile } from "node:fs/promises";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
-import type { StartedTestContainer } from "testcontainers";
-import type { FastifyInstance } from "fastify";
-import type { Pool } from "pg";
-import type { S3Client } from "@aws-sdk/client-s3";
-import { buildApp } from "../src/app.js";
-import { runMigrations } from "../src/db/migrate.js";
-import { createPool } from "../src/db/pool.js";
-import { runConvertToMarkdownJob } from "../src/ingestion/convert-to-markdown.js";
-import { runSummarizeDocumentJob } from "../src/ingestion/summarize-document.js";
-import { runEmbedChunksJob } from "../src/ingestion/embed-chunks.js";
-import type { JobQueue } from "../src/jobs/queue.js";
-import { createOpenRouterEmbedder } from "../src/llm/embeddings.js";
-import { DEFAULT_TASK_MODELS, EMBEDDING_DIMENSIONS } from "../src/llm/models.js";
-import { createOpenRouterCompleter } from "../src/llm/openrouter.js";
-import { createS3Client, ensureBucket } from "../src/storage/s3-client.js";
-import { startMinio } from "./support/minio-container.js";
+import { readFile, writeFile } from 'node:fs/promises';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql';
+import type { StartedTestContainer } from 'testcontainers';
+import type { FastifyInstance } from 'fastify';
+import type { Pool } from 'pg';
+import type { S3Client } from '@aws-sdk/client-s3';
+import { buildApp } from '../src/app.js';
+import { runMigrations } from '../src/db/migrate.js';
+import { createPool } from '../src/db/pool.js';
+import { runConvertToMarkdownJob } from '../src/ingestion/convert-to-markdown.js';
+import { runSummarizeDocumentJob } from '../src/ingestion/summarize-document.js';
+import { runEmbedChunksJob } from '../src/ingestion/embed-chunks.js';
+import type { JobQueue } from '../src/jobs/queue.js';
+import { createOpenRouterEmbedder } from '../src/llm/embeddings.js';
+import { DEFAULT_TASK_MODELS, EMBEDDING_DIMENSIONS } from '../src/llm/models.js';
+import { createOpenRouterCompleter } from '../src/llm/openrouter.js';
+import { createS3Client, ensureBucket } from '../src/storage/s3-client.js';
+import { startMinio } from './support/minio-container.js';
 
-const DOCUMENTS_BUCKET = "rag-notebook-versioning-test";
+const DOCUMENTS_BUCKET = 'rag-notebook-versioning-test';
 
 /**
  * NBK-13: the cross-cutting versioning guarantee, proven once across the
@@ -60,7 +60,7 @@ const DOCUMENTS_BUCKET = "rag-notebook-versioning-test";
  * the same row. A versioning rule cannot differ between them without that
  * test failing first.
  */
-describe("Versioning integrity, end to end", () => {
+describe('Versioning integrity, end to end', () => {
   let pgContainer: StartedPostgreSqlContainer;
   let minioContainer: StartedTestContainer;
   let pool: Pool;
@@ -79,7 +79,7 @@ describe("Versioning integrity, end to end", () => {
    * answered this" is readable straight off the score: a question about
    * fourteen weeks scores 1 against v1's chunk and 0 against v2's.
    */
-  const TOPICS = ["fourteen weeks", "six weeks", "nine weeks", "carrier capacity"];
+  const TOPICS = ['fourteen weeks', 'six weeks', 'nine weeks', 'carrier capacity'];
 
   function vectorFor(text: string): number[] {
     const lower = text.toLowerCase();
@@ -95,16 +95,16 @@ describe("Versioning integrity, end to end", () => {
    * than a 429/5xx on purpose: `createOpenRouterEmbedder` does not retry it,
    * so the failure is the one attempt the test asked for.
    */
-  const UNEMBEDDABLE = "unembeddable";
+  const UNEMBEDDABLE = 'unembeddable';
 
   /** What the stubbed chat completion answers. Set per test. */
-  let chatAnswer = "No answer was scripted for this test.";
+  let chatAnswer = 'No answer was scripted for this test.';
   /** Every chat-completion prompt the app caused, oldest first. */
   let completionPrompts: { system: string; user: string }[] = [];
 
   /** `count` distinct words, so a scripted artifact can hit its word range. */
   function words(count: number): string {
-    return Array.from({ length: count }, (_, i) => `word${i + 1}`).join(" ");
+    return Array.from({ length: count }, (_, i) => `word${i + 1}`).join(' ');
   }
 
   /**
@@ -114,12 +114,12 @@ describe("Versioning integrity, end to end", () => {
    */
   function isIngestionTask(system: string): boolean {
     return (
-      system.includes("extract bibliographic metadata") ||
-      system.includes("merge several section summaries") ||
-      system.includes("summarize one section") ||
-      system.includes("a Chat Snippet") ||
-      system.includes("an Executive Summary") ||
-      system.includes("an Abstract")
+      system.includes('extract bibliographic metadata') ||
+      system.includes('merge several section summaries') ||
+      system.includes('summarize one section') ||
+      system.includes('a Chat Snippet') ||
+      system.includes('an Executive Summary') ||
+      system.includes('an Abstract')
     );
   }
 
@@ -135,30 +135,30 @@ describe("Versioning integrity, end to end", () => {
 
   /** The claim named in the prompt stage 2 is currently summarizing. */
   function claimIn(user: string): string {
-    return TOPICS.find((topic) => user.includes(topic)) ?? "no stated figure";
+    return TOPICS.find((topic) => user.includes(topic)) ?? 'no stated figure';
   }
 
   const stubFetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
-    const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+    const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
     const json = (payload: unknown, status = 200) =>
       new Response(JSON.stringify(payload), {
         status,
-        headers: { "content-type": "application/json" },
+        headers: { 'content-type': 'application/json' },
       });
 
-    if (url.endsWith("/embeddings")) {
+    if (url.endsWith('/embeddings')) {
       const texts = (Array.isArray(body.input) ? body.input : [body.input]) as string[];
       if (texts.some((text) => text.includes(UNEMBEDDABLE))) {
-        return json({ error: { message: "This test refuses to embed that text." } }, 400);
+        return json({ error: { message: 'This test refuses to embed that text.' } }, 400);
       }
       return json({ data: texts.map((text, index) => ({ index, embedding: vectorFor(text) })) });
     }
 
-    if (url.endsWith("/chat/completions")) {
+    if (url.endsWith('/chat/completions')) {
       const messages = body.messages as { role: string; content: string }[];
-      const system = messages.find((m) => m.role === "system")?.content ?? "";
-      const user = messages.find((m) => m.role === "user")?.content ?? "";
+      const system = messages.find((m) => m.role === 'system')?.content ?? '';
+      const user = messages.find((m) => m.role === 'user')?.content ?? '';
 
       if (!isIngestionTask(system)) {
         // The chat answer path (NBK-10). Recorded, because what the model was
@@ -169,18 +169,26 @@ describe("Versioning integrity, end to end", () => {
 
       // Ingestion stage 2 (NBK-7). Scripted inside each artifact's word range
       // so no corrective rewrite is triggered.
-      if (system.includes("extract bibliographic metadata")) {
+      if (system.includes('extract bibliographic metadata')) {
         return json({
-          choices: [{ message: { content: '{"title":"Logistics Review","documentType":"report","language":"en"}' } }],
+          choices: [
+            {
+              message: {
+                content: '{"title":"Logistics Review","documentType":"report","language":"en"}',
+              },
+            },
+          ],
         });
       }
-      if (system.includes("an Abstract")) {
+      if (system.includes('an Abstract')) {
         return json({ choices: [{ message: { content: abstractFor(claimIn(user)) } }] });
       }
-      if (system.includes("a Chat Snippet")) {
-        return json({ choices: [{ message: { content: `Chat Snippet for ${claimIn(user)}. ${words(200)}` } }] });
+      if (system.includes('a Chat Snippet')) {
+        return json({
+          choices: [{ message: { content: `Chat Snippet for ${claimIn(user)}. ${words(200)}` } }],
+        });
       }
-      if (system.includes("an Executive Summary")) {
+      if (system.includes('an Executive Summary')) {
         return json({ choices: [{ message: { content: words(700) } }] });
       }
       return json({ choices: [{ message: { content: `Section summary. ${words(40)}` } }] });
@@ -190,12 +198,12 @@ describe("Versioning integrity, end to end", () => {
   }) as typeof globalThis.fetch;
 
   const embed = createOpenRouterEmbedder({
-    apiKey: "test-key",
-    model: "qwen/qwen3-embedding-4b",
+    apiKey: 'test-key',
+    model: 'qwen/qwen3-embedding-4b',
     fetch: stubFetch,
     retries: 0,
   });
-  const complete = createOpenRouterCompleter({ apiKey: "test-key", fetch: stubFetch, retries: 0 });
+  const complete = createOpenRouterCompleter({ apiKey: 'test-key', fetch: stubFetch, retries: 0 });
 
   /**
    * The ingestion jobs the app and the stages themselves enqueued, in order.
@@ -203,7 +211,7 @@ describe("Versioning integrity, end to end", () => {
    * hand-over happens and that each stage runs against the Version the stage
    * before it named — not pg_boss's polling.
    */
-  type Stage = "convert" | "summarize" | "embed";
+  type Stage = 'convert' | 'summarize' | 'embed';
   interface QueuedJob {
     stage: Stage;
     payload: { documentId: string; versionId: string };
@@ -211,9 +219,9 @@ describe("Versioning integrity, end to end", () => {
   let queued: QueuedJob[] = [];
 
   const jobs: JobQueue = {
-    enqueueConvertToMarkdown: async (payload) => void queued.push({ stage: "convert", payload }),
-    enqueueSummarizeDocument: async (payload) => void queued.push({ stage: "summarize", payload }),
-    enqueueEmbedChunks: async (payload) => void queued.push({ stage: "embed", payload }),
+    enqueueConvertToMarkdown: async (payload) => void queued.push({ stage: 'convert', payload }),
+    enqueueSummarizeDocument: async (payload) => void queued.push({ stage: 'summarize', payload }),
+    enqueueEmbedChunks: async (payload) => void queued.push({ stage: 'embed', payload }),
     stop: async () => {},
   };
 
@@ -225,8 +233,14 @@ describe("Versioning integrity, end to end", () => {
    * and it means the Markdown every later stage reads came out of the file
    * that was actually uploaded, through MinIO, rather than out of the test.
    */
-  async function copyThroughDocling({ inputPath, outputPath }: { inputPath: string; outputPath: string }) {
-    await writeFile(outputPath, await readFile(inputPath, "utf8"), "utf8");
+  async function copyThroughDocling({
+    inputPath,
+    outputPath,
+  }: {
+    inputPath: string;
+    outputPath: string;
+  }) {
+    await writeFile(outputPath, await readFile(inputPath, 'utf8'), 'utf8');
   }
 
   /** Runs one stage's real handler. Throws whatever the handler throws. */
@@ -235,7 +249,7 @@ describe("Versioning integrity, end to end", () => {
     // its attempts, which is the state these tests want to observe (a Version
     // left `failed`) rather than one sitting mid-retry.
     const invocation = { payload: job.payload, willRetry: false };
-    if (job.stage === "convert") {
+    if (job.stage === 'convert') {
       await runConvertToMarkdownJob(
         {
           pool,
@@ -246,9 +260,14 @@ describe("Versioning integrity, end to end", () => {
         },
         invocation,
       );
-    } else if (job.stage === "summarize") {
+    } else if (job.stage === 'summarize') {
       await runSummarizeDocumentJob(
-        { pool, complete, models: DEFAULT_TASK_MODELS, enqueueEmbedChunks: jobs.enqueueEmbedChunks },
+        {
+          pool,
+          complete,
+          models: DEFAULT_TASK_MODELS,
+          enqueueEmbedChunks: jobs.enqueueEmbedChunks,
+        },
         invocation,
       );
     } else {
@@ -296,7 +315,7 @@ describe("Versioning integrity, end to end", () => {
   }
 
   beforeAll(async () => {
-    pgContainer = await new PostgreSqlContainer("pgvector/pgvector:pg16").start();
+    pgContainer = await new PostgreSqlContainer('pgvector/pgvector:pg16').start();
     pool = createPool(pgContainer.getConnectionUri());
     await runMigrations(pool);
 
@@ -317,7 +336,7 @@ describe("Versioning integrity, end to end", () => {
       s3,
       documentsBucket: DOCUMENTS_BUCKET,
       jobs,
-      chat: { complete, embed, model: "test/chat-model" },
+      chat: { complete, embed, model: 'test/chat-model' },
       embed,
     });
   }, 300_000);
@@ -332,27 +351,27 @@ describe("Versioning integrity, end to end", () => {
   beforeEach(() => {
     queued = [];
     completionPrompts = [];
-    chatAnswer = "No answer was scripted for this test.";
+    chatAnswer = 'No answer was scripted for this test.';
   });
 
   async function loginAsNewUser(email: string): Promise<string> {
     await app.inject({
-      method: "POST",
-      url: "/auth/register",
-      payload: { email, password: "correct-horse-battery-staple" },
+      method: 'POST',
+      url: '/auth/register',
+      payload: { email, password: 'correct-horse-battery-staple' },
     });
     const loginResponse = await app.inject({
-      method: "POST",
-      url: "/auth/login",
-      payload: { email, password: "correct-horse-battery-staple" },
+      method: 'POST',
+      url: '/auth/login',
+      payload: { email, password: 'correct-horse-battery-staple' },
     });
-    return loginResponse.cookies.find((c) => c.name === "session")!.value;
+    return loginResponse.cookies.find((c) => c.name === 'session')!.value;
   }
 
   async function createNotebook(session: string, title: string): Promise<string> {
     const response = await app.inject({
-      method: "POST",
-      url: "/notebooks",
+      method: 'POST',
+      url: '/notebooks',
       cookies: { session },
       payload: { title },
     });
@@ -367,13 +386,13 @@ describe("Versioning integrity, end to end", () => {
    */
   function logisticsMarkdown(claim: string): string {
     return [
-      "# Logistics Review",
-      "",
-      "## Lead times",
-      "",
+      '# Logistics Review',
+      '',
+      '## Lead times',
+      '',
       `Supply chain lead times ran to ${claim} across the northern corridor, and every tender was re-priced accordingly.`,
-      "",
-    ].join("\n");
+      '',
+    ].join('\n');
   }
 
   /** The chunk text `chunkMarkdown` produces from {@link logisticsMarkdown}. */
@@ -391,7 +410,7 @@ describe("Versioning integrity, end to end", () => {
 
   /** Uploads a file through the real route, as a browser's form post would. */
   async function upload(session: string, notebookId: string, filename: string, content: string) {
-    const boundary = "----nbk13TestBoundary";
+    const boundary = '----nbk13TestBoundary';
     const payload = Buffer.from(
       `--${boundary}\r\n` +
         `Content-Disposition: form-data; name="file"; filename="${filename}"\r\n` +
@@ -400,17 +419,22 @@ describe("Versioning integrity, end to end", () => {
         `--${boundary}--\r\n`,
     );
     const response = await app.inject({
-      method: "POST",
+      method: 'POST',
       url: `/notebooks/${notebookId}/documents`,
       cookies: { session },
-      headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
+      headers: { 'content-type': `multipart/form-data; boundary=${boundary}` },
       payload,
     });
     return { statusCode: response.statusCode, body: response.json() as ApiDocument };
   }
 
   /** Uploads and then runs the whole pipeline the upload enqueued. */
-  async function uploadAndIngest(session: string, notebookId: string, filename: string, claim: string) {
+  async function uploadAndIngest(
+    session: string,
+    notebookId: string,
+    filename: string,
+    claim: string,
+  ) {
     const uploaded = await upload(session, notebookId, filename, logisticsMarkdown(claim));
     expect(uploaded.statusCode).toBe(201);
     await drainIngestion();
@@ -419,7 +443,7 @@ describe("Versioning integrity, end to end", () => {
 
   async function listDocuments(session: string, notebookId: string): Promise<ApiDocument[]> {
     const response = await app.inject({
-      method: "GET",
+      method: 'GET',
       url: `/notebooks/${notebookId}/documents`,
       cookies: { session },
     });
@@ -438,7 +462,7 @@ describe("Versioning integrity, end to end", () => {
    */
   async function versionStatus(versionId: string): Promise<string> {
     const { rows } = await pool.query<{ ingestion_status: string }>(
-      "SELECT ingestion_status FROM document_versions WHERE id = $1",
+      'SELECT ingestion_status FROM document_versions WHERE id = $1',
       [versionId],
     );
     return rows[0].ingestion_status;
@@ -450,7 +474,7 @@ describe("Versioning integrity, end to end", () => {
 
   async function search(session: string, notebookId: string, q: string): Promise<SearchHit[]> {
     const response = await app.inject({
-      method: "GET",
+      method: 'GET',
       url: `/notebooks/${notebookId}/search?q=${encodeURIComponent(q)}`,
       cookies: { session },
     });
@@ -480,7 +504,7 @@ describe("Versioning integrity, end to end", () => {
 
   async function startThread(session: string, notebookId: string, title: string): Promise<string> {
     const response = await app.inject({
-      method: "POST",
+      method: 'POST',
       url: `/notebooks/${notebookId}/threads`,
       cookies: { session },
       payload: { title },
@@ -490,7 +514,7 @@ describe("Versioning integrity, end to end", () => {
 
   async function ask(session: string, notebookId: string, threadId: string, question: string) {
     const response = await app.inject({
-      method: "POST",
+      method: 'POST',
       url: `/notebooks/${notebookId}/threads/${threadId}/messages`,
       cookies: { session },
       payload: { content: question },
@@ -499,9 +523,13 @@ describe("Versioning integrity, end to end", () => {
     return (response.json() as { question: ApiMessage; answer: ApiMessage }).answer;
   }
 
-  async function readThread(session: string, notebookId: string, threadId: string): Promise<ApiMessage[]> {
+  async function readThread(
+    session: string,
+    notebookId: string,
+    threadId: string,
+  ): Promise<ApiMessage[]> {
     const response = await app.inject({
-      method: "GET",
+      method: 'GET',
       url: `/notebooks/${notebookId}/threads/${threadId}/messages`,
       cookies: { session },
     });
@@ -512,11 +540,14 @@ describe("Versioning integrity, end to end", () => {
   /** Follows a Citation: opens the exact Version it pins. */
   async function follow(session: string, notebookId: string, citation: ApiCitation) {
     const response = await app.inject({
-      method: "GET",
+      method: 'GET',
       url: `/notebooks/${notebookId}/documents/${citation.documentId}/versions/${citation.documentVersionId}/content`,
       cookies: { session },
     });
-    return { statusCode: response.statusCode, body: response.json() as { versionId: string; markdown: string } };
+    return {
+      statusCode: response.statusCode,
+      body: response.json() as { versionId: string; markdown: string },
+    };
   }
 
   // The acceptance criterion, in one test, in the order NBK-13 writes it:
@@ -527,39 +558,48 @@ describe("Versioning integrity, end to end", () => {
   // Every "is included" assertion is positive — the new Version's own content
   // and Abstract — so the test cannot pass merely because retrieval returned
   // nothing at all.
-  it("supersedes the old Version for search and chat while the Citation to it keeps opening it", async () => {
-    const session = await loginAsNewUser("versioning-sequence@example.com");
-    const notebookId = await createNotebook(session, "Logistics");
+  it('supersedes the old Version for search and chat while the Citation to it keeps opening it', async () => {
+    const session = await loginAsNewUser('versioning-sequence@example.com');
+    const notebookId = await createNotebook(session, 'Logistics');
 
     // 1. Upload, and let the real pipeline take it to `ready`.
-    const v1Document = await uploadAndIngest(session, notebookId, "logistics.md", "fourteen weeks");
+    const v1Document = await uploadAndIngest(session, notebookId, 'logistics.md', 'fourteen weeks');
     expect(v1Document.latestVersion.versionNumber).toBe(1);
     const v1 = v1Document.latestVersion.id;
 
-    const readyAfterUpload = await search(session, notebookId, "how long are lead times, fourteen weeks?");
+    const readyAfterUpload = await search(
+      session,
+      notebookId,
+      'how long are lead times, fourteen weeks?',
+    );
     expect(readyAfterUpload).toHaveLength(1);
-    expect(readyAfterUpload[0].status).toBe("ready");
+    expect(readyAfterUpload[0].status).toBe('ready');
     // Exactly 1: the query and v1's only chunk are the same axis of the
     // embedding space.
     expect(readyAfterUpload[0].score).toBe(1);
-    expect(readyAfterUpload[0].abstract).toBe(abstractFor("fourteen weeks"));
+    expect(readyAfterUpload[0].abstract).toBe(abstractFor('fourteen weeks'));
 
     // 2. Ask a question, and 3. get a Citation out of the answer.
-    const threadId = await startThread(session, notebookId, "Lead times");
-    chatAnswer = "Lead times ran to fourteen weeks [1].";
-    const firstAnswer = await ask(session, notebookId, threadId, "What were lead times at fourteen weeks?");
+    const threadId = await startThread(session, notebookId, 'Lead times');
+    chatAnswer = 'Lead times ran to fourteen weeks [1].';
+    const firstAnswer = await ask(
+      session,
+      notebookId,
+      threadId,
+      'What were lead times at fourteen weeks?',
+    );
 
     expect(firstAnswer.citations).toHaveLength(1);
     const oldCitation = firstAnswer.citations[0];
     expect(oldCitation.documentVersionId).toBe(v1);
     expect(oldCitation.versionNumber).toBe(1);
-    expect(oldCitation.filename).toBe("logistics.md");
-    expect(oldCitation.headingPath).toEqual(["Logistics Review", "Lead times"]);
+    expect(oldCitation.filename).toBe('logistics.md');
+    expect(oldCitation.headingPath).toEqual(['Logistics Review', 'Lead times']);
     // The answer really was grounded in v1's text, not just attributed to it.
-    expect(completionPrompts.at(-1)!.user).toContain(expectedChunkText("fourteen weeks"));
+    expect(completionPrompts.at(-1)!.user).toContain(expectedChunkText('fourteen weeks'));
 
     // 4. Re-upload the same filename: a new Version of the same Document.
-    const v2Document = await uploadAndIngest(session, notebookId, "logistics.md", "six weeks");
+    const v2Document = await uploadAndIngest(session, notebookId, 'logistics.md', 'six weeks');
     expect(v2Document.id).toBe(v1Document.id);
     expect(v2Document.latestVersion.versionNumber).toBe(2);
     const v2 = v2Document.latestVersion.id;
@@ -570,11 +610,11 @@ describe("Versioning integrity, end to end", () => {
     // The new Version is included — positively: the Document comes back with
     // v2's Abstract, v2 as its latest Version, and a perfect score for a
     // query about what v2 says.
-    const forNewClaim = await search(session, notebookId, "lead times of six weeks");
+    const forNewClaim = await search(session, notebookId, 'lead times of six weeks');
     expect(forNewClaim).toHaveLength(1);
     expect(forNewClaim[0].id).toBe(v1Document.id);
     expect(forNewClaim[0].latestVersion.id).toBe(v2);
-    expect(forNewClaim[0].abstract).toBe(abstractFor("six weeks"));
+    expect(forNewClaim[0].abstract).toBe(abstractFor('six weeks'));
     expect(forNewClaim[0].score).toBe(1);
 
     // And the old Version is excluded. Said as a score rather than an
@@ -582,42 +622,49 @@ describe("Versioning integrity, end to end", () => {
     // the Document is still returned for a query about v1's figure, but with
     // similarity 0 — the distance to v2's chunk. Were v1's chunks still
     // searched it would be 1.
-    const forOldClaim = await search(session, notebookId, "lead times of fourteen weeks");
+    const forOldClaim = await search(session, notebookId, 'lead times of fourteen weeks');
     expect(forOldClaim).toHaveLength(1);
     expect(forOldClaim[0].latestVersion.id).toBe(v2);
     expect(forOldClaim[0].score).toBe(0);
 
     // Chat agrees: a question about the superseded figure is now answered
     // from v2's text, and v1's text is nowhere in the prompt.
-    chatAnswer = "Lead times ran to six weeks [1].";
-    const secondAnswer = await ask(session, notebookId, threadId, "And lead times at fourteen weeks now?");
+    chatAnswer = 'Lead times ran to six weeks [1].';
+    const secondAnswer = await ask(
+      session,
+      notebookId,
+      threadId,
+      'And lead times at fourteen weeks now?',
+    );
     const lastPrompt = completionPrompts.at(-1)!.user;
-    expect(lastPrompt).toContain(expectedChunkText("six weeks"));
-    expect(lastPrompt).not.toContain(expectedChunkText("fourteen weeks"));
+    expect(lastPrompt).toContain(expectedChunkText('six weeks'));
+    expect(lastPrompt).not.toContain(expectedChunkText('fourteen weeks'));
     expect(secondAnswer.citations[0].documentVersionId).toBe(v2);
     expect(secondAnswer.citations[0].versionNumber).toBe(2);
 
     // 6. The earlier Citation still opens the old Version, at its location.
     const reread = await readThread(session, notebookId, threadId);
-    const [citationNow] = reread.filter((m) => m.role === "assistant")[0].citations;
+    const [citationNow] = reread.filter((m) => m.role === 'assistant')[0].citations;
     expect(citationNow.documentVersionId).toBe(v1);
     expect(citationNow.versionNumber).toBe(1);
     expect(citationNow.chunkId).toBe(oldCitation.chunkId);
-    expect(citationNow.headingPath).toEqual(["Logistics Review", "Lead times"]);
+    expect(citationNow.headingPath).toEqual(['Logistics Review', 'Lead times']);
 
     const followed = await follow(session, notebookId, citationNow);
     expect(followed.statusCode).toBe(200);
     expect(followed.body.versionId).toBe(v1);
-    expect(followed.body.markdown).toBe(logisticsMarkdown("fourteen weeks"));
+    expect(followed.body.markdown).toBe(logisticsMarkdown('fourteen weeks'));
     // "At that location": the cited range still slices back to the passage
     // the answer was grounded in.
     expect(citationNow.charStart).not.toBeNull();
     expect(followed.body.markdown.slice(citationNow.charStart!, citationNow.charEnd!)).toBe(
-      expectedChunkText("fourteen weeks"),
+      expectedChunkText('fourteen weeks'),
     );
 
     // Both Citations coexist in the Thread, each pinned to its own Version.
-    expect(reread.filter((m) => m.role === "assistant").map((m) => m.citations[0].versionNumber)).toEqual([1, 2]);
+    expect(
+      reread.filter((m) => m.role === 'assistant').map((m) => m.citations[0].versionNumber),
+    ).toEqual([1, 2]);
   });
 
   // The first of the three seams where this could plausibly break: the
@@ -630,29 +677,33 @@ describe("Versioning integrity, end to end", () => {
   // `ready` *after* its successor must not become searchable, which is the
   // case a "latest ready Version" rule (rather than "latest Version, then
   // ready") would get wrong.
-  it("supersedes a Version that is still mid-ingestion, and never searches it when it finishes late", async () => {
-    const session = await loginAsNewUser("versioning-midflight@example.com");
-    const notebookId = await createNotebook(session, "Mid-flight");
+  it('supersedes a Version that is still mid-ingestion, and never searches it when it finishes late', async () => {
+    const session = await loginAsNewUser('versioning-midflight@example.com');
+    const notebookId = await createNotebook(session, 'Mid-flight');
 
     // v1 is uploaded and converted, but stops there — stage 2 is still owed.
-    const v1Document = (await upload(session, notebookId, "logistics.md", logisticsMarkdown("fourteen weeks"))).body;
+    const v1Document = (
+      await upload(session, notebookId, 'logistics.md', logisticsMarkdown('fourteen weeks'))
+    ).body;
     const v1 = v1Document.latestVersion.id;
-    await drainIngestion({ versionId: v1, stopAfter: "convert" });
-    expect((await listDocuments(session, notebookId))[0].status).toBe("converted");
+    await drainIngestion({ versionId: v1, stopAfter: 'convert' });
+    expect((await listDocuments(session, notebookId))[0].status).toBe('converted');
 
     // The same filename is re-uploaded while that is still true.
-    const v2Document = (await upload(session, notebookId, "logistics.md", logisticsMarkdown("six weeks"))).body;
+    const v2Document = (
+      await upload(session, notebookId, 'logistics.md', logisticsMarkdown('six weeks'))
+    ).body;
     expect(v2Document.id).toBe(v1Document.id);
     expect(v2Document.latestVersion.versionNumber).toBe(2);
     const v2 = v2Document.latestVersion.id;
 
     // With neither Version `ready`, the Document is out of search entirely
     // rather than answering from a half-ingested Version.
-    expect(await search(session, notebookId, "lead times of fourteen weeks")).toEqual([]);
+    expect(await search(session, notebookId, 'lead times of fourteen weeks')).toEqual([]);
 
     // v2's pipeline finishes first, leaving v1's stage 2 and 3 still queued.
     await drainIngestion({ versionId: v2 });
-    const afterV2 = await search(session, notebookId, "lead times of six weeks");
+    const afterV2 = await search(session, notebookId, 'lead times of six weeks');
     expect(afterV2).toHaveLength(1);
     expect(afterV2[0].latestVersion.id).toBe(v2);
     expect(afterV2[0].score).toBe(1);
@@ -660,22 +711,27 @@ describe("Versioning integrity, end to end", () => {
     // Now v1's ingestion catches up and takes the *superseded* Version all
     // the way to `ready`, chunks and all.
     await drainIngestion({ versionId: v1 });
-    expect(await versionStatus(v1)).toBe("ready");
+    expect(await versionStatus(v1)).toBe('ready');
 
     // It still contributes nothing. A query about v1's figure scores 0 — the
     // distance to v2's chunk — not the 1 it would score against v1's own.
-    const afterLateV1 = await search(session, notebookId, "lead times of fourteen weeks");
+    const afterLateV1 = await search(session, notebookId, 'lead times of fourteen weeks');
     expect(afterLateV1).toHaveLength(1);
     expect(afterLateV1[0].latestVersion.id).toBe(v2);
     expect(afterLateV1[0].score).toBe(0);
 
     // And chat is grounded in v2's text alone.
-    const threadId = await startThread(session, notebookId, "Lead times");
-    chatAnswer = "Lead times ran to six weeks [1].";
-    const answer = await ask(session, notebookId, threadId, "What were lead times at fourteen weeks?");
+    const threadId = await startThread(session, notebookId, 'Lead times');
+    chatAnswer = 'Lead times ran to six weeks [1].';
+    const answer = await ask(
+      session,
+      notebookId,
+      threadId,
+      'What were lead times at fourteen weeks?',
+    );
     const prompt = completionPrompts.at(-1)!.user;
-    expect(prompt).toContain(expectedChunkText("six weeks"));
-    expect(prompt).not.toContain(expectedChunkText("fourteen weeks"));
+    expect(prompt).toContain(expectedChunkText('six weeks'));
+    expect(prompt).not.toContain(expectedChunkText('fourteen weeks'));
     expect(answer.citations[0].documentVersionId).toBe(v2);
   });
 
@@ -688,15 +744,20 @@ describe("Versioning integrity, end to end", () => {
   // rather than quietly answering from content the user has already
   // replaced. A query about the superseded figure is the proof: it must find
   // nothing, not the old Version scoring 1.
-  it("drops a Document whose newest Version failed, instead of falling back to the superseded one", async () => {
-    const session = await loginAsNewUser("versioning-failed@example.com");
-    const notebookId = await createNotebook(session, "Failed re-upload");
+  it('drops a Document whose newest Version failed, instead of falling back to the superseded one', async () => {
+    const session = await loginAsNewUser('versioning-failed@example.com');
+    const notebookId = await createNotebook(session, 'Failed re-upload');
 
-    const v1Document = await uploadAndIngest(session, notebookId, "logistics.md", "fourteen weeks");
+    const v1Document = await uploadAndIngest(session, notebookId, 'logistics.md', 'fourteen weeks');
     const v1 = v1Document.latestVersion.id;
-    const threadId = await startThread(session, notebookId, "Lead times");
-    chatAnswer = "Lead times ran to fourteen weeks [1].";
-    const groundedAnswer = await ask(session, notebookId, threadId, "What were lead times at fourteen weeks?");
+    const threadId = await startThread(session, notebookId, 'Lead times');
+    chatAnswer = 'Lead times ran to fourteen weeks [1].';
+    const groundedAnswer = await ask(
+      session,
+      notebookId,
+      threadId,
+      'What were lead times at fourteen weeks?',
+    );
     const citation = groundedAnswer.citations[0];
     expect(citation.documentVersionId).toBe(v1);
 
@@ -706,31 +767,36 @@ describe("Versioning integrity, end to end", () => {
       await upload(
         session,
         notebookId,
-        "logistics.md",
+        'logistics.md',
         `# Logistics Review\n\n## Lead times\n\nThis revision is ${UNEMBEDDABLE} and stage 3 will not take it.\n`,
       )
     ).body;
     expect(v2Document.latestVersion.versionNumber).toBe(2);
     await drainIngestion();
-    expect(await versionStatus(v2Document.latestVersion.id)).toBe("failed");
+    expect(await versionStatus(v2Document.latestVersion.id)).toBe('failed');
 
     // Visible in the Notebook, with the status that says why — a failed
     // upload must not vanish (NBK-1: "so that I can retry or investigate
     // rather than silently losing the upload").
     const listed = await listDocuments(session, notebookId);
     expect(listed).toHaveLength(1);
-    expect(listed[0].status).toBe("failed");
+    expect(listed[0].status).toBe('failed');
     expect(listed[0].latestVersion.versionNumber).toBe(2);
 
     // But out of search: no fallback to v1, so the query that scored 1
     // against v1 ten lines ago now finds nothing at all.
-    expect(await search(session, notebookId, "lead times of fourteen weeks")).toEqual([]);
+    expect(await search(session, notebookId, 'lead times of fourteen weeks')).toEqual([]);
 
     // And out of chat, which says so rather than answering from v1.
-    chatAnswer = "This should never be generated: there is nothing to ground it in.";
-    const ungrounded = await ask(session, notebookId, threadId, "Lead times at fourteen weeks again?");
+    chatAnswer = 'This should never be generated: there is nothing to ground it in.';
+    const ungrounded = await ask(
+      session,
+      notebookId,
+      threadId,
+      'Lead times at fourteen weeks again?',
+    );
     expect(ungrounded.citations).toEqual([]);
-    expect(ungrounded.content).toContain("no sources to answer from yet");
+    expect(ungrounded.content).toContain('no sources to answer from yet');
     // No completion was even requested for it — the previous prompt is still
     // the last one.
     expect(completionPrompts).toHaveLength(1);
@@ -738,14 +804,15 @@ describe("Versioning integrity, end to end", () => {
     // The Citation made while v1 was current still opens v1, at its passage.
     const followed = await follow(session, notebookId, citation);
     expect(followed.statusCode).toBe(200);
-    expect(followed.body.markdown).toBe(logisticsMarkdown("fourteen weeks"));
+    expect(followed.body.markdown).toBe(logisticsMarkdown('fourteen weeks'));
     expect(followed.body.markdown.slice(citation.charStart!, citation.charEnd!)).toBe(
-      expectedChunkText("fourteen weeks"),
+      expectedChunkText('fourteen weeks'),
     );
     // Re-read, not just remembered from the response: still v1, still v1's
     // chunk.
-    const [citationNow] = (await readThread(session, notebookId, threadId))
-      .filter((m) => m.role === "assistant")[0].citations;
+    const [citationNow] = (await readThread(session, notebookId, threadId)).filter(
+      (m) => m.role === 'assistant',
+    )[0].citations;
     expect(citationNow.documentVersionId).toBe(v1);
     expect(citationNow.chunkId).toBe(citation.chunkId);
   });
@@ -760,17 +827,17 @@ describe("Versioning integrity, end to end", () => {
   // that Version's chunks. A re-upload makes a *new* Version, so each
   // re-upload's stage 3 only ever deletes chunks nothing has cited — which is
   // why three Citations into three Versions all still resolve here.
-  it("keeps every Citation resolving to its own Version across two further re-uploads", async () => {
-    const session = await loginAsNewUser("versioning-three@example.com");
-    const notebookId = await createNotebook(session, "Three Versions");
-    const threadId = await startThread(session, notebookId, "Lead times");
+  it('keeps every Citation resolving to its own Version across two further re-uploads', async () => {
+    const session = await loginAsNewUser('versioning-three@example.com');
+    const notebookId = await createNotebook(session, 'Three Versions');
+    const threadId = await startThread(session, notebookId, 'Lead times');
 
-    const claims = ["fourteen weeks", "six weeks", "nine weeks"];
+    const claims = ['fourteen weeks', 'six weeks', 'nine weeks'];
     const versionIds: string[] = [];
-    let documentId = "";
+    let documentId = '';
 
     for (const claim of claims) {
-      const document = await uploadAndIngest(session, notebookId, "logistics.md", claim);
+      const document = await uploadAndIngest(session, notebookId, 'logistics.md', claim);
       documentId = document.id;
       versionIds.push(document.latestVersion.id);
       expect(document.latestVersion.versionNumber).toBe(versionIds.length);
@@ -786,7 +853,9 @@ describe("Versioning integrity, end to end", () => {
 
     // One Document, three Versions, three answers — each still naming the
     // Version it was grounded in.
-    const answers = (await readThread(session, notebookId, threadId)).filter((m) => m.role === "assistant");
+    const answers = (await readThread(session, notebookId, threadId)).filter(
+      (m) => m.role === 'assistant',
+    );
     expect(answers.map((m) => m.citations[0].documentVersionId)).toEqual(versionIds);
     expect(answers.map((m) => m.citations[0].versionNumber)).toEqual([1, 2, 3]);
 
@@ -799,16 +868,18 @@ describe("Versioning integrity, end to end", () => {
       expect(followed.statusCode).toBe(200);
       expect(followed.body.versionId).toBe(versionIds[index]);
       expect(followed.body.markdown).toBe(logisticsMarkdown(claim));
-      expect(followed.body.markdown.slice(citation.charStart!, citation.charEnd!)).toBe(expectedChunkText(claim));
+      expect(followed.body.markdown.slice(citation.charStart!, citation.charEnd!)).toBe(
+        expectedChunkText(claim),
+      );
     }
 
     // Only the third Version is searched: its figure scores 1, the two it
     // superseded score 0.
-    expect((await search(session, notebookId, "lead times of nine weeks"))[0].score).toBe(1);
-    expect((await search(session, notebookId, "lead times of fourteen weeks"))[0].score).toBe(0);
-    expect((await search(session, notebookId, "lead times of six weeks"))[0].score).toBe(0);
-    expect((await search(session, notebookId, "lead times of nine weeks"))[0].abstract).toBe(
-      abstractFor("nine weeks"),
+    expect((await search(session, notebookId, 'lead times of nine weeks'))[0].score).toBe(1);
+    expect((await search(session, notebookId, 'lead times of fourteen weeks'))[0].score).toBe(0);
+    expect((await search(session, notebookId, 'lead times of six weeks'))[0].score).toBe(0);
+    expect((await search(session, notebookId, 'lead times of nine weeks'))[0].abstract).toBe(
+      abstractFor('nine weeks'),
     );
   });
 
@@ -825,25 +896,27 @@ describe("Versioning integrity, end to end", () => {
   // there, and it is refused — which is also the regression guard against
   // anyone "optimising" a re-upload into an in-place re-ingest of the current
   // Version.
-  it("refuses to re-chunk a Version a Citation points into, and re-uploads never ask it to", async () => {
-    const session = await loginAsNewUser("versioning-rechunk@example.com");
-    const notebookId = await createNotebook(session, "Re-chunking");
+  it('refuses to re-chunk a Version a Citation points into, and re-uploads never ask it to', async () => {
+    const session = await loginAsNewUser('versioning-rechunk@example.com');
+    const notebookId = await createNotebook(session, 'Re-chunking');
 
-    const v1Document = await uploadAndIngest(session, notebookId, "logistics.md", "fourteen weeks");
+    const v1Document = await uploadAndIngest(session, notebookId, 'logistics.md', 'fourteen weeks');
     const v1 = v1Document.latestVersion.id;
-    const threadId = await startThread(session, notebookId, "Lead times");
-    chatAnswer = "Lead times ran to fourteen weeks [1].";
-    const citation = (await ask(session, notebookId, threadId, "What were lead times at fourteen weeks?"))
-      .citations[0];
+    const threadId = await startThread(session, notebookId, 'Lead times');
+    chatAnswer = 'Lead times ran to fourteen weeks [1].';
+    const citation = (
+      await ask(session, notebookId, threadId, 'What were lead times at fourteen weeks?')
+    ).citations[0];
     expect(citation.documentVersionId).toBe(v1);
 
     // A re-upload: stage 3 runs again, for v2, and the cited Version's chunks
     // are untouched by it.
-    const v2 = (await uploadAndIngest(session, notebookId, "logistics.md", "six weeks")).latestVersion.id;
+    const v2 = (await uploadAndIngest(session, notebookId, 'logistics.md', 'six weeks'))
+      .latestVersion.id;
     expect(v2).not.toBe(v1);
     const stillResolves = await follow(session, notebookId, citation);
     expect(stillResolves.statusCode).toBe(200);
-    expect(stillResolves.body.markdown).toBe(logisticsMarkdown("fourteen weeks"));
+    expect(stillResolves.body.markdown).toBe(logisticsMarkdown('fourteen weeks'));
 
     // Now stage 3 is pointed at the cited Version itself, which is the only
     // way to make it try to replace chunks a Citation holds.
@@ -859,15 +932,16 @@ describe("Versioning integrity, end to end", () => {
     const afterRefusal = await follow(session, notebookId, citation);
     expect(afterRefusal.statusCode).toBe(200);
     expect(afterRefusal.body.markdown.slice(citation.charStart!, citation.charEnd!)).toBe(
-      expectedChunkText("fourteen weeks"),
+      expectedChunkText('fourteen weeks'),
     );
-    const [citationNow] = (await readThread(session, notebookId, threadId))
-      .filter((m) => m.role === "assistant")[0].citations;
+    const [citationNow] = (await readThread(session, notebookId, threadId)).filter(
+      (m) => m.role === 'assistant',
+    )[0].citations;
     expect(citationNow.chunkId).toBe(citation.chunkId);
 
     // And the current Version is unaffected by the failed re-chunk of the old
     // one: search still answers from v2.
-    const hits = await search(session, notebookId, "lead times of six weeks");
+    const hits = await search(session, notebookId, 'lead times of six weeks');
     expect(hits).toHaveLength(1);
     expect(hits[0].latestVersion.id).toBe(v2);
     expect(hits[0].score).toBe(1);

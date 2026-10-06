@@ -1,11 +1,11 @@
-import type { FastifyReply, FastifyRequest } from "fastify";
-import type { Pool } from "pg";
-import { SESSION_COOKIE_NAME } from "./cookie.js";
-import { verifySessionToken } from "./jwt.js";
-import { findUserById } from "./repository.js";
-import type { User } from "./schema.js";
+import type { FastifyReply, FastifyRequest } from 'fastify';
+import type { Pool } from 'pg';
+import { SESSION_COOKIE_NAME } from './cookie.js';
+import { verifySessionToken } from './jwt.js';
+import { findUserById } from './repository.js';
+import type { User } from './schema.js';
 
-declare module "fastify" {
+declare module 'fastify' {
   interface FastifyRequest {
     authUser?: User;
   }
@@ -24,7 +24,7 @@ export function createAuthGuard(pool: Pool) {
     const user = payload ? await findUserById(pool, payload.sub) : null;
 
     if (!user) {
-      await reply.status(401).send({ message: "Authentication required." });
+      await reply.status(401).send({ message: 'Authentication required.' });
       return;
     }
 

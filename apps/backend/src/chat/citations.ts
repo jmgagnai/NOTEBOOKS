@@ -1,5 +1,5 @@
-import type { Pool } from "pg";
-import type { RetrievedChunk } from "./retrieval.js";
+import type { Pool } from 'pg';
+import type { RetrievedChunk } from './retrieval.js';
 
 /**
  * One Citation an answer earned: the exact Chunk a claim came from, the
@@ -50,13 +50,13 @@ export interface CitationResolution {
  * the same word for the same reason.
  */
 export const CITATION_INSTRUCTIONS = [
-  "- Cite your sources. Every Chunk you were given is labelled with a number, like [2].",
-  "  End each sentence that makes a factual claim with the marker(s) of the Chunk(s) it came",
-  "  from, e.g. \"Revenue was 12.4M [2].\" Use several markers when a claim draws on several",
-  "  Chunks, each in its own brackets: \"[1][3]\".",
-  "- Only ever use a marker that appears in the Chunks above. Never invent one, never cite a",
-  "  source you were not given, and never cite a marker for a claim it does not support.",
-].join("\n");
+  '- Cite your sources. Every Chunk you were given is labelled with a number, like [2].',
+  '  End each sentence that makes a factual claim with the marker(s) of the Chunk(s) it came',
+  '  from, e.g. "Revenue was 12.4M [2]." Use several markers when a claim draws on several',
+  '  Chunks, each in its own brackets: "[1][3]".',
+  '- Only ever use a marker that appears in the Chunks above. Never invent one, never cite a',
+  '  source you were not given, and never cite a marker for a claim it does not support.',
+].join('\n');
 
 /**
  * Finds the source markers in an answer and turns them into Citations
@@ -95,7 +95,7 @@ export function resolveCitationMarkers(
   const unresolved = new Set<number>();
 
   for (const match of answer.matchAll(MARKER_GROUP)) {
-    for (const part of match[1].split(",")) {
+    for (const part of match[1].split(',')) {
       const marker = Number(part.trim());
       if (!Number.isInteger(marker)) continue;
       const chunk = chunks[marker - 1];
@@ -152,12 +152,15 @@ interface ChunkTextRow {
  * left with a null range: following that Citation still opens its exact
  * Version, just not scrolled.
  */
-export async function locateCitations(pool: Pool, citations: ResolvedCitation[]): Promise<ResolvedCitation[]> {
+export async function locateCitations(
+  pool: Pool,
+  citations: ResolvedCitation[],
+): Promise<ResolvedCitation[]> {
   const versionIds = [...new Set(citations.map((c) => c.chunk.documentVersionId))];
   if (versionIds.length === 0) return citations;
 
   const { rows: versionRows } = await pool.query<{ id: string; markdown: string | null }>(
-    "SELECT id, markdown FROM document_versions WHERE id = ANY($1::uuid[])",
+    'SELECT id, markdown FROM document_versions WHERE id = ANY($1::uuid[])',
     [versionIds],
   );
   const markdownByVersion = new Map(versionRows.map((row) => [row.id, row.markdown]));

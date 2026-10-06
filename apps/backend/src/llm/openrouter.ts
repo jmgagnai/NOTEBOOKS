@@ -47,7 +47,7 @@ export type ChatCompleter = (request: ChatCompletionRequest) => Promise<string>;
  */
 export type ChatStreamer = (request: ChatCompletionRequest) => AsyncIterable<string>;
 
-export const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
+export const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 
 export interface OpenRouterOptions {
   /** OpenRouter API key. Required — this never reads `process.env` itself. */
@@ -85,11 +85,11 @@ function isRetryableStatus(status: number): boolean {
 /** The option defaults both clients share, resolved once. */
 function resolveOptions(options: OpenRouterOptions) {
   if (!options.apiKey) {
-    throw new Error("An OpenRouter API key is required. Set OPENROUTER_API_KEY.");
+    throw new Error('An OpenRouter API key is required. Set OPENROUTER_API_KEY.');
   }
   return {
     apiKey: options.apiKey,
-    url: `${(options.baseUrl ?? OPENROUTER_BASE_URL).replace(/\/+$/, "")}/chat/completions`,
+    url: `${(options.baseUrl ?? OPENROUTER_BASE_URL).replace(/\/+$/, '')}/chat/completions`,
     doFetch: options.fetch ?? globalThis.fetch,
     retries: options.retries ?? 2,
     retryDelayMs: options.retryDelayMs ?? 500,
@@ -110,15 +110,15 @@ function chatCompletionRequestInit(
   { stream, timeoutMs }: { stream: boolean; timeoutMs: number },
 ): RequestInit {
   return {
-    method: "POST",
+    method: 'POST',
     headers: {
       authorization: `Bearer ${apiKey}`,
-      "content-type": "application/json",
+      'content-type': 'application/json',
       // OpenRouter attributes traffic by these; harmless but polite, and it
       // makes this app's spend identifiable in the OpenRouter dashboard.
-      "http-referer": "https://github.com/rag-notebook",
-      "x-title": "RAG Notebook",
-      ...(stream ? { accept: "text/event-stream" } : {}),
+      'http-referer': 'https://github.com/rag-notebook',
+      'x-title': 'RAG Notebook',
+      ...(stream ? { accept: 'text/event-stream' } : {}),
     },
     body: JSON.stringify({
       model: request.model,
@@ -126,8 +126,8 @@ function chatCompletionRequestInit(
       ...(request.maxOutputTokens === undefined ? {} : { max_tokens: request.maxOutputTokens }),
       ...(stream ? { stream: true } : {}),
       messages: [
-        { role: "system", content: request.system },
-        { role: "user", content: request.user },
+        { role: 'system', content: request.system },
+        { role: 'user', content: request.user },
       ],
     }),
     // AbortSignal.timeout rather than a manual timer: a hung connection must
@@ -148,14 +148,16 @@ function chatCompletionRequestInit(
 export function createOpenRouterCompleter(options: OpenRouterOptions): ChatCompleter {
   const { apiKey, url, doFetch, retries, retryDelayMs, timeoutMs } = resolveOptions(options);
 
-  async function attempt(request: ChatCompletionRequest): Promise<{ text?: string; retryable: boolean; error?: string }> {
+  async function attempt(
+    request: ChatCompletionRequest,
+  ): Promise<{ text?: string; retryable: boolean; error?: string }> {
     const response = await doFetch(
       url,
       chatCompletionRequestInit(apiKey, request, { stream: false, timeoutMs }),
     );
 
     if (!response.ok) {
-      const body = await response.text().catch(() => "");
+      const body = await response.text().catch(() => '');
       return {
         retryable: isRetryableStatus(response.status),
         error: `OpenRouter returned ${response.status} for model ${request.model}: ${body.slice(0, 500)}`,
@@ -165,11 +167,17 @@ export function createOpenRouterCompleter(options: OpenRouterOptions): ChatCompl
     const payload = (await response.json()) as ChatCompletionResponse;
     if (payload.error?.message) {
       // OpenRouter can report an upstream provider failure in a 200 body.
-      return { retryable: true, error: `OpenRouter error for model ${request.model}: ${payload.error.message}` };
+      return {
+        retryable: true,
+        error: `OpenRouter error for model ${request.model}: ${payload.error.message}`,
+      };
     }
     const text = payload.choices?.[0]?.message?.content;
-    if (typeof text !== "string" || text.trim() === "") {
-      return { retryable: true, error: `OpenRouter returned no content for model ${request.model}.` };
+    if (typeof text !== 'string' || text.trim() === '') {
+      return {
+        retryable: true,
+        error: `OpenRouter returned no content for model ${request.model}.`,
+      };
     }
     return { retryable: false, text };
   }
@@ -205,7 +213,7 @@ interface ChatCompletionChunk {
  * The sentinel an OpenAI-compatible stream ends with. Not JSON, so it has to
  * be recognised before parsing rather than after.
  */
-const STREAM_DONE = "[DONE]";
+const STREAM_DONE = '[DONE]';
 
 /** Matches the blank line that separates two SSE frames, in either newline style. */
 const FRAME_SEPARATOR = /\r?\n\r?\n/;
@@ -224,10 +232,13 @@ const FRAME_SEPARATOR = /\r?\n\r?\n/;
  * - A `delta` with no `content` is normal: the first frame carries the role
  *   and the last carries `finish_reason`.
  */
-async function* decodeDeltas(body: ReadableStream<Uint8Array>, model: string): AsyncGenerator<string> {
+async function* decodeDeltas(
+  body: ReadableStream<Uint8Array>,
+  model: string,
+): AsyncGenerator<string> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
-  let buffer = "";
+  let buffer = '';
 
   try {
     for (;;) {
@@ -242,9 +253,9 @@ async function* decodeDeltas(body: ReadableStream<Uint8Array>, model: string): A
         buffer = buffer.slice(separator.index + separator[0].length);
 
         for (const line of frame.split(/\r?\n/)) {
-          if (!line.startsWith("data:")) continue;
-          const payload = line.slice("data:".length).trim();
-          if (payload === "") continue;
+          if (!line.startsWith('data:')) continue;
+          const payload = line.slice('data:'.length).trim();
+          if (payload === '') continue;
           if (payload === STREAM_DONE) return;
 
           let chunk: ChatCompletionChunk;
@@ -264,7 +275,7 @@ async function* decodeDeltas(body: ReadableStream<Uint8Array>, model: string): A
             throw new Error(`OpenRouter error for model ${model}: ${chunk.error.message}`);
           }
           const content = chunk.choices?.[0]?.delta?.content;
-          if (typeof content === "string" && content !== "") yield content;
+          if (typeof content === 'string' && content !== '') yield content;
         }
       }
     }
@@ -309,7 +320,7 @@ export function createOpenRouterStreamer(options: OpenRouterOptions): ChatStream
           chatCompletionRequestInit(apiKey, request, { stream: true, timeoutMs }),
         );
         if (!response.ok) {
-          const text = await response.text().catch(() => "");
+          const text = await response.text().catch(() => '');
           lastError = `OpenRouter returned ${response.status} for model ${request.model}: ${text.slice(0, 500)}`;
           if (!isRetryableStatus(response.status) || attempt === retries) break;
           await backoff();

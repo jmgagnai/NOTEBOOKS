@@ -69,7 +69,11 @@ const DOCUMENT_VERSION_STATUS_CHANGED = 'document-version-status-changed';
 function asStatusChange(event: AppEvent): DocumentVersionStatusChanged | null {
   if (event.type !== DOCUMENT_VERSION_STATUS_CHANGED) return null;
   const { documentId, versionId, status } = event.data as Partial<DocumentVersionStatusChanged>;
-  if (typeof documentId !== 'string' || typeof versionId !== 'string' || typeof status !== 'string') {
+  if (
+    typeof documentId !== 'string' ||
+    typeof versionId !== 'string' ||
+    typeof status !== 'string'
+  ) {
     return null;
   }
   return { documentId, versionId, status: status as DocumentStatus };
@@ -244,230 +248,251 @@ export const DocumentsStore = signalStore(
       }
 
       return {
-      async loadDocuments(notebookId: string): Promise<void> {
-        patchState(store, { loading: true, error: null });
-        try {
-          const documents = await documentsService.listDocuments({ notebookId });
-          patchState(store, { documents, loading: false });
-        } catch (err) {
-          patchState(store, {
-            loading: false,
-            error: errorMessage(err, 'Failed to load Documents.'),
-          });
-        }
-      },
-
-      /**
-       * Loads one Document's *latest* Version with its metadata and summaries
-       * (NBK-7) — what opening a Document from the Notebook shows.
-       * Deliberately a separate call from `loadDocuments`: the Executive
-       * Summary runs to 1-2 pages, so it belongs on an opened Document and
-       * not on every card in a list.
-       */
-      async loadDocument(notebookId: string, documentId: string): Promise<void> {
-        // Any previously expanded content belongs to a different Document.
-        patchState(store, {
-          openDocumentLoading: true,
-          error: null,
-          openDocument: null,
-          openContent: null,
-        });
-        try {
-          const detail = (await documentsService.getDocument({
-            notebookId,
-            documentId,
-          })) as DocumentDetail;
-          patchState(store, { openDocument: fromDocumentDetail(detail), openDocumentLoading: false });
-        } catch (err) {
-          patchState(store, {
-            openDocumentLoading: false,
-            error: errorMessage(err, 'Failed to load Document.'),
-          });
-        }
-      },
-
-      /**
-       * Loads one *named* Document Version with its own metadata and
-       * summaries — what following a Citation opens (NBK-12).
-       *
-       * A different endpoint, not the same one with a parameter, because what
-       * it answers is a different question: `loadDocument` says what this
-       * Document says *now*, and this says what that Version said. Mixing the
-       * two is what produced a page showing a pinned Version's Converted
-       * Markdown beneath the latest Version's Executive Summary, metadata and
-       * version badge — and GLOSSARY.md's promise that a Citation "opens that
-       * exact Version at that location" is about the page a reader lands on,
-       * not only about which bytes of Markdown it fetched.
-       */
-      async loadDocumentVersion(
-        notebookId: string,
-        documentId: string,
-        versionId: string,
-      ): Promise<void> {
-        patchState(store, {
-          openDocumentLoading: true,
-          error: null,
-          openDocument: null,
-          openContent: null,
-        });
-        try {
-          const detail = (await documentsService.getDocumentVersion({
-            notebookId,
-            documentId,
-            versionId,
-          })) as DocumentVersionDetail;
-          patchState(store, { openDocument: fromVersionDetail(detail), openDocumentLoading: false });
-        } catch (err) {
-          patchState(store, {
-            openDocumentLoading: false,
-            error: errorMessage(err, 'Failed to load this Document Version.'),
-          });
-        }
-      },
-
-      /**
-       * Fetches a Version's Converted Markdown — the "expand past the
-       * Executive Summary" step (NBK-7). Never called on open: this is the
-       * payload that can run past 200 pages, so it is only ever fetched
-       * because a reader asked for it, and only once per Version.
-       */
-      async loadDocumentContent(notebookId: string, documentId: string, versionId: string): Promise<void> {
-        if (store.openContent()?.versionId === versionId) return;
-        patchState(store, { openContentLoading: true, error: null });
-        try {
-          const openContent = await documentsService.getDocumentVersionContent({
-            notebookId,
-            documentId,
-            versionId,
-          });
-          patchState(store, { openContent, openContentLoading: false });
-        } catch (err) {
-          patchState(store, {
-            openContentLoading: false,
-            error: errorMessage(err, 'Failed to load the Document content.'),
-          });
-        }
-      },
-
-      /** Drops the open Document, so navigating away doesn't leak it. */
-      clearOpenDocument(): void {
-        patchState(store, { openDocument: null, openContent: null, error: null });
-      },
-
-      async uploadDocument(notebookId: string, file: File): Promise<void> {
-        patchState(store, { uploading: true, error: null });
-        try {
-          const document = await transferService.uploadDocument(notebookId, file);
-          patchState(store, {
-            uploading: false,
-            // A re-upload of an existing filename comes back as a new
-            // Version of the same Document (same id, incremented
-            // versionNumber) rather than a new Document — replace the
-            // existing entry instead of appending a duplicate.
-            documents: store.documents().some((d) => d.id === document.id)
-              ? store.documents().map((d) => (d.id === document.id ? document : d))
-              : [...store.documents(), document],
-          });
-        } catch (err) {
-          patchState(store, { uploading: false, error: errorMessage(err, 'Failed to upload Document.') });
-        }
-      },
-
-      async deleteDocument(notebookId: string, documentId: string): Promise<void> {
-        patchState(store, { error: null });
-        const deleted = store.documents().find((d) => d.id === documentId) ?? null;
-        try {
-          await documentsService.deleteDocument({ notebookId, documentId });
-          patchState(store, {
-            documents: store.documents().filter((d) => d.id !== documentId),
-            lastDeleted: deleted,
-          });
-        } catch (err) {
-          patchState(store, { error: errorMessage(err, 'Failed to delete Document.') });
-        }
-      },
-
-      async restoreDocument(notebookId: string, documentId: string): Promise<void> {
-        patchState(store, { error: null });
-        try {
-          const restored = await documentsService.restoreDocument({ notebookId, documentId });
-          patchState(store, {
-            documents: [...store.documents(), restored],
-            lastDeleted: store.lastDeleted()?.id === documentId ? null : store.lastDeleted(),
-          });
-        } catch (err) {
-          patchState(store, { error: errorMessage(err, 'Failed to restore Document.') });
-        }
-      },
-
-      async downloadDocumentVersion(notebookId: string, document: Document): Promise<void> {
-        patchState(store, { error: null });
-        try {
-          await transferService.downloadDocumentVersion(
-            notebookId,
-            document.id,
-            document.latestVersion.id,
-            document.filename,
-          );
-        } catch (err) {
-          patchState(store, { error: errorMessage(err, 'Failed to download Document.') });
-        }
-      },
-
-      /**
-       * Follows one Notebook's live app events so a Document's status badge
-       * tracks the background pipeline with no page refresh (NBK-6).
-       *
-       * Only this Notebook's topic is requested, and only the event types
-       * this store understands are acted on — the stream itself carries
-       * everything, including event types belonging to other features.
-       */
-      watchNotebook(notebookId: string): void {
-        stopWatching();
-        watching = appEvents.stream([`notebook:${notebookId}`]).subscribe((event) => {
-          const change = asStatusChange(event);
-          if (!change) return;
-          const target = store
-            .documents()
-            .find((document) => document.id === change.documentId && document.latestVersion.id === change.versionId);
-          // The badge shows the *latest* Version's status, so a late event
-          // about a Version that has since been superseded by a re-upload
-          // must not drag it backwards.
-          if (!target) return;
-
-          patchState(store, {
-            documents: store
-              .documents()
-              .map((document) => (document === target ? { ...document, status: change.status } : document)),
-          });
-
-          // An app event carries *what changed*, never bulk data — per
-          // ADR-0004 a NOTIFY payload must stay well inside Postgres's
-          // 8000-byte cap — so the newly generated Abstract is not in it.
-          // Reaching "summarized" (NBK-7) is therefore the cue to re-read
-          // this one Document over the normal API, which is exactly the
-          // "an event is a hint; re-read the truth" contract the ADR sets.
-          if (change.status === 'summarized') {
-            void documentsService
-              .getDocument({ notebookId, documentId: change.documentId })
-              .then((fresh) => {
-                patchState(store, {
-                  documents: store
-                    .documents()
-                    .map((document) => (document.id === fresh.id ? { ...document, ...fresh } : document)),
-                });
-              })
-              .catch(() => {
-                // The badge is already correct; failing to enrich it with an
-                // Abstract is not worth an error banner over a background
-                // event the user never asked for.
-              });
+        async loadDocuments(notebookId: string): Promise<void> {
+          patchState(store, { loading: true, error: null });
+          try {
+            const documents = await documentsService.listDocuments({ notebookId });
+            patchState(store, { documents, loading: false });
+          } catch (err) {
+            patchState(store, {
+              loading: false,
+              error: errorMessage(err, 'Failed to load Documents.'),
+            });
           }
-        });
-      },
+        },
 
-      /** Closes the live connection opened by `watchNotebook`. */
-      stopWatching,
+        /**
+         * Loads one Document's *latest* Version with its metadata and summaries
+         * (NBK-7) — what opening a Document from the Notebook shows.
+         * Deliberately a separate call from `loadDocuments`: the Executive
+         * Summary runs to 1-2 pages, so it belongs on an opened Document and
+         * not on every card in a list.
+         */
+        async loadDocument(notebookId: string, documentId: string): Promise<void> {
+          // Any previously expanded content belongs to a different Document.
+          patchState(store, {
+            openDocumentLoading: true,
+            error: null,
+            openDocument: null,
+            openContent: null,
+          });
+          try {
+            const detail = (await documentsService.getDocument({
+              notebookId,
+              documentId,
+            })) as DocumentDetail;
+            patchState(store, {
+              openDocument: fromDocumentDetail(detail),
+              openDocumentLoading: false,
+            });
+          } catch (err) {
+            patchState(store, {
+              openDocumentLoading: false,
+              error: errorMessage(err, 'Failed to load Document.'),
+            });
+          }
+        },
+
+        /**
+         * Loads one *named* Document Version with its own metadata and
+         * summaries — what following a Citation opens (NBK-12).
+         *
+         * A different endpoint, not the same one with a parameter, because what
+         * it answers is a different question: `loadDocument` says what this
+         * Document says *now*, and this says what that Version said. Mixing the
+         * two is what produced a page showing a pinned Version's Converted
+         * Markdown beneath the latest Version's Executive Summary, metadata and
+         * version badge — and GLOSSARY.md's promise that a Citation "opens that
+         * exact Version at that location" is about the page a reader lands on,
+         * not only about which bytes of Markdown it fetched.
+         */
+        async loadDocumentVersion(
+          notebookId: string,
+          documentId: string,
+          versionId: string,
+        ): Promise<void> {
+          patchState(store, {
+            openDocumentLoading: true,
+            error: null,
+            openDocument: null,
+            openContent: null,
+          });
+          try {
+            const detail = (await documentsService.getDocumentVersion({
+              notebookId,
+              documentId,
+              versionId,
+            })) as DocumentVersionDetail;
+            patchState(store, {
+              openDocument: fromVersionDetail(detail),
+              openDocumentLoading: false,
+            });
+          } catch (err) {
+            patchState(store, {
+              openDocumentLoading: false,
+              error: errorMessage(err, 'Failed to load this Document Version.'),
+            });
+          }
+        },
+
+        /**
+         * Fetches a Version's Converted Markdown — the "expand past the
+         * Executive Summary" step (NBK-7). Never called on open: this is the
+         * payload that can run past 200 pages, so it is only ever fetched
+         * because a reader asked for it, and only once per Version.
+         */
+        async loadDocumentContent(
+          notebookId: string,
+          documentId: string,
+          versionId: string,
+        ): Promise<void> {
+          if (store.openContent()?.versionId === versionId) return;
+          patchState(store, { openContentLoading: true, error: null });
+          try {
+            const openContent = await documentsService.getDocumentVersionContent({
+              notebookId,
+              documentId,
+              versionId,
+            });
+            patchState(store, { openContent, openContentLoading: false });
+          } catch (err) {
+            patchState(store, {
+              openContentLoading: false,
+              error: errorMessage(err, 'Failed to load the Document content.'),
+            });
+          }
+        },
+
+        /** Drops the open Document, so navigating away doesn't leak it. */
+        clearOpenDocument(): void {
+          patchState(store, { openDocument: null, openContent: null, error: null });
+        },
+
+        async uploadDocument(notebookId: string, file: File): Promise<void> {
+          patchState(store, { uploading: true, error: null });
+          try {
+            const document = await transferService.uploadDocument(notebookId, file);
+            patchState(store, {
+              uploading: false,
+              // A re-upload of an existing filename comes back as a new
+              // Version of the same Document (same id, incremented
+              // versionNumber) rather than a new Document — replace the
+              // existing entry instead of appending a duplicate.
+              documents: store.documents().some((d) => d.id === document.id)
+                ? store.documents().map((d) => (d.id === document.id ? document : d))
+                : [...store.documents(), document],
+            });
+          } catch (err) {
+            patchState(store, {
+              uploading: false,
+              error: errorMessage(err, 'Failed to upload Document.'),
+            });
+          }
+        },
+
+        async deleteDocument(notebookId: string, documentId: string): Promise<void> {
+          patchState(store, { error: null });
+          const deleted = store.documents().find((d) => d.id === documentId) ?? null;
+          try {
+            await documentsService.deleteDocument({ notebookId, documentId });
+            patchState(store, {
+              documents: store.documents().filter((d) => d.id !== documentId),
+              lastDeleted: deleted,
+            });
+          } catch (err) {
+            patchState(store, { error: errorMessage(err, 'Failed to delete Document.') });
+          }
+        },
+
+        async restoreDocument(notebookId: string, documentId: string): Promise<void> {
+          patchState(store, { error: null });
+          try {
+            const restored = await documentsService.restoreDocument({ notebookId, documentId });
+            patchState(store, {
+              documents: [...store.documents(), restored],
+              lastDeleted: store.lastDeleted()?.id === documentId ? null : store.lastDeleted(),
+            });
+          } catch (err) {
+            patchState(store, { error: errorMessage(err, 'Failed to restore Document.') });
+          }
+        },
+
+        async downloadDocumentVersion(notebookId: string, document: Document): Promise<void> {
+          patchState(store, { error: null });
+          try {
+            await transferService.downloadDocumentVersion(
+              notebookId,
+              document.id,
+              document.latestVersion.id,
+              document.filename,
+            );
+          } catch (err) {
+            patchState(store, { error: errorMessage(err, 'Failed to download Document.') });
+          }
+        },
+
+        /**
+         * Follows one Notebook's live app events so a Document's status badge
+         * tracks the background pipeline with no page refresh (NBK-6).
+         *
+         * Only this Notebook's topic is requested, and only the event types
+         * this store understands are acted on — the stream itself carries
+         * everything, including event types belonging to other features.
+         */
+        watchNotebook(notebookId: string): void {
+          stopWatching();
+          watching = appEvents.stream([`notebook:${notebookId}`]).subscribe((event) => {
+            const change = asStatusChange(event);
+            if (!change) return;
+            const target = store
+              .documents()
+              .find(
+                (document) =>
+                  document.id === change.documentId &&
+                  document.latestVersion.id === change.versionId,
+              );
+            // The badge shows the *latest* Version's status, so a late event
+            // about a Version that has since been superseded by a re-upload
+            // must not drag it backwards.
+            if (!target) return;
+
+            patchState(store, {
+              documents: store
+                .documents()
+                .map((document) =>
+                  document === target ? { ...document, status: change.status } : document,
+                ),
+            });
+
+            // An app event carries *what changed*, never bulk data — per
+            // ADR-0004 a NOTIFY payload must stay well inside Postgres's
+            // 8000-byte cap — so the newly generated Abstract is not in it.
+            // Reaching "summarized" (NBK-7) is therefore the cue to re-read
+            // this one Document over the normal API, which is exactly the
+            // "an event is a hint; re-read the truth" contract the ADR sets.
+            if (change.status === 'summarized') {
+              void documentsService
+                .getDocument({ notebookId, documentId: change.documentId })
+                .then((fresh) => {
+                  patchState(store, {
+                    documents: store
+                      .documents()
+                      .map((document) =>
+                        document.id === fresh.id ? { ...document, ...fresh } : document,
+                      ),
+                  });
+                })
+                .catch(() => {
+                  // The badge is already correct; failing to enrich it with an
+                  // Abstract is not worth an error banner over a background
+                  // event the user never asked for.
+                });
+            }
+          });
+        },
+
+        /** Closes the live connection opened by `watchNotebook`. */
+        stopWatching,
       };
     },
   ),

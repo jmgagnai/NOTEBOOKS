@@ -1,6 +1,6 @@
-import type { Pool } from "pg";
-import { toVectorLiteral } from "../db/vector.js";
-import { SEARCHABLE_VERSIONS_CTE } from "../documents/searchable-versions.js";
+import type { Pool } from 'pg';
+import { toVectorLiteral } from '../db/vector.js';
+import { SEARCHABLE_VERSIONS_CTE } from '../documents/searchable-versions.js';
 
 /**
  * One Chunk retrieved for a question, with everything the answer path needs

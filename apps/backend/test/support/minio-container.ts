@@ -1,4 +1,4 @@
-import { GenericContainer, type StartedTestContainer, Wait } from "testcontainers";
+import { GenericContainer, type StartedTestContainer, Wait } from 'testcontainers';
 
 const MINIO_PORT = 9000;
 
@@ -24,13 +24,13 @@ export interface StartedMinio {
  * with the image's own default entrypoint/command avoids that.
  */
 export async function startMinio(): Promise<StartedMinio> {
-  const accessKeyId = "rag_notebook";
-  const secretAccessKey = "rag_notebook_secret";
+  const accessKeyId = 'rag_notebook';
+  const secretAccessKey = 'rag_notebook_secret';
 
-  const container = await new GenericContainer("bitnamilegacy/minio:latest")
+  const container = await new GenericContainer('bitnamilegacy/minio:latest')
     .withExposedPorts(MINIO_PORT)
     .withEnvironment({ MINIO_ROOT_USER: accessKeyId, MINIO_ROOT_PASSWORD: secretAccessKey })
-    .withWaitStrategy(Wait.forHttp("/minio/health/live", MINIO_PORT))
+    .withWaitStrategy(Wait.forHttp('/minio/health/live', MINIO_PORT))
     .start();
 
   const endpoint = `http://${container.getHost()}:${container.getMappedPort(MINIO_PORT)}`;

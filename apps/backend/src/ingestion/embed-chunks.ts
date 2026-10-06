@@ -1,17 +1,17 @@
-import type { Pool } from "pg";
-import { inTransaction } from "../db/transaction.js";
-import { toVectorLiteral } from "../db/vector.js";
-import { publishAppEvent } from "../events/bus.js";
-import type { DocumentStatus } from "../documents/schema.js";
-import { EMBEDDING_DIMENSIONS } from "../llm/models.js";
-import type { Embedder } from "../llm/embeddings.js";
-import { chunkMarkdown, type DocumentChunk } from "./chunking.js";
+import type { Pool } from 'pg';
+import { inTransaction } from '../db/transaction.js';
+import { toVectorLiteral } from '../db/vector.js';
+import { publishAppEvent } from '../events/bus.js';
+import type { DocumentStatus } from '../documents/schema.js';
+import { EMBEDDING_DIMENSIONS } from '../llm/models.js';
+import type { Embedder } from '../llm/embeddings.js';
+import { chunkMarkdown, type DocumentChunk } from './chunking.js';
 import {
   documentVersionRefSchema,
   versionStatusChanged,
   type DocumentVersionRef,
   type IngestionVersion,
-} from "./stage.js";
+} from './stage.js';
 
 /**
  * The pg_boss queue name for ingestion stage 3 — chunking and embeddings
@@ -19,7 +19,7 @@ import {
  * independently: a rate-limited embeddings call never re-runs a Docling
  * conversion or regenerates the three summaries.
  */
-export const EMBED_CHUNKS_QUEUE = "embed-chunks";
+export const EMBED_CHUNKS_QUEUE = 'embed-chunks';
 
 /** Ids only, same as stages 1 and 2: the job re-reads current truth on every retry. */
 export const embedChunksPayloadSchema = documentVersionRefSchema;
@@ -91,9 +91,14 @@ async function transitionTo(
  * that a Citation could still point at. One transaction so a reader never
  * sees a Version with half its chunks.
  */
-async function replaceChunks(pool: Pool, versionId: string, chunks: DocumentChunk[], vectors: number[][]): Promise<void> {
+async function replaceChunks(
+  pool: Pool,
+  versionId: string,
+  chunks: DocumentChunk[],
+  vectors: number[][],
+): Promise<void> {
   await inTransaction(pool, async (client) => {
-    await client.query("DELETE FROM chunks WHERE document_version_id = $1", [versionId]);
+    await client.query('DELETE FROM chunks WHERE document_version_id = $1', [versionId]);
     for (const [i, chunk] of chunks.entries()) {
       await client.query(
         `INSERT INTO chunks (document_version_id, chunk_index, heading_path, text, embedding)
@@ -143,23 +148,25 @@ export async function runEmbedChunksJob(
     versionId: payload.versionId,
   };
 
-  if (row.markdown === null || row.markdown.trim() === "") {
+  if (row.markdown === null || row.markdown.trim() === '') {
     // Stage 3's input is missing, which means stage 1 either hasn't run or
     // produced nothing. Recorded and thrown so it retries — a re-enqueued
     // earlier stage can still fill this in.
-    const message = "Stage 3 found no Converted Markdown on this Document Version.";
-    await transitionTo(pool, version, willRetry ? "summarized" : "failed", { error: message });
+    const message = 'Stage 3 found no Converted Markdown on this Document Version.';
+    await transitionTo(pool, version, willRetry ? 'summarized' : 'failed', { error: message });
     throw new Error(message);
   }
 
-  await transitionTo(pool, version, "indexing");
+  await transitionTo(pool, version, 'indexing');
 
   try {
     const chunks = chunkMarkdown(row.markdown, deps.chunking ?? {});
     const vectors = await deps.embed(chunks.map((chunk) => chunk.text));
 
     if (vectors.length !== chunks.length) {
-      throw new Error(`Expected ${chunks.length} embeddings for this Document Version, got ${vectors.length}.`);
+      throw new Error(
+        `Expected ${chunks.length} embeddings for this Document Version, got ${vectors.length}.`,
+      );
     }
     for (const vector of vectors) {
       // Checked here rather than left to Postgres so the error names the
@@ -176,10 +183,10 @@ export async function runEmbedChunksJob(
     }
 
     await replaceChunks(pool, version.versionId, chunks, vectors);
-    await transitionTo(pool, version, "ready", { error: null });
+    await transitionTo(pool, version, 'ready', { error: null });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    await transitionTo(pool, version, willRetry ? "summarized" : "failed", { error: message });
+    await transitionTo(pool, version, willRetry ? 'summarized' : 'failed', { error: message });
     throw err;
   }
 }

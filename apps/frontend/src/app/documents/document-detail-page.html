@@ -1,6 +1,8 @@
 <mat-card class="document-detail-page">
   <mat-card-content>
-    <a class="document-detail-page__back" [routerLink]="['/notebooks', notebookId]">&larr; Back to the Notebook</a>
+    <a class="document-detail-page__back" [routerLink]="['/notebooks', notebookId]"
+      >&larr; Back to the Notebook</a
+    >
 
     @if (store.openDocumentLoading()) {
       <mat-progress-spinner mode="indeterminate" diameter="32" />
@@ -15,9 +17,10 @@
         reader never has to work out which half of the page they are reading.
       -->
       <p class="document-detail-page__meta-line">
-        <span [class]="'document-detail-page__badge document-detail-page__badge--' + document.status">{{
-          document.status
-        }}</span>
+        <span
+          [class]="'document-detail-page__badge document-detail-page__badge--' + document.status"
+          >{{ document.status }}</span
+        >
         <span>v{{ document.version.versionNumber }}</span>
       </p>
 

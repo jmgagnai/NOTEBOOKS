@@ -1,23 +1,23 @@
-import { createHash } from "node:crypto";
-import type { Pool } from "pg";
-import { inTransaction } from "../db/transaction.js";
-import { publishAppEvent } from "../events/bus.js";
-import type { DocumentStatus } from "../documents/schema.js";
-import { resolveTaskModels, type TaskModels } from "../llm/models.js";
-import type { ChatCompleter } from "../llm/openrouter.js";
+import { createHash } from 'node:crypto';
+import type { Pool } from 'pg';
+import { inTransaction } from '../db/transaction.js';
+import { publishAppEvent } from '../events/bus.js';
+import type { DocumentStatus } from '../documents/schema.js';
+import { resolveTaskModels, type TaskModels } from '../llm/models.js';
+import type { ChatCompleter } from '../llm/openrouter.js';
 import {
   generateArtifacts,
   type ArtifactWarning,
   type DocumentMetadata,
   type GeneratedArtifacts,
   type SectionSummaryStore,
-} from "./generated-artifacts.js";
+} from './generated-artifacts.js';
 import {
   documentVersionRefSchema,
   versionStatusChanged,
   type DocumentVersionRef,
   type IngestionVersion,
-} from "./stage.js";
+} from './stage.js';
 
 /**
  * The pg_boss queue name for ingestion stage 2 — metadata extraction and the
@@ -25,7 +25,7 @@ import {
  * stage 1, so per ADR-0004 it retries independently: a rate-limited
  * OpenRouter call never re-runs a Docling conversion.
  */
-export const SUMMARIZE_DOCUMENT_QUEUE = "summarize-document";
+export const SUMMARIZE_DOCUMENT_QUEUE = 'summarize-document';
 
 /** Ids only, same as stage 1: the job re-reads current truth on every retry. */
 export const summarizeDocumentPayloadSchema = documentVersionRefSchema;
@@ -109,7 +109,7 @@ interface CachedSectionSummaries {
  * and only the content is a lie.
  */
 function fingerprintOf(markdown: string): string {
-  return createHash("sha256").update(markdown).digest("hex");
+  return createHash('sha256').update(markdown).digest('hex');
 }
 
 /**
@@ -264,16 +264,16 @@ export async function runSummarizeDocumentJob(
     versionId: payload.versionId,
   };
 
-  if (row.markdown === null || row.markdown.trim() === "") {
+  if (row.markdown === null || row.markdown.trim() === '') {
     // Stage 2's input is missing, which means stage 1 either hasn't run or
     // produced nothing. Recorded as an error and thrown so it retries — a
     // re-enqueued stage 1 can still fill this in.
-    const message = "Stage 2 found no Converted Markdown on this Document Version.";
-    await transitionTo(pool, version, willRetry ? "converted" : "failed", { error: message });
+    const message = 'Stage 2 found no Converted Markdown on this Document Version.';
+    await transitionTo(pool, version, willRetry ? 'converted' : 'failed', { error: message });
     throw new Error(message);
   }
 
-  await transitionTo(pool, version, "summarizing");
+  await transitionTo(pool, version, 'summarizing');
 
   try {
     const result = await generateArtifacts(
@@ -283,11 +283,16 @@ export async function runSummarizeDocumentJob(
         ...(deps.mapConcurrency === undefined ? {} : { mapConcurrency: deps.mapConcurrency }),
         // What makes a retry cost three calls instead of forty, for a stage
         // whose map pass is essentially its whole bill. See ADR-0006.
-        sectionSummaries: sectionSummaryStore(pool, version.versionId, row.markdown, row.section_summaries),
+        sectionSummaries: sectionSummaryStore(
+          pool,
+          version.versionId,
+          row.markdown,
+          row.section_summaries,
+        ),
       },
       { filename: row.filename, markdown: row.markdown },
     );
-    await transitionTo(pool, version, "summarized", {
+    await transitionTo(pool, version, 'summarized', {
       metadata: result.metadata,
       artifacts: result.artifacts,
       error: null,
@@ -302,11 +307,14 @@ export async function runSummarizeDocumentJob(
     // coming for it. Re-running the summaries on the retry costs OpenRouter
     // calls; a silently stalled pipeline is a bug.
     if (deps.enqueueEmbedChunks) {
-      await deps.enqueueEmbedChunks({ documentId: payload.documentId, versionId: payload.versionId });
+      await deps.enqueueEmbedChunks({
+        documentId: payload.documentId,
+        versionId: payload.versionId,
+      });
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    await transitionTo(pool, version, willRetry ? "converted" : "failed", { error: message });
+    await transitionTo(pool, version, willRetry ? 'converted' : 'failed', { error: message });
     throw err;
   }
 }

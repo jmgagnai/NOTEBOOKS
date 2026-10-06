@@ -1,10 +1,10 @@
-import type { FastifyInstance } from "fastify";
-import type { ZodTypeProvider } from "fastify-type-provider-zod";
-import type { Pool } from "pg";
-import { createAuthGuard } from "../auth/guard.js";
-import { errorResponseSchema } from "../auth/schema.js";
-import { notebookExists } from "../notebooks/repository.js";
-import { streamAnswer, type ChatDeps, type GroundedAnswer } from "./answer-question.js";
+import type { FastifyInstance } from 'fastify';
+import type { ZodTypeProvider } from 'fastify-type-provider-zod';
+import type { Pool } from 'pg';
+import { createAuthGuard } from '../auth/guard.js';
+import { errorResponseSchema } from '../auth/schema.js';
+import { notebookExists } from '../notebooks/repository.js';
+import { streamAnswer, type ChatDeps, type GroundedAnswer } from './answer-question.js';
 import {
   appendQuestionAndAnswer,
   createChatThread,
@@ -12,7 +12,7 @@ import {
   listChatMessages,
   listChatThreads,
   renameChatThread,
-} from "./repository.js";
+} from './repository.js';
 import {
   chatThreadIdParamsSchema,
   chatThreadSchema,
@@ -23,8 +23,8 @@ import {
   renameChatThreadRequestSchema,
   sendChatMessageRequestSchema,
   sendChatMessageResponseSchema,
-} from "./schema.js";
-import { createAnswerStream } from "./streaming.js";
+} from './schema.js';
+import { createAnswerStream } from './streaming.js';
 
 export interface RegisterChatRoutesOptions {
   pool: Pool;
@@ -44,17 +44,20 @@ export interface RegisterChatRoutesOptions {
  * is unfiltered, and a Thread someone else started is as readable and
  * continuable as your own.
  */
-export function registerChatRoutes(app: FastifyInstance, { pool, chat }: RegisterChatRoutesOptions): void {
+export function registerChatRoutes(
+  app: FastifyInstance,
+  { pool, chat }: RegisterChatRoutesOptions,
+): void {
   const authGuard = createAuthGuard(pool);
 
   app.withTypeProvider<ZodTypeProvider>().get(
-    "/notebooks/:notebookId/threads",
+    '/notebooks/:notebookId/threads',
     {
       preHandler: authGuard,
       schema: {
-        operationId: "listChatThreads",
-        tags: ["chat"],
-        summary: "List every Chat Thread in a Notebook",
+        operationId: 'listChatThreads',
+        tags: ['chat'],
+        summary: 'List every Chat Thread in a Notebook',
         params: notebookIdParamsSchema,
         response: {
           200: listChatThreadsResponseSchema,
@@ -64,7 +67,7 @@ export function registerChatRoutes(app: FastifyInstance, { pool, chat }: Registe
     },
     async (request, reply) => {
       if (!(await notebookExists(pool, request.params.notebookId))) {
-        await reply.status(404).send({ message: "Notebook not found." });
+        await reply.status(404).send({ message: 'Notebook not found.' });
         return;
       }
       await reply.status(200).send(await listChatThreads(pool, request.params.notebookId));
@@ -72,13 +75,13 @@ export function registerChatRoutes(app: FastifyInstance, { pool, chat }: Registe
   );
 
   app.withTypeProvider<ZodTypeProvider>().post(
-    "/notebooks/:notebookId/threads",
+    '/notebooks/:notebookId/threads',
     {
       preHandler: authGuard,
       schema: {
-        operationId: "createChatThread",
-        tags: ["chat"],
-        summary: "Start a Chat Thread in a Notebook",
+        operationId: 'createChatThread',
+        tags: ['chat'],
+        summary: 'Start a Chat Thread in a Notebook',
         params: notebookIdParamsSchema,
         body: createChatThreadRequestSchema,
         response: {
@@ -89,7 +92,7 @@ export function registerChatRoutes(app: FastifyInstance, { pool, chat }: Registe
     },
     async (request, reply) => {
       if (!(await notebookExists(pool, request.params.notebookId))) {
-        await reply.status(404).send({ message: "Notebook not found." });
+        await reply.status(404).send({ message: 'Notebook not found.' });
         return;
       }
       const thread = await createChatThread(
@@ -103,13 +106,13 @@ export function registerChatRoutes(app: FastifyInstance, { pool, chat }: Registe
   );
 
   app.withTypeProvider<ZodTypeProvider>().patch(
-    "/notebooks/:notebookId/threads/:threadId",
+    '/notebooks/:notebookId/threads/:threadId',
     {
       preHandler: authGuard,
       schema: {
-        operationId: "renameChatThread",
-        tags: ["chat"],
-        summary: "Rename a Chat Thread",
+        operationId: 'renameChatThread',
+        tags: ['chat'],
+        summary: 'Rename a Chat Thread',
         params: chatThreadIdParamsSchema,
         body: renameChatThreadRequestSchema,
         response: {
@@ -128,7 +131,7 @@ export function registerChatRoutes(app: FastifyInstance, { pool, chat }: Registe
         request.body.title,
       );
       if (!thread) {
-        await reply.status(404).send({ message: "Chat Thread not found." });
+        await reply.status(404).send({ message: 'Chat Thread not found.' });
         return;
       }
       await reply.status(200).send(thread);
@@ -136,13 +139,13 @@ export function registerChatRoutes(app: FastifyInstance, { pool, chat }: Registe
   );
 
   app.withTypeProvider<ZodTypeProvider>().get(
-    "/notebooks/:notebookId/threads/:threadId/messages",
+    '/notebooks/:notebookId/threads/:threadId/messages',
     {
       preHandler: authGuard,
       schema: {
-        operationId: "listChatMessages",
-        tags: ["chat"],
-        summary: "Read every message in a Chat Thread, in the order they were asked",
+        operationId: 'listChatMessages',
+        tags: ['chat'],
+        summary: 'Read every message in a Chat Thread, in the order they were asked',
         params: chatThreadIdParamsSchema,
         response: {
           200: listChatMessagesResponseSchema,
@@ -155,7 +158,7 @@ export function registerChatRoutes(app: FastifyInstance, { pool, chat }: Registe
       // question is whether it exists in this Notebook.
       const thread = await findChatThread(pool, request.params.notebookId, request.params.threadId);
       if (!thread) {
-        await reply.status(404).send({ message: "Chat Thread not found." });
+        await reply.status(404).send({ message: 'Chat Thread not found.' });
         return;
       }
       await reply.status(200).send(await listChatMessages(pool, thread.id));
@@ -163,22 +166,22 @@ export function registerChatRoutes(app: FastifyInstance, { pool, chat }: Registe
   );
 
   app.withTypeProvider<ZodTypeProvider>().post(
-    "/notebooks/:notebookId/threads/:threadId/messages",
+    '/notebooks/:notebookId/threads/:threadId/messages',
     {
       preHandler: authGuard,
       schema: {
-        operationId: "sendChatMessage",
-        tags: ["chat"],
-        summary: "Ask a question in a Chat Thread and get one grounded answer",
+        operationId: 'sendChatMessage',
+        tags: ['chat'],
+        summary: 'Ask a question in a Chat Thread and get one grounded answer',
         description:
           "Retrieves the closest Chunks from the Notebook's latest-version, `ready` Documents and " +
-          "returns the complete recorded exchange. While the answer is being generated it is also " +
-          "published to the live `GET /events` stream as `chat-answer-chunk` events in " +
-          "paragraph/heading-sized pieces, followed by one `chat-answer-completed` event naming the " +
-          "persisted message and carrying its Citations — so a client can render the answer " +
-          "progressively and this response is the authoritative result. The answer message carries " +
-          "a Citation per source marker in its text, each pinned to the exact Document Version and " +
-          "chunk it was grounded in and persisted with the message.",
+          'returns the complete recorded exchange. While the answer is being generated it is also ' +
+          'published to the live `GET /events` stream as `chat-answer-chunk` events in ' +
+          'paragraph/heading-sized pieces, followed by one `chat-answer-completed` event naming the ' +
+          'persisted message and carrying its Citations — so a client can render the answer ' +
+          'progressively and this response is the authoritative result. The answer message carries ' +
+          'a Citation per source marker in its text, each pinned to the exact Document Version and ' +
+          'chunk it was grounded in and persisted with the message.',
         params: chatThreadIdParamsSchema,
         body: sendChatMessageRequestSchema,
         response: {
@@ -192,12 +195,12 @@ export function registerChatRoutes(app: FastifyInstance, { pool, chat }: Registe
     async (request, reply) => {
       const thread = await findChatThread(pool, request.params.notebookId, request.params.threadId);
       if (!thread) {
-        await reply.status(404).send({ message: "Chat Thread not found." });
+        await reply.status(404).send({ message: 'Chat Thread not found.' });
         return;
       }
       if (!chat) {
         await reply.status(503).send({
-          message: "Chat is not configured on this server: OPENROUTER_API_KEY is not set.",
+          message: 'Chat is not configured on this server: OPENROUTER_API_KEY is not set.',
         });
         return;
       }
@@ -241,14 +244,14 @@ export function registerChatRoutes(app: FastifyInstance, { pool, chat }: Registe
         // dropped. Publishing is best-effort — the user's 502 matters more
         // than the notification, and the asking client learns of the failure
         // from it anyway.
-        request.log.error({ err }, "A chat answer could not be generated.");
+        request.log.error({ err }, 'A chat answer could not be generated.');
         await stream
-          .failed(err instanceof Error ? err.message : "The answer could not be generated.")
+          .failed(err instanceof Error ? err.message : 'The answer could not be generated.')
           .catch((publishErr: unknown) => {
-            request.log.warn({ err: publishErr }, "Could not announce a failed chat answer.");
+            request.log.warn({ err: publishErr }, 'Could not announce a failed chat answer.');
           });
         await reply.status(502).send({
-          message: "The answer could not be generated. Nothing was recorded; please ask again.",
+          message: 'The answer could not be generated. Nothing was recorded; please ask again.',
         });
         return;
       }
@@ -260,7 +263,7 @@ export function registerChatRoutes(app: FastifyInstance, { pool, chat }: Registe
       if (answer.unresolvedMarkers.length > 0) {
         request.log.warn(
           { markers: answer.unresolvedMarkers, retrieved: answer.chunks.length },
-          "A chat answer cited source markers that matched no retrieved Chunk; they were dropped.",
+          'A chat answer cited source markers that matched no retrieved Chunk; they were dropped.',
         );
       }
 
@@ -289,7 +292,7 @@ export function registerChatRoutes(app: FastifyInstance, { pool, chat }: Registe
           citations: exchange.answer.citations,
         })
         .catch((err: unknown) => {
-          request.log.warn({ err }, "Could not announce a completed chat answer.");
+          request.log.warn({ err }, 'Could not announce a completed chat answer.');
         });
 
       await reply.status(201).send(exchange);

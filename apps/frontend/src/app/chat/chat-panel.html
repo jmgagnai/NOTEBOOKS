@@ -129,7 +129,9 @@
                           point at a superseded one — and a reader who follows
                           it needs to know that is deliberate.
                         -->
-                        <span class="chat-panel__citation-version">v{{ citation.versionNumber }}</span>
+                        <span class="chat-panel__citation-version"
+                          >v{{ citation.versionNumber }}</span
+                        >
                       </a>
                     </li>
                   }
@@ -191,7 +193,9 @@
                           [queryParams]="citationParams(citation)"
                         >
                           <span class="chat-panel__citation-marker">[{{ citation.marker }}]</span>
-                          <span class="chat-panel__citation-name">{{ citationName(citation) }}</span>
+                          <span class="chat-panel__citation-name">{{
+                            citationName(citation)
+                          }}</span>
                           <span class="chat-panel__citation-version"
                             >v{{ citation.versionNumber }}</span
                           >

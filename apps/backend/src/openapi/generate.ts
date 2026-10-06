@@ -1,12 +1,12 @@
-import { writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { buildApp } from "../app.js";
-import { createPool } from "../db/pool.js";
-import { createS3Client } from "../storage/s3-client.js";
+import { writeFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { buildApp } from '../app.js';
+import { createPool } from '../db/pool.js';
+import { createS3Client } from '../storage/s3-client.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const OUTPUT_PATH = join(__dirname, "..", "..", "openapi.json");
+const OUTPUT_PATH = join(__dirname, '..', '..', 'openapi.json');
 
 /**
  * Publishes the OpenAPI v3 document for the current set of Zod-defined
@@ -18,16 +18,18 @@ const OUTPUT_PATH = join(__dirname, "..", "..", "openapi.json");
  * nothing here ever subscribes.
  */
 async function main(): Promise<void> {
-  const pool = createPool(process.env.DATABASE_URL ?? "postgres://unused:unused@localhost:5432/unused");
+  const pool = createPool(
+    process.env.DATABASE_URL ?? 'postgres://unused:unused@localhost:5432/unused',
+  );
   const s3 = createS3Client({
-    endpoint: "http://unused:9000",
-    accessKeyId: "unused",
-    secretAccessKey: "unused",
+    endpoint: 'http://unused:9000',
+    accessKeyId: 'unused',
+    secretAccessKey: 'unused',
   });
   const app = await buildApp({
     pool,
     s3,
-    documentsBucket: "unused",
+    documentsBucket: 'unused',
     appEvents: { subscribe: () => () => undefined, close: async () => undefined },
   });
   await app.ready();

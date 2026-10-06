@@ -1,5 +1,5 @@
-import type { Pool } from "pg";
-import type { User } from "./schema.js";
+import type { Pool } from 'pg';
+import type { User } from './schema.js';
 
 interface UserRow {
   id: string;
@@ -25,7 +25,7 @@ function toUser(row: UserRow): User {
  */
 export async function createUser(pool: Pool, email: string, passwordHash: string): Promise<User> {
   const { rows } = await pool.query<UserRow>(
-    "INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING id, email, created_at",
+    'INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING id, email, created_at',
     [email, passwordHash],
   );
   return toUser(rows[0]);
@@ -37,7 +37,7 @@ export async function findUserByEmailWithHash(
   email: string,
 ): Promise<(User & { passwordHash: string }) | null> {
   const { rows } = await pool.query<UserRowWithHash>(
-    "SELECT id, email, password_hash, created_at FROM users WHERE email = $1",
+    'SELECT id, email, password_hash, created_at FROM users WHERE email = $1',
     [email],
   );
   const row = rows[0];
@@ -47,7 +47,10 @@ export async function findUserByEmailWithHash(
 
 /** Finds a user by id, for guard/session resolution. */
 export async function findUserById(pool: Pool, id: string): Promise<User | null> {
-  const { rows } = await pool.query<UserRow>("SELECT id, email, created_at FROM users WHERE id = $1", [id]);
+  const { rows } = await pool.query<UserRow>(
+    'SELECT id, email, created_at FROM users WHERE id = $1',
+    [id],
+  );
   const row = rows[0];
   return row ? toUser(row) : null;
 }

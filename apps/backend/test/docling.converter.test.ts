@@ -1,17 +1,21 @@
-import { execFile } from "node:child_process";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { promisify } from "node:util";
-import { beforeAll, describe, expect, it } from "vitest";
-import { DOCLING_IMAGE, createDoclingConverter, markdownOutputPath } from "../src/ingestion/docling.js";
+import { execFile } from 'node:child_process';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { promisify } from 'node:util';
+import { beforeAll, describe, expect, it } from 'vitest';
+import {
+  DOCLING_IMAGE,
+  createDoclingConverter,
+  markdownOutputPath,
+} from '../src/ingestion/docling.js';
 
 const execFileAsync = promisify(execFile);
 
 /** Whether the pinned Docling image is already present locally. */
 async function imageIsPresent(): Promise<boolean> {
   try {
-    const { stdout } = await execFileAsync("docker", ["images", "-q", DOCLING_IMAGE]);
+    const { stdout } = await execFileAsync('docker', ['images', '-q', DOCLING_IMAGE]);
     return stdout.trim().length > 0;
   } catch {
     return false;
@@ -29,7 +33,7 @@ async function imageIsPresent(): Promise<boolean> {
  * download, so `pnpm test` must not drag it in on a fresh clone. See
  * docs/ingestion-docling.md for the one-line pull.
  */
-describe("Docling converter (real container)", () => {
+describe('Docling converter (real container)', () => {
   let available = false;
 
   beforeAll(async () => {
@@ -42,31 +46,31 @@ describe("Docling converter (real container)", () => {
     }
   }, 60_000);
 
-  it("converts a real document to Markdown at the requested output path", async () => {
+  it('converts a real document to Markdown at the requested output path', async () => {
     if (!available) return;
 
-    const workDir = await mkdtemp(join(tmpdir(), "nbk6-docling-"));
-    const inputPath = join(workDir, "handbook.md");
+    const workDir = await mkdtemp(join(tmpdir(), 'nbk6-docling-'));
+    const inputPath = join(workDir, 'handbook.md');
     const outputPath = markdownOutputPath(workDir);
-    await writeFile(inputPath, "# Team Handbook\n\nOnboarding starts on day one.\n", "utf8");
+    await writeFile(inputPath, '# Team Handbook\n\nOnboarding starts on day one.\n', 'utf8');
 
     const convert = createDoclingConverter();
     await convert({ inputPath, outputPath });
 
     // The Markdown is at the path the caller named, not at whatever the
     // docling CLI chose to call it.
-    const markdown = await readFile(outputPath, "utf8");
-    expect(markdown).toContain("Team Handbook");
-    expect(markdown).toContain("Onboarding starts on day one");
+    const markdown = await readFile(outputPath, 'utf8');
+    expect(markdown).toContain('Team Handbook');
+    expect(markdown).toContain('Onboarding starts on day one');
   }, 600_000);
 
-  it("fails loudly when Docling converts nothing but still exits 0", async () => {
+  it('fails loudly when Docling converts nothing but still exits 0', async () => {
     if (!available) return;
 
-    const workDir = await mkdtemp(join(tmpdir(), "nbk6-docling-bad-"));
+    const workDir = await mkdtemp(join(tmpdir(), 'nbk6-docling-bad-'));
     // A .pdf extension picks Docling's PDF backend, which cannot read this.
-    const inputPath = join(workDir, "corrupt.pdf");
-    await writeFile(inputPath, "this is definitely not a PDF", "utf8");
+    const inputPath = join(workDir, 'corrupt.pdf');
+    await writeFile(inputPath, 'this is definitely not a PDF', 'utf8');
 
     // The `docling` CLI logs "failed to convert", writes no output file, and
     // *exits 0* — verified against the pinned image. So a zero exit code is

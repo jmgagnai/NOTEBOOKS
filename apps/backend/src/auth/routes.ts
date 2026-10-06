@@ -1,18 +1,23 @@
-import type { FastifyInstance } from "fastify";
-import type { ZodTypeProvider } from "fastify-type-provider-zod";
-import type { Pool } from "pg";
-import { SESSION_COOKIE_NAME, sessionCookieOptions } from "./cookie.js";
-import { createAuthGuard } from "./guard.js";
-import { signSessionToken } from "./jwt.js";
-import { hashPassword, verifyPassword } from "./password.js";
-import { createUser, findUserByEmailWithHash } from "./repository.js";
-import { z } from "zod";
-import { errorResponseSchema, loginRequestSchema, registerRequestSchema, userSchema } from "./schema.js";
+import type { FastifyInstance } from 'fastify';
+import type { ZodTypeProvider } from 'fastify-type-provider-zod';
+import type { Pool } from 'pg';
+import { SESSION_COOKIE_NAME, sessionCookieOptions } from './cookie.js';
+import { createAuthGuard } from './guard.js';
+import { signSessionToken } from './jwt.js';
+import { hashPassword, verifyPassword } from './password.js';
+import { createUser, findUserByEmailWithHash } from './repository.js';
+import { z } from 'zod';
+import {
+  errorResponseSchema,
+  loginRequestSchema,
+  registerRequestSchema,
+  userSchema,
+} from './schema.js';
 
-const UNIQUE_VIOLATION = "23505";
+const UNIQUE_VIOLATION = '23505';
 
 function isUniqueViolation(err: unknown): boolean {
-  return typeof err === "object" && err !== null && "code" in err && err.code === UNIQUE_VIOLATION;
+  return typeof err === 'object' && err !== null && 'code' in err && err.code === UNIQUE_VIOLATION;
 }
 
 export function registerAuthRoutes(app: FastifyInstance, pool: Pool): void {
@@ -20,12 +25,12 @@ export function registerAuthRoutes(app: FastifyInstance, pool: Pool): void {
   const typedApp = app.withTypeProvider<ZodTypeProvider>();
 
   typedApp.post(
-    "/auth/register",
+    '/auth/register',
     {
       schema: {
-        operationId: "register",
-        tags: ["auth"],
-        summary: "Register a new user account",
+        operationId: 'register',
+        tags: ['auth'],
+        summary: 'Register a new user account',
         body: registerRequestSchema,
         response: {
           201: userSchema,
@@ -41,7 +46,7 @@ export function registerAuthRoutes(app: FastifyInstance, pool: Pool): void {
         await reply.status(201).send(user);
       } catch (err) {
         if (isUniqueViolation(err)) {
-          await reply.status(409).send({ message: "An account with this email already exists." });
+          await reply.status(409).send({ message: 'An account with this email already exists.' });
           return;
         }
         throw err;
@@ -50,12 +55,12 @@ export function registerAuthRoutes(app: FastifyInstance, pool: Pool): void {
   );
 
   typedApp.post(
-    "/auth/login",
+    '/auth/login',
     {
       schema: {
-        operationId: "login",
-        tags: ["auth"],
-        summary: "Log in and receive a session cookie",
+        operationId: 'login',
+        tags: ['auth'],
+        summary: 'Log in and receive a session cookie',
         body: loginRequestSchema,
         response: {
           200: userSchema,
@@ -69,7 +74,7 @@ export function registerAuthRoutes(app: FastifyInstance, pool: Pool): void {
       const valid = user ? await verifyPassword(password, user.passwordHash) : false;
 
       if (!user || !valid) {
-        await reply.status(401).send({ message: "Invalid email or password." });
+        await reply.status(401).send({ message: 'Invalid email or password.' });
         return;
       }
 
@@ -82,30 +87,30 @@ export function registerAuthRoutes(app: FastifyInstance, pool: Pool): void {
   );
 
   typedApp.post(
-    "/auth/logout",
+    '/auth/logout',
     {
       schema: {
-        operationId: "logout",
-        tags: ["auth"],
-        summary: "Log out and clear the session cookie",
+        operationId: 'logout',
+        tags: ['auth'],
+        summary: 'Log out and clear the session cookie',
         response: {
-          204: z.null().describe("No content"),
+          204: z.null().describe('No content'),
         },
       },
     },
     async (_request, reply) => {
-      await reply.clearCookie(SESSION_COOKIE_NAME, { path: "/" }).status(204).send(null);
+      await reply.clearCookie(SESSION_COOKIE_NAME, { path: '/' }).status(204).send(null);
     },
   );
 
   typedApp.get(
-    "/auth/me",
+    '/auth/me',
     {
       preHandler: authGuard,
       schema: {
-        operationId: "getCurrentUser",
-        tags: ["auth"],
-        summary: "Get the current authenticated user",
+        operationId: 'getCurrentUser',
+        tags: ['auth'],
+        summary: 'Get the current authenticated user',
         response: {
           200: userSchema,
           401: errorResponseSchema,

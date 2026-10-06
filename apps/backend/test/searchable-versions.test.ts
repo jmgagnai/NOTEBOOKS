@@ -1,10 +1,10 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
-import type { Pool } from "pg";
-import { runMigrations } from "../src/db/migrate.js";
-import { createPool } from "../src/db/pool.js";
-import { SEARCHABLE_VERSIONS_CTE } from "../src/documents/searchable-versions.js";
-import type { DocumentStatus } from "../src/documents/schema.js";
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql';
+import type { Pool } from 'pg';
+import { runMigrations } from '../src/db/migrate.js';
+import { createPool } from '../src/db/pool.js';
+import { SEARCHABLE_VERSIONS_CTE } from '../src/documents/searchable-versions.js';
+import type { DocumentStatus } from '../src/documents/schema.js';
 
 /**
  * The shared "which Document Versions may retrieval read" rule, tested on its
@@ -22,12 +22,12 @@ import type { DocumentStatus } from "../src/documents/schema.js";
  * that is what these tests drive — one `SELECT` over it, which is exactly how
  * both callers consume it.
  */
-describe("searchable_versions", () => {
+describe('searchable_versions', () => {
   let container: StartedPostgreSqlContainer;
   let pool: Pool;
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("pgvector/pgvector:pg16").start();
+    container = await new PostgreSqlContainer('pgvector/pgvector:pg16').start();
     pool = createPool(container.getConnectionUri());
     await runMigrations(pool);
   }, 180_000);
@@ -39,7 +39,7 @@ describe("searchable_versions", () => {
 
   async function createNotebook(title: string): Promise<string> {
     const { rows } = await pool.query<{ id: string }>(
-      "INSERT INTO notebooks (title) VALUES ($1) RETURNING id",
+      'INSERT INTO notebooks (title) VALUES ($1) RETURNING id',
       [title],
     );
     return rows[0].id;
@@ -47,7 +47,7 @@ describe("searchable_versions", () => {
 
   async function createDocument(notebookId: string, filename: string): Promise<string> {
     const { rows } = await pool.query<{ id: string }>(
-      "INSERT INTO documents (notebook_id, filename) VALUES ($1, $2) RETURNING id",
+      'INSERT INTO documents (notebook_id, filename) VALUES ($1, $2) RETURNING id',
       [notebookId, filename],
     );
     return rows[0].id;
@@ -101,11 +101,11 @@ describe("searchable_versions", () => {
   }
 
   it("picks each Document's latest Version and nothing older", async () => {
-    const notebookId = await createNotebook("Latest only");
-    const documentId = await createDocument(notebookId, "logistics.md");
-    await addVersion(documentId, 1, "ready");
-    await addVersion(documentId, 2, "ready");
-    const v3 = await addVersion(documentId, 3, "ready");
+    const notebookId = await createNotebook('Latest only');
+    const documentId = await createDocument(notebookId, 'logistics.md');
+    await addVersion(documentId, 1, 'ready');
+    await addVersion(documentId, 2, 'ready');
+    const v3 = await addVersion(documentId, 3, 'ready');
 
     const rows = await searchableVersions(notebookId);
 
@@ -115,29 +115,37 @@ describe("searchable_versions", () => {
     expect(rows[0].version_number).toBe(3);
     // Carrying the latest Version's own generated artifacts, not a previous
     // Version's — a search result shows the Abstract of what is current.
-    expect(rows[0].abstract).toBe("Abstract of version 3");
-    expect(rows[0].chat_snippet).toBe("Chat Snippet of version 3");
+    expect(rows[0].abstract).toBe('Abstract of version 3');
+    expect(rows[0].chat_snippet).toBe('Chat Snippet of version 3');
   });
 
   // The order of the two rules, which is the half that can go wrong silently.
   // Folding `ready` into choosing the Version would quietly answer from
   // Version 1 here — content the user has already replaced.
-  it.each<DocumentStatus>(["queued", "converting", "converted", "summarizing", "summarized", "indexing", "failed"])(
+  it.each<DocumentStatus>([
+    'queued',
+    'converting',
+    'converted',
+    'summarizing',
+    'summarized',
+    'indexing',
+    'failed',
+  ])(
     "excludes a Document whose latest Version is '%s', rather than falling back to a ready older one",
     async (status) => {
       const notebookId = await createNotebook(`Latest is ${status}`);
-      const documentId = await createDocument(notebookId, "logistics.md");
-      await addVersion(documentId, 1, "ready");
+      const documentId = await createDocument(notebookId, 'logistics.md');
+      await addVersion(documentId, 1, 'ready');
       await addVersion(documentId, 2, status);
 
       expect(await searchableVersions(notebookId)).toEqual([]);
     },
   );
 
-  it("includes a Document whose only Version is ready", async () => {
-    const notebookId = await createNotebook("Single ready version");
-    const documentId = await createDocument(notebookId, "logistics.md");
-    const v1 = await addVersion(documentId, 1, "ready");
+  it('includes a Document whose only Version is ready', async () => {
+    const notebookId = await createNotebook('Single ready version');
+    const documentId = await createDocument(notebookId, 'logistics.md');
+    const v1 = await addVersion(documentId, 1, 'ready');
 
     const rows = await searchableVersions(notebookId);
 
@@ -145,11 +153,11 @@ describe("searchable_versions", () => {
     expect(rows[0].version_id).toBe(v1);
   });
 
-  it("ignores a soft-deleted Version and uses the newest surviving one", async () => {
-    const notebookId = await createNotebook("Deleted latest");
-    const documentId = await createDocument(notebookId, "logistics.md");
-    const v1 = await addVersion(documentId, 1, "ready");
-    await addVersion(documentId, 2, "ready", { deleted: true });
+  it('ignores a soft-deleted Version and uses the newest surviving one', async () => {
+    const notebookId = await createNotebook('Deleted latest');
+    const documentId = await createDocument(notebookId, 'logistics.md');
+    const v1 = await addVersion(documentId, 1, 'ready');
+    await addVersion(documentId, 2, 'ready', { deleted: true });
 
     const rows = await searchableVersions(notebookId);
 
@@ -158,57 +166,59 @@ describe("searchable_versions", () => {
     expect(rows[0].version_number).toBe(1);
   });
 
-  it("excludes a Document with no Versions at all", async () => {
-    const notebookId = await createNotebook("No versions");
-    await createDocument(notebookId, "logistics.md");
+  it('excludes a Document with no Versions at all', async () => {
+    const notebookId = await createNotebook('No versions');
+    await createDocument(notebookId, 'logistics.md');
 
     expect(await searchableVersions(notebookId)).toEqual([]);
   });
 
-  it("excludes a Document whose every Version is soft-deleted", async () => {
-    const notebookId = await createNotebook("All versions deleted");
-    const documentId = await createDocument(notebookId, "logistics.md");
-    await addVersion(documentId, 1, "ready", { deleted: true });
+  it('excludes a Document whose every Version is soft-deleted', async () => {
+    const notebookId = await createNotebook('All versions deleted');
+    const documentId = await createDocument(notebookId, 'logistics.md');
+    await addVersion(documentId, 1, 'ready', { deleted: true });
 
     expect(await searchableVersions(notebookId)).toEqual([]);
   });
 
-  it("excludes a soft-deleted Document", async () => {
-    const notebookId = await createNotebook("Deleted document");
-    const documentId = await createDocument(notebookId, "logistics.md");
-    await addVersion(documentId, 1, "ready");
-    await pool.query("UPDATE documents SET deleted_at = now() WHERE id = $1", [documentId]);
+  it('excludes a soft-deleted Document', async () => {
+    const notebookId = await createNotebook('Deleted document');
+    const documentId = await createDocument(notebookId, 'logistics.md');
+    await addVersion(documentId, 1, 'ready');
+    await pool.query('UPDATE documents SET deleted_at = now() WHERE id = $1', [documentId]);
 
     expect(await searchableVersions(notebookId)).toEqual([]);
   });
 
-  it("is scoped to one Notebook", async () => {
-    const notebookId = await createNotebook("Mine");
-    const mine = await createDocument(notebookId, "mine.md");
-    await addVersion(mine, 1, "ready");
+  it('is scoped to one Notebook', async () => {
+    const notebookId = await createNotebook('Mine');
+    const mine = await createDocument(notebookId, 'mine.md');
+    await addVersion(mine, 1, 'ready');
 
-    const otherNotebookId = await createNotebook("Theirs");
-    const theirs = await createDocument(otherNotebookId, "theirs.md");
-    await addVersion(theirs, 1, "ready");
+    const otherNotebookId = await createNotebook('Theirs');
+    const theirs = await createDocument(otherNotebookId, 'theirs.md');
+    await addVersion(theirs, 1, 'ready');
 
-    expect((await searchableVersions(notebookId)).map((r) => r.filename)).toEqual(["mine.md"]);
-    expect((await searchableVersions(otherNotebookId)).map((r) => r.filename)).toEqual(["theirs.md"]);
+    expect((await searchableVersions(notebookId)).map((r) => r.filename)).toEqual(['mine.md']);
+    expect((await searchableVersions(otherNotebookId)).map((r) => r.filename)).toEqual([
+      'theirs.md',
+    ]);
   });
 
-  it("returns one row per Document in a Notebook holding several", async () => {
-    const notebookId = await createNotebook("Several documents");
-    const first = await createDocument(notebookId, "a.md");
-    await addVersion(first, 1, "ready");
-    const second = await createDocument(notebookId, "b.md");
-    await addVersion(second, 1, "ready");
-    const second2 = await addVersion(second, 2, "ready");
+  it('returns one row per Document in a Notebook holding several', async () => {
+    const notebookId = await createNotebook('Several documents');
+    const first = await createDocument(notebookId, 'a.md');
+    await addVersion(first, 1, 'ready');
+    const second = await createDocument(notebookId, 'b.md');
+    await addVersion(second, 1, 'ready');
+    const second2 = await addVersion(second, 2, 'ready');
     // Not ready, so this third Document is absent while the other two stay.
-    const third = await createDocument(notebookId, "c.md");
-    await addVersion(third, 1, "indexing");
+    const third = await createDocument(notebookId, 'c.md');
+    await addVersion(third, 1, 'indexing');
 
     const rows = await searchableVersions(notebookId);
 
-    expect(rows.map((r) => r.filename)).toEqual(["a.md", "b.md"]);
-    expect(rows.find((r) => r.filename === "b.md")!.version_id).toBe(second2);
+    expect(rows.map((r) => r.filename)).toEqual(['a.md', 'b.md']);
+    expect(rows.find((r) => r.filename === 'b.md')!.version_id).toBe(second2);
   });
 });

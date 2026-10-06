@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from 'zod';
 
 /**
  * An app event: one thing that happened somewhere in the backend and that
@@ -26,7 +26,7 @@ export const appEventSchema = z.object({
 export type AppEvent = z.infer<typeof appEventSchema>;
 
 /** The fields a publisher supplies; `id` and `occurredAt` are stamped for it. */
-export type AppEventDraft = Pick<AppEvent, "type" | "topic" | "data">;
+export type AppEventDraft = Pick<AppEvent, 'type' | 'topic' | 'data'>;
 
 /** Builds the `topic` every event about one Notebook's contents is published on. */
 export function notebookTopic(notebookId: string): string {

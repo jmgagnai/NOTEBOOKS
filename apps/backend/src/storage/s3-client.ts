@@ -1,13 +1,13 @@
-import { Agent as HttpAgent } from "node:http";
-import type { Readable } from "node:stream";
+import { Agent as HttpAgent } from 'node:http';
+import type { Readable } from 'node:stream';
 import {
   CreateBucketCommand,
   GetObjectCommand,
   HeadBucketCommand,
   PutObjectCommand,
   S3Client,
-} from "@aws-sdk/client-s3";
-import { NodeHttpHandler } from "@smithy/node-http-handler";
+} from '@aws-sdk/client-s3';
+import { NodeHttpHandler } from '@smithy/node-http-handler';
 
 export interface S3Config {
   endpoint: string;
@@ -25,7 +25,7 @@ export interface S3Config {
 export function createS3Client(config: S3Config): S3Client {
   return new S3Client({
     endpoint: config.endpoint,
-    region: config.region ?? "us-east-1",
+    region: config.region ?? 'us-east-1',
     credentials: {
       accessKeyId: config.accessKeyId,
       secretAccessKey: config.secretAccessKey,
@@ -43,7 +43,7 @@ export function createS3Client(config: S3Config): S3Client {
   });
 }
 
-const RETRYABLE_ERROR_CODES = new Set(["ECONNRESET", "EPIPE", "ETIMEDOUT"]);
+const RETRYABLE_ERROR_CODES = new Set(['ECONNRESET', 'EPIPE', 'ETIMEDOUT']);
 
 interface PossibleS3Error {
   code?: string;
@@ -56,21 +56,24 @@ const RETRYABLE_S3_CODES = new Set([
   // tests — see test/support/minio-container.ts) can report its health
   // endpoint live/ready slightly before its object layer is actually ready
   // to serve requests, returning this transiently.
-  "XMinioServerNotInitialized",
+  'XMinioServerNotInitialized',
   // Observed sporadically against the same local/test MinIO even once it's
   // fully up — the connection drops mid-request for reasons outside the
   // application (e.g. Docker Desktop's port-forwarding layer). Every body
   // this client sends is an in-memory Buffer, so a PUT is always safe to
   // retry byte-for-byte; a GET is naturally idempotent.
-  "ClientDisconnected",
+  'ClientDisconnected',
 ]);
 const RETRYABLE_HTTP_STATUS_CODES = new Set([499, 503]);
 
 function isRetryableError(err: unknown): boolean {
   const { code, Code, $metadata } = (err ?? {}) as PossibleS3Error;
-  if (typeof code === "string" && RETRYABLE_ERROR_CODES.has(code)) return true;
-  if (typeof Code === "string" && RETRYABLE_S3_CODES.has(Code)) return true;
-  if (typeof $metadata?.httpStatusCode === "number" && RETRYABLE_HTTP_STATUS_CODES.has($metadata.httpStatusCode)) {
+  if (typeof code === 'string' && RETRYABLE_ERROR_CODES.has(code)) return true;
+  if (typeof Code === 'string' && RETRYABLE_S3_CODES.has(Code)) return true;
+  if (
+    typeof $metadata?.httpStatusCode === 'number' &&
+    RETRYABLE_HTTP_STATUS_CODES.has($metadata.httpStatusCode)
+  ) {
     return true;
   }
   return false;
@@ -121,7 +124,9 @@ export async function putObject(
   contentType: string,
 ): Promise<void> {
   await retryRequest(() =>
-    client.send(new PutObjectCommand({ Bucket: bucket, Key: key, Body: body, ContentType: contentType })),
+    client.send(
+      new PutObjectCommand({ Bucket: bucket, Key: key, Body: body, ContentType: contentType }),
+    ),
   );
 }
 
@@ -131,8 +136,14 @@ export interface StoredObject {
 }
 
 /** Reads back the raw bytes stored at `key` within `bucket`. */
-export async function getObject(client: S3Client, bucket: string, key: string): Promise<StoredObject> {
-  const result = await retryRequest(() => client.send(new GetObjectCommand({ Bucket: bucket, Key: key })));
+export async function getObject(
+  client: S3Client,
+  bucket: string,
+  key: string,
+): Promise<StoredObject> {
+  const result = await retryRequest(() =>
+    client.send(new GetObjectCommand({ Bucket: bucket, Key: key })),
+  );
   return {
     body: result.Body as Readable,
     contentLength: result.ContentLength,

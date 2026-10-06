@@ -1,15 +1,15 @@
-import type { Pool } from "pg";
-import type { Embedder } from "../llm/embeddings.js";
-import type { ChatCompleter, ChatStreamer } from "../llm/openrouter.js";
+import type { Pool } from 'pg';
+import type { Embedder } from '../llm/embeddings.js';
+import type { ChatCompleter, ChatStreamer } from '../llm/openrouter.js';
 import {
   CITATION_INSTRUCTIONS,
   locateCitations,
   resolveCitationMarkers,
   type ResolvedCitation,
-} from "./citations.js";
-import { DEFAULT_RETRIEVAL_LIMIT, retrieveChunks, type RetrievedChunk } from "./retrieval.js";
-import type { ChatMessage } from "./schema.js";
-import { createAnswerChunker } from "./streaming.js";
+} from './citations.js';
+import { DEFAULT_RETRIEVAL_LIMIT, retrieveChunks, type RetrievedChunk } from './retrieval.js';
+import type { ChatMessage } from './schema.js';
+import { createAnswerChunker } from './streaming.js';
 
 /**
  * What the chat module needs to answer a question.
@@ -71,9 +71,9 @@ export interface GroundedAnswer {
  * an admission. It also saves a paid call that could not have helped.
  */
 export const NO_SOURCES_ANSWER =
-  "I have no sources to answer from yet. This Notebook has no Documents that have " +
-  "finished ingesting — upload one, or wait for an upload to reach the \"ready\" status, " +
-  "and ask again.";
+  'I have no sources to answer from yet. This Notebook has no Documents that have ' +
+  'finished ingesting — upload one, or wait for an upload to reach the "ready" status, ' +
+  'and ask again.';
 
 /**
  * The role instruction. Grounding discipline is the whole job: an answer that
@@ -87,19 +87,19 @@ export const NO_SOURCES_ANSWER =
  * upgrade changes how the text is delivered, not what the model is asked for.
  */
 export const CHAT_SYSTEM_PROMPT = [
-  "You answer questions about a specific set of documents a team has collected.",
-  "",
-  "Rules:",
-  "- Answer only from the provided sources. If they do not contain the answer, say so plainly.",
-  "- Never invent figures, names, dates, or quotations. If a source is ambiguous, say what it does say.",
-  "- Refer to sources by their filename when it helps the reader check you.",
+  'You answer questions about a specific set of documents a team has collected.',
+  '',
+  'Rules:',
+  '- Answer only from the provided sources. If they do not contain the answer, say so plainly.',
+  '- Never invent figures, names, dates, or quotations. If a source is ambiguous, say what it does say.',
+  '- Refer to sources by their filename when it helps the reader check you.',
   // The marker notation is the machine-readable half of the same discipline:
   // "answer only from the sources" is checkable by a reader only if each
   // claim says which Chunk it came from (NBK-12).
   CITATION_INSTRUCTIONS,
-  "- Write prose in Markdown, organised into short paragraphs with headings when the answer has parts.",
-  "- Be direct. No preamble about being an AI and no restating of the question.",
-].join("\n");
+  '- Write prose in Markdown, organised into short paragraphs with headings when the answer has parts.',
+  '- Be direct. No preamble about being an AI and no restating of the question.',
+].join('\n');
 
 /** How many of a Thread's most recent messages are carried into a question. */
 export const HISTORY_MESSAGE_LIMIT = 10;
@@ -144,7 +144,10 @@ function formatSources(chunks: RetrievedChunk[]): string {
 
   // Insertion order follows retrieval order, so the document holding the
   // closest Chunk is presented first.
-  const bySource = new Map<string, { filename: string; chatSnippet: string | null; chunks: RetrievedChunk[] }>();
+  const bySource = new Map<
+    string,
+    { filename: string; chatSnippet: string | null; chunks: RetrievedChunk[] }
+  >();
   for (const chunk of chunks) {
     const existing = bySource.get(chunk.documentVersionId);
     if (existing) {
@@ -163,20 +166,21 @@ function formatSources(chunks: RetrievedChunk[]): string {
       const parts = [`### Source: ${source.filename}`];
       if (source.chatSnippet) parts.push(`About this source: ${source.chatSnippet}`);
       for (const chunk of source.chunks) {
-        const location = chunk.headingPath.length > 0 ? ` (under ${chunk.headingPath.join(" > ")})` : "";
+        const location =
+          chunk.headingPath.length > 0 ? ` (under ${chunk.headingPath.join(' > ')})` : '';
         parts.push(`Chunk [${markers.get(chunk.chunkId)}]${location}:\n${chunk.text}`);
       }
-      return parts.join("\n\n");
+      return parts.join('\n\n');
     })
-    .join("\n\n");
+    .join('\n\n');
 }
 
 /** Renders the Chat Thread so far, so a follow-up question's "it" refers to something. */
 function formatHistory(history: ChatMessage[]): string {
   return history
     .slice(-HISTORY_MESSAGE_LIMIT)
-    .map((message) => `${message.role === "user" ? "Question" : "Answer"}: ${message.content}`)
-    .join("\n\n");
+    .map((message) => `${message.role === 'user' ? 'Question' : 'Answer'}: ${message.content}`)
+    .join('\n\n');
 }
 
 /** The answer the application gives when retrieval came back empty. */
@@ -206,7 +210,10 @@ async function groundQuestion(
   pool: Pool,
   deps: ChatDeps,
   input: { notebookId: string; question: string; history: ChatMessage[] },
-): Promise<{ chunks: RetrievedChunk[]; request: { model: string; system: string; user: string; temperature: number } } | null> {
+): Promise<{
+  chunks: RetrievedChunk[];
+  request: { model: string; system: string; user: string; temperature: number };
+} | null> {
   const [queryEmbedding] = await deps.embed([input.question]);
   const chunks = await retrieveChunks(
     pool,
@@ -216,20 +223,20 @@ async function groundQuestion(
   );
   if (chunks.length === 0) return null;
 
-  const sections = ["## Sources", formatSources(chunks)];
+  const sections = ['## Sources', formatSources(chunks)];
   const history = formatHistory(input.history);
   // "Chat Thread", not "conversation": GLOSSARY.md lists "conversation" among
   // the synonyms to avoid, and a heading the model reads is exactly where its
   // own vocabulary comes from.
-  if (history) sections.push("## The Chat Thread so far", history);
-  sections.push("## The question to answer now", input.question);
+  if (history) sections.push('## The Chat Thread so far', history);
+  sections.push('## The question to answer now', input.question);
 
   return {
     chunks,
     request: {
       model: deps.model,
       system: CHAT_SYSTEM_PROMPT,
-      user: sections.join("\n\n"),
+      user: sections.join('\n\n'),
       // Low, but not zero: this is an extraction-and-explanation task like
       // the summarizers, where faithfulness to the sources matters more than
       // variety. Matches the default the other LLM callers rely on.
@@ -250,7 +257,11 @@ async function groundQuestion(
  * arrive at the end rather than alongside the chunk that mentions them: a
  * marker in a half-written answer has no reliable meaning yet.
  */
-async function groundedAnswer(pool: Pool, text: string, chunks: RetrievedChunk[]): Promise<GroundedAnswer> {
+async function groundedAnswer(
+  pool: Pool,
+  text: string,
+  chunks: RetrievedChunk[],
+): Promise<GroundedAnswer> {
   const { citations, unresolvedMarkers } = resolveCitationMarkers(text, chunks);
   return { text, chunks, citations: await locateCitations(pool, citations), unresolvedMarkers };
 }
@@ -323,7 +334,7 @@ export async function streamAnswer(
   }
 
   const chunker = createAnswerChunker();
-  let text = "";
+  let text = '';
   for await (const delta of deps.stream(grounding.request)) {
     text += delta;
     for (const chunk of chunker.push(delta)) await onChunk(chunk);

@@ -66,7 +66,9 @@ describe('NotebookDetailPage', () => {
   it("renders the Notebook's title and its Documents", async () => {
     const listNotebooks = vi
       .fn()
-      .mockResolvedValue([{ id: NOTEBOOK_ID, title: 'Research', createdAt: '2026-01-01T00:00:00.000Z' }]);
+      .mockResolvedValue([
+        { id: NOTEBOOK_ID, title: 'Research', createdAt: '2026-01-01T00:00:00.000Z' },
+      ]);
     const listDocuments = vi.fn().mockResolvedValue([
       {
         id: 'doc-1',
@@ -389,7 +391,8 @@ describe('NotebookDetailPage', () => {
         notebookId: NOTEBOOK_ID,
         filename: 'quarterly.pdf',
         status: 'summarized',
-        abstract: 'A quarterly report covering revenue growth and supply-chain risk across three regions.',
+        abstract:
+          'A quarterly report covering revenue growth and supply-chain risk across three regions.',
         createdAt: '2026-01-01T00:00:00.000Z',
         latestVersion: {
           id: 'v-11',
@@ -412,7 +415,7 @@ describe('NotebookDetailPage', () => {
           { provide: NotebooksService, useValue: { listNotebooks } },
           { provide: DocumentsService, useValue: { listDocuments } },
           chatServiceStub(),
-        { provide: DocumentTransferService, useValue: {} },
+          { provide: DocumentTransferService, useValue: {} },
           appEventsStub().provider,
         ],
       });
@@ -442,7 +445,7 @@ describe('NotebookDetailPage', () => {
           { provide: NotebooksService, useValue: { listNotebooks } },
           { provide: DocumentsService, useValue: { listDocuments } },
           chatServiceStub(),
-        { provide: DocumentTransferService, useValue: {} },
+          { provide: DocumentTransferService, useValue: {} },
           appEventsStub().provider,
         ],
       });
@@ -464,9 +467,11 @@ describe('NotebookDetailPage', () => {
       const listDocuments = vi
         .fn()
         .mockResolvedValue([summarizedDocument({ status: 'converted', abstract: null })]);
-      const getDocument = vi.fn().mockResolvedValue(
-        summarizedDocument({ status: 'summarized', abstract: 'The freshly generated Abstract.' }),
-      );
+      const getDocument = vi
+        .fn()
+        .mockResolvedValue(
+          summarizedDocument({ status: 'summarized', abstract: 'The freshly generated Abstract.' }),
+        );
       const appEvents = appEventsStub();
 
       await render(NotebookDetailPage, {
@@ -475,7 +480,7 @@ describe('NotebookDetailPage', () => {
           { provide: NotebooksService, useValue: { listNotebooks } },
           { provide: DocumentsService, useValue: { listDocuments, getDocument } },
           chatServiceStub(),
-        { provide: DocumentTransferService, useValue: {} },
+          { provide: DocumentTransferService, useValue: {} },
           appEvents.provider,
         ],
       });

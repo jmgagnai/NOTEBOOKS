@@ -6,18 +6,18 @@
  * canonical MIME type recorded against the stored Document Version.
  */
 const ACCEPTED_EXTENSIONS: Record<string, string> = {
-  ".txt": "text/plain",
-  ".md": "text/markdown",
-  ".markdown": "text/markdown",
-  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  ".csv": "text/csv",
-  ".pdf": "application/pdf",
+  '.txt': 'text/plain',
+  '.md': 'text/markdown',
+  '.markdown': 'text/markdown',
+  '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  '.csv': 'text/csv',
+  '.pdf': 'application/pdf',
 };
 
 function extensionOf(filename: string): string {
-  const dotIndex = filename.lastIndexOf(".");
-  return dotIndex === -1 ? "" : filename.slice(dotIndex).toLowerCase();
+  const dotIndex = filename.lastIndexOf('.');
+  return dotIndex === -1 ? '' : filename.slice(dotIndex).toLowerCase();
 }
 
 /**
@@ -29,7 +29,7 @@ export function resolveAcceptedMimeType(filename: string): string | null {
 }
 
 /** Human-readable list of accepted types, for the 400 error message. */
-export const ACCEPTED_TYPES_DESCRIPTION = "text, Markdown, DOCX, Excel (.xlsx), CSV, and PDF";
+export const ACCEPTED_TYPES_DESCRIPTION = 'text, Markdown, DOCX, Excel (.xlsx), CSV, and PDF';
 
 /**
  * Extensions a user has a specific reason to expect, with the reason they are
@@ -59,10 +59,10 @@ export const ACCEPTED_TYPES_DESCRIPTION = "text, Markdown, DOCX, Excel (.xlsx), 
  * validation tweak. See `docs/ingestion-docling.md`.
  */
 const EXPLAINED_REJECTIONS: Record<string, string> = {
-  ".xls":
-    "Legacy Excel (.xls) workbooks are not supported: the Docling converter this app runs can only read " +
-    "the modern .xlsx/.xlsm format, so an .xls upload could be stored but never converted. Re-save it as " +
-    ".xlsx (Excel: File › Save As › Excel Workbook) and upload that.",
+  '.xls':
+    'Legacy Excel (.xls) workbooks are not supported: the Docling converter this app runs can only read ' +
+    'the modern .xlsx/.xlsm format, so an .xls upload could be stored but never converted. Re-save it as ' +
+    '.xlsx (Excel: File › Save As › Excel Workbook) and upload that.',
 };
 
 /**

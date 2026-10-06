@@ -10,13 +10,11 @@ import { NotebooksService } from './api/services/notebooks.service';
 // authenticated shell, a logged-out user is redirected to login".
 describe('App', () => {
   it('shows the authenticated shell and Notebooks page when a session exists', async () => {
-    const getCurrentUser = vi
-      .fn()
-      .mockResolvedValue({
-        id: '1',
-        email: 'ada@example.com',
-        createdAt: '2026-01-01T00:00:00.000Z',
-      });
+    const getCurrentUser = vi.fn().mockResolvedValue({
+      id: '1',
+      email: 'ada@example.com',
+      createdAt: '2026-01-01T00:00:00.000Z',
+    });
     const listNotebooks = vi.fn().mockResolvedValue([]);
 
     await render(App, {

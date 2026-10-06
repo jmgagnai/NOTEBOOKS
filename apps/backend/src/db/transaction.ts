@@ -1,4 +1,4 @@
-import type { Pool, PoolClient } from "pg";
+import type { Pool, PoolClient } from 'pg';
 
 /**
  * Runs `work` on one connection inside a transaction, committing on success
@@ -19,15 +19,18 @@ import type { Pool, PoolClient } from "pg";
  * one transaction for a status nobody committed never to be announced — and
  * that pairing is what most of these transactions exist for.
  */
-export async function inTransaction<T>(pool: Pool, work: (client: PoolClient) => Promise<T>): Promise<T> {
+export async function inTransaction<T>(
+  pool: Pool,
+  work: (client: PoolClient) => Promise<T>,
+): Promise<T> {
   const client = await pool.connect();
   try {
-    await client.query("BEGIN");
+    await client.query('BEGIN');
     const result = await work(client);
-    await client.query("COMMIT");
+    await client.query('COMMIT');
     return result;
   } catch (err) {
-    await client.query("ROLLBACK");
+    await client.query('ROLLBACK');
     throw err;
   } finally {
     client.release();

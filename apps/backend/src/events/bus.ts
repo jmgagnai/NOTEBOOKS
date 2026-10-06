@@ -1,6 +1,6 @@
-import { randomUUID } from "node:crypto";
-import { Client, type Pool } from "pg";
-import { appEventSchema, type AppEvent, type AppEventDraft } from "./schema.js";
+import { randomUUID } from 'node:crypto';
+import { Client, type Pool } from 'pg';
+import { appEventSchema, type AppEvent, type AppEventDraft } from './schema.js';
 
 /**
  * The single Postgres NOTIFY channel every app event travels on (NBK-6).
@@ -16,7 +16,7 @@ import { appEventSchema, type AppEvent, type AppEventDraft } from "./schema.js";
  * and a connection can't cheaply follow a channel set that changes as users
  * come and go.
  */
-export const APP_EVENT_CHANNEL = "app_events";
+export const APP_EVENT_CHANNEL = 'app_events';
 
 /**
  * Postgres caps a NOTIFY payload at 8000 bytes. Events are notifications
@@ -47,15 +47,15 @@ export async function publishAppEvent(
   };
 
   const payload = JSON.stringify(event);
-  const size = Buffer.byteLength(payload, "utf8");
+  const size = Buffer.byteLength(payload, 'utf8');
   if (size > MAX_APP_EVENT_PAYLOAD_BYTES) {
     throw new Error(
       `App event "${event.type}" is too large to publish (${size} bytes, limit ${MAX_APP_EVENT_PAYLOAD_BYTES}). ` +
-        "Put the bulk in a table and let the client fetch it.",
+        'Put the bulk in a table and let the client fetch it.',
     );
   }
 
-  await executor.query("SELECT pg_notify($1, $2)", [APP_EVENT_CHANNEL, payload]);
+  await executor.query('SELECT pg_notify($1, $2)', [APP_EVENT_CHANNEL, payload]);
   return event;
 }
 
@@ -81,7 +81,9 @@ export interface AppEventSubscriber {
  * carries notifications and not state: a client that reconnects re-fetches
  * the current truth over the normal REST routes.
  */
-export async function createAppEventSubscriber(connectionString: string): Promise<AppEventSubscriber> {
+export async function createAppEventSubscriber(
+  connectionString: string,
+): Promise<AppEventSubscriber> {
   const listeners = new Set<AppEventListener>();
   let closed = false;
   let client: Client | null = null;
@@ -118,12 +120,12 @@ export async function createAppEventSubscriber(connectionString: string): Promis
   async function connect(): Promise<void> {
     if (closed) return;
     const next = new Client({ connectionString });
-    next.on("notification", (message) => handleNotification(message.payload));
-    next.on("error", () => {
+    next.on('notification', (message) => handleNotification(message.payload));
+    next.on('error', () => {
       // Swallowed deliberately: an unhandled 'error' on a pg Client would
       // crash the process. The 'end' handler schedules the reconnect.
     });
-    next.on("end", scheduleReconnect);
+    next.on('end', scheduleReconnect);
     await next.connect();
     await next.query(`LISTEN ${APP_EVENT_CHANNEL}`);
     client = next;
@@ -164,4 +166,4 @@ export async function createAppEventSubscriber(connectionString: string): Promis
   };
 }
 
-export type { AppEvent, AppEventDraft } from "./schema.js";
+export type { AppEvent, AppEventDraft } from './schema.js';

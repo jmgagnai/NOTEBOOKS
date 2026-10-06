@@ -1,24 +1,24 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
-import type { StartedTestContainer } from "testcontainers";
-import type { FastifyInstance } from "fastify";
-import type { Pool } from "pg";
-import { buildApp } from "../src/app.js";
-import { runMigrations } from "../src/db/migrate.js";
-import { createPool } from "../src/db/pool.js";
-import type { ConvertToMarkdownPayload } from "../src/ingestion/convert-to-markdown.js";
-import type { JobQueue } from "../src/jobs/queue.js";
-import { createS3Client, ensureBucket, type S3Config } from "../src/storage/s3-client.js";
-import { startMinio } from "./support/minio-container.js";
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql';
+import type { StartedTestContainer } from 'testcontainers';
+import type { FastifyInstance } from 'fastify';
+import type { Pool } from 'pg';
+import { buildApp } from '../src/app.js';
+import { runMigrations } from '../src/db/migrate.js';
+import { createPool } from '../src/db/pool.js';
+import type { ConvertToMarkdownPayload } from '../src/ingestion/convert-to-markdown.js';
+import type { JobQueue } from '../src/jobs/queue.js';
+import { createS3Client, ensureBucket, type S3Config } from '../src/storage/s3-client.js';
+import { startMinio } from './support/minio-container.js';
 
-const DOCUMENTS_BUCKET = "rag-notebook-documents-test";
+const DOCUMENTS_BUCKET = 'rag-notebook-documents-test';
 
 // Seam-1 test (per NBK-1's testing decisions, and explicitly called for by
 // NBK-5's acceptance criteria): drive the real Fastify app through
 // app.inject() against a real Postgres container AND a real MinIO container
 // (bitnamilegacy/minio, matching the root docker-compose.yml — see
 // test/support/minio-container.ts for why).
-describe("Document routes", () => {
+describe('Document routes', () => {
   let pgContainer: StartedPostgreSqlContainer;
   let minioContainer: StartedTestContainer;
   let pool: Pool;
@@ -28,7 +28,7 @@ describe("Document routes", () => {
   let s3Config: S3Config;
 
   beforeAll(async () => {
-    pgContainer = await new PostgreSqlContainer("pgvector/pgvector:pg16").start();
+    pgContainer = await new PostgreSqlContainer('pgvector/pgvector:pg16').start();
     pool = createPool(pgContainer.getConnectionUri());
     await runMigrations(pool);
 
@@ -55,22 +55,22 @@ describe("Document routes", () => {
   /** Registers a fresh user and logs in, returning their session cookie value. */
   async function loginAsNewUser(email: string): Promise<string> {
     await app.inject({
-      method: "POST",
-      url: "/auth/register",
-      payload: { email, password: "correct-horse-battery-staple" },
+      method: 'POST',
+      url: '/auth/register',
+      payload: { email, password: 'correct-horse-battery-staple' },
     });
     const loginResponse = await app.inject({
-      method: "POST",
-      url: "/auth/login",
-      payload: { email, password: "correct-horse-battery-staple" },
+      method: 'POST',
+      url: '/auth/login',
+      payload: { email, password: 'correct-horse-battery-staple' },
     });
-    return loginResponse.cookies.find((c) => c.name === "session")!.value;
+    return loginResponse.cookies.find((c) => c.name === 'session')!.value;
   }
 
   async function createNotebook(session: string, title: string): Promise<string> {
     const response = await app.inject({
-      method: "POST",
-      url: "/notebooks",
+      method: 'POST',
+      url: '/notebooks',
       cookies: { session },
       payload: { title },
     });
@@ -78,8 +78,11 @@ describe("Document routes", () => {
   }
 
   /** Builds a `multipart/form-data` payload containing a single file field. */
-  function multipartUpload(filename: string, content: string): { payload: Buffer; contentType: string } {
-    const boundary = "----nbk5TestBoundary";
+  function multipartUpload(
+    filename: string,
+    content: string,
+  ): { payload: Buffer; contentType: string } {
+    const boundary = '----nbk5TestBoundary';
     const payload = Buffer.from(
       `--${boundary}\r\n` +
         `Content-Disposition: form-data; name="file"; filename="${filename}"\r\n` +
@@ -90,45 +93,50 @@ describe("Document routes", () => {
     return { payload, contentType: `multipart/form-data; boundary=${boundary}` };
   }
 
-  async function uploadFile(session: string, notebookId: string, filename: string, content: string) {
+  async function uploadFile(
+    session: string,
+    notebookId: string,
+    filename: string,
+    content: string,
+  ) {
     const { payload, contentType } = multipartUpload(filename, content);
     return app.inject({
-      method: "POST",
+      method: 'POST',
       url: `/notebooks/${notebookId}/documents`,
       cookies: { session },
-      headers: { "content-type": contentType },
+      headers: { 'content-type': contentType },
       payload,
     });
   }
 
-  describe("GET /notebooks/:notebookId/documents", () => {
-    it("rejects an unauthenticated request with 401", async () => {
+  describe('GET /notebooks/:notebookId/documents', () => {
+    it('rejects an unauthenticated request with 401', async () => {
       const response = await app.inject({
-        method: "GET",
-        url: "/notebooks/00000000-0000-0000-0000-000000000000/documents",
+        method: 'GET',
+        url: '/notebooks/00000000-0000-0000-0000-000000000000/documents',
       });
 
       expect(response.statusCode).toBe(401);
     });
 
     it("returns 404 for a Notebook that doesn't exist", async () => {
-      const session = await loginAsNewUser("lister1@example.com");
+      const session = await loginAsNewUser('lister1@example.com');
 
       const response = await app.inject({
-        method: "GET",
-        url: "/notebooks/00000000-0000-0000-0000-000000000000/documents",
+        method: 'GET',
+        url: '/notebooks/00000000-0000-0000-0000-000000000000/documents',
         cookies: { session },
       });
 
       expect(response.statusCode).toBe(404);
     });
 
-    it("returns an empty list for a Notebook with no Documents", async () => {
-      const session = await loginAsNewUser("lister2@example.com");
-      const notebookId = await createNotebook(session, "Empty Notebook");
+    it('returns an empty list for a Notebook with no Documents', async () => {
+      const session = await loginAsNewUser('lister2@example.com');
+      const notebookId = await createNotebook(session, 'Empty Notebook');
 
       const response = await app.inject({
-        method: "GET",
+        method: 'GET',
         url: `/notebooks/${notebookId}/documents`,
         cookies: { session },
       });
@@ -138,13 +146,13 @@ describe("Document routes", () => {
     });
   });
 
-  describe("POST /notebooks/:notebookId/documents (upload)", () => {
-    it("rejects an unauthenticated request with 401", async () => {
-      const { payload, contentType } = multipartUpload("a.txt", "hello");
+  describe('POST /notebooks/:notebookId/documents (upload)', () => {
+    it('rejects an unauthenticated request with 401', async () => {
+      const { payload, contentType } = multipartUpload('a.txt', 'hello');
       const response = await app.inject({
-        method: "POST",
-        url: "/notebooks/00000000-0000-0000-0000-000000000000/documents",
-        headers: { "content-type": contentType },
+        method: 'POST',
+        url: '/notebooks/00000000-0000-0000-0000-000000000000/documents',
+        headers: { 'content-type': contentType },
         payload,
       });
 
@@ -152,17 +160,22 @@ describe("Document routes", () => {
     });
 
     it("returns 404 for a Notebook that doesn't exist", async () => {
-      const session = await loginAsNewUser("uploader1@example.com");
-      const response = await uploadFile(session, "00000000-0000-0000-0000-000000000000", "a.txt", "hello");
+      const session = await loginAsNewUser('uploader1@example.com');
+      const response = await uploadFile(
+        session,
+        '00000000-0000-0000-0000-000000000000',
+        'a.txt',
+        'hello',
+      );
 
       expect(response.statusCode).toBe(404);
     });
 
-    it("uploads a text file, creating a Document with version 1 awaiting conversion", async () => {
-      const session = await loginAsNewUser("uploader2@example.com");
-      const notebookId = await createNotebook(session, "Research");
+    it('uploads a text file, creating a Document with version 1 awaiting conversion', async () => {
+      const session = await loginAsNewUser('uploader2@example.com');
+      const notebookId = await createNotebook(session, 'Research');
 
-      const response = await uploadFile(session, notebookId, "report.txt", "the contents");
+      const response = await uploadFile(session, notebookId, 'report.txt', 'the contents');
 
       expect(response.statusCode).toBe(201);
       const body = response.json() as {
@@ -172,50 +185,50 @@ describe("Document routes", () => {
         status: string;
         latestVersion: { versionNumber: number; mimeType: string; sizeBytes: number };
       };
-      expect(body.filename).toBe("report.txt");
+      expect(body.filename).toBe('report.txt');
       expect(body.notebookId).toBe(notebookId);
       // NBK-6: an upload is immediately enqueued for Markdown conversion,
       // so the Document Version starts out "queued" rather than terminal.
-      expect(body.status).toBe("queued");
+      expect(body.status).toBe('queued');
       expect(body.latestVersion.versionNumber).toBe(1);
-      expect(body.latestVersion.mimeType).toBe("text/plain");
-      expect(body.latestVersion.sizeBytes).toBe(Buffer.byteLength("the contents"));
+      expect(body.latestVersion.mimeType).toBe('text/plain');
+      expect(body.latestVersion.sizeBytes).toBe(Buffer.byteLength('the contents'));
 
       const listResponse = await app.inject({
-        method: "GET",
+        method: 'GET',
         url: `/notebooks/${notebookId}/documents`,
         cookies: { session },
       });
       expect((listResponse.json() as Array<{ filename: string }>).map((d) => d.filename)).toContain(
-        "report.txt",
+        'report.txt',
       );
     });
 
     it.each([
-      ["memo.txt", "text/plain"],
-      ["notes.md", "text/markdown"],
-      ["report.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
-      ["budget.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],
-      ["data.csv", "text/csv"],
-      ["scan.pdf", "application/pdf"],
-    ])("accepts %s, recording mimeType %s", async (filename, expectedMimeType) => {
+      ['memo.txt', 'text/plain'],
+      ['notes.md', 'text/markdown'],
+      ['report.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+      ['budget.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+      ['data.csv', 'text/csv'],
+      ['scan.pdf', 'application/pdf'],
+    ])('accepts %s, recording mimeType %s', async (filename, expectedMimeType) => {
       const session = await loginAsNewUser(`accepted-${filename}@example.com`);
       const notebookId = await createNotebook(session, `Accepted ${filename}`);
 
-      const response = await uploadFile(session, notebookId, filename, "whatever bytes");
+      const response = await uploadFile(session, notebookId, filename, 'whatever bytes');
 
       expect(response.statusCode).toBe(201);
       const body = response.json() as { latestVersion: { mimeType: string } };
       expect(body.latestVersion.mimeType).toBe(expectedMimeType);
     });
 
-    it.each([["script.exe"], ["archive.zip"], ["noextension"]])(
-      "rejects an unsupported file type (%s) with 400",
+    it.each([['script.exe'], ['archive.zip'], ['noextension']])(
+      'rejects an unsupported file type (%s) with 400',
       async (filename) => {
         const session = await loginAsNewUser(`rejector-${filename}@example.com`);
-        const notebookId = await createNotebook(session, "Rejections");
+        const notebookId = await createNotebook(session, 'Rejections');
 
-        const response = await uploadFile(session, notebookId, filename, "whatever");
+        const response = await uploadFile(session, notebookId, filename, 'whatever');
 
         expect(response.statusCode).toBe(400);
         expect((response.json() as { message: string }).message).toMatch(/Unsupported file type/i);
@@ -237,13 +250,13 @@ describe("Document routes", () => {
      * at `failed` after a conversion attempt that never had a chance. See
      * docs/ingestion-docling.md.
      */
-    it.each([["budget.xls"], ["Budget.XLS"]])(
-      "explains why legacy %s is rejected, naming .xlsx as the way in",
+    it.each([['budget.xls'], ['Budget.XLS']])(
+      'explains why legacy %s is rejected, naming .xlsx as the way in',
       async (filename) => {
         const session = await loginAsNewUser(`legacy-xls-${filename}@example.com`);
         const notebookId = await createNotebook(session, `Legacy ${filename}`);
 
-        const response = await uploadFile(session, notebookId, filename, "whatever bytes");
+        const response = await uploadFile(session, notebookId, filename, 'whatever bytes');
 
         expect(response.statusCode).toBe(400);
         const { message } = response.json() as { message: string };
@@ -253,15 +266,23 @@ describe("Document routes", () => {
       },
     );
 
-    it("re-uploading an existing, undeleted filename creates a new Version on the same Document instead of a new one", async () => {
-      const session = await loginAsNewUser("versioner1@example.com");
-      const notebookId = await createNotebook(session, "Versioned Notebook");
+    it('re-uploading an existing, undeleted filename creates a new Version on the same Document instead of a new one', async () => {
+      const session = await loginAsNewUser('versioner1@example.com');
+      const notebookId = await createNotebook(session, 'Versioned Notebook');
 
-      const firstUpload = await uploadFile(session, notebookId, "contract.pdf", "v1 bytes");
-      const firstBody = firstUpload.json() as { id: string; latestVersion: { versionNumber: number } };
+      const firstUpload = await uploadFile(session, notebookId, 'contract.pdf', 'v1 bytes');
+      const firstBody = firstUpload.json() as {
+        id: string;
+        latestVersion: { versionNumber: number };
+      };
       expect(firstBody.latestVersion.versionNumber).toBe(1);
 
-      const secondUpload = await uploadFile(session, notebookId, "contract.pdf", "v2 bytes, longer");
+      const secondUpload = await uploadFile(
+        session,
+        notebookId,
+        'contract.pdf',
+        'v2 bytes, longer',
+      );
       const secondBody = secondUpload.json() as {
         id: string;
         latestVersion: { versionNumber: number; sizeBytes: number };
@@ -270,57 +291,61 @@ describe("Document routes", () => {
       expect(secondUpload.statusCode).toBe(201);
       expect(secondBody.id).toBe(firstBody.id);
       expect(secondBody.latestVersion.versionNumber).toBe(2);
-      expect(secondBody.latestVersion.sizeBytes).toBe(Buffer.byteLength("v2 bytes, longer"));
+      expect(secondBody.latestVersion.sizeBytes).toBe(Buffer.byteLength('v2 bytes, longer'));
 
       const listResponse = await app.inject({
-        method: "GET",
+        method: 'GET',
         url: `/notebooks/${notebookId}/documents`,
         cookies: { session },
       });
       const documents = listResponse.json() as Array<{ filename: string }>;
-      expect(documents.filter((d) => d.filename === "contract.pdf")).toHaveLength(1);
+      expect(documents.filter((d) => d.filename === 'contract.pdf')).toHaveLength(1);
     });
   });
 
-  describe("GET .../versions/:versionId/download", () => {
-    it("rejects an unauthenticated request with 401", async () => {
+  describe('GET .../versions/:versionId/download', () => {
+    it('rejects an unauthenticated request with 401', async () => {
       const response = await app.inject({
-        method: "GET",
-        url:
-          "/notebooks/00000000-0000-0000-0000-000000000000/documents/00000000-0000-0000-0000-000000000000/versions/00000000-0000-0000-0000-000000000000/download",
+        method: 'GET',
+        url: '/notebooks/00000000-0000-0000-0000-000000000000/documents/00000000-0000-0000-0000-000000000000/versions/00000000-0000-0000-0000-000000000000/download',
       });
 
       expect(response.statusCode).toBe(401);
     });
 
-    it("streams back the exact bytes uploaded for a Document Version", async () => {
-      const session = await loginAsNewUser("downloader1@example.com");
-      const notebookId = await createNotebook(session, "Download Notebook");
-      const uploadResponse = await uploadFile(session, notebookId, "notes.md", "# Heading\n\nBody text.");
+    it('streams back the exact bytes uploaded for a Document Version', async () => {
+      const session = await loginAsNewUser('downloader1@example.com');
+      const notebookId = await createNotebook(session, 'Download Notebook');
+      const uploadResponse = await uploadFile(
+        session,
+        notebookId,
+        'notes.md',
+        '# Heading\n\nBody text.',
+      );
       const { id: documentId, latestVersion } = uploadResponse.json() as {
         id: string;
         latestVersion: { id: string };
       };
 
       const response = await app.inject({
-        method: "GET",
+        method: 'GET',
         url: `/notebooks/${notebookId}/documents/${documentId}/versions/${latestVersion.id}/download`,
         cookies: { session },
       });
 
       expect(response.statusCode).toBe(200);
-      expect(response.body).toBe("# Heading\n\nBody text.");
-      expect(response.headers["content-type"]).toBe("text/markdown");
+      expect(response.body).toBe('# Heading\n\nBody text.');
+      expect(response.headers['content-type']).toBe('text/markdown');
     });
 
     it("returns 404 for a Version that doesn't exist", async () => {
-      const session = await loginAsNewUser("downloader2@example.com");
-      const notebookId = await createNotebook(session, "Download Notebook 2");
-      const uploadResponse = await uploadFile(session, notebookId, "notes2.md", "content");
+      const session = await loginAsNewUser('downloader2@example.com');
+      const notebookId = await createNotebook(session, 'Download Notebook 2');
+      const uploadResponse = await uploadFile(session, notebookId, 'notes2.md', 'content');
       const { id: documentId } = uploadResponse.json() as { id: string };
 
       const response = await app.inject({
-        method: "GET",
+        method: 'GET',
         url: `/notebooks/${notebookId}/documents/${documentId}/versions/00000000-0000-0000-0000-000000000000/download`,
         cookies: { session },
       });
@@ -329,25 +354,24 @@ describe("Document routes", () => {
     });
   });
 
-  describe("DELETE /notebooks/:notebookId/documents/:documentId", () => {
-    it("rejects an unauthenticated request with 401", async () => {
+  describe('DELETE /notebooks/:notebookId/documents/:documentId', () => {
+    it('rejects an unauthenticated request with 401', async () => {
       const response = await app.inject({
-        method: "DELETE",
-        url:
-          "/notebooks/00000000-0000-0000-0000-000000000000/documents/00000000-0000-0000-0000-000000000000",
+        method: 'DELETE',
+        url: '/notebooks/00000000-0000-0000-0000-000000000000/documents/00000000-0000-0000-0000-000000000000',
       });
 
       expect(response.statusCode).toBe(401);
     });
 
-    it("soft-deletes a Document, removing it from the list", async () => {
-      const session = await loginAsNewUser("deleter1@example.com");
-      const notebookId = await createNotebook(session, "Delete Notebook");
-      const uploadResponse = await uploadFile(session, notebookId, "todelete.csv", "a,b,c");
+    it('soft-deletes a Document, removing it from the list', async () => {
+      const session = await loginAsNewUser('deleter1@example.com');
+      const notebookId = await createNotebook(session, 'Delete Notebook');
+      const uploadResponse = await uploadFile(session, notebookId, 'todelete.csv', 'a,b,c');
       const { id: documentId } = uploadResponse.json() as { id: string };
 
       const response = await app.inject({
-        method: "DELETE",
+        method: 'DELETE',
         url: `/notebooks/${notebookId}/documents/${documentId}`,
         cookies: { session },
       });
@@ -355,28 +379,28 @@ describe("Document routes", () => {
       expect(response.statusCode).toBe(204);
 
       const listResponse = await app.inject({
-        method: "GET",
+        method: 'GET',
         url: `/notebooks/${notebookId}/documents`,
         cookies: { session },
       });
-      expect((listResponse.json() as Array<{ filename: string }>).map((d) => d.filename)).not.toContain(
-        "todelete.csv",
-      );
+      expect(
+        (listResponse.json() as Array<{ filename: string }>).map((d) => d.filename),
+      ).not.toContain('todelete.csv');
     });
 
     it("returns 404 when deleting a Document that's already deleted", async () => {
-      const session = await loginAsNewUser("deleter2@example.com");
-      const notebookId = await createNotebook(session, "Delete Notebook 2");
-      const uploadResponse = await uploadFile(session, notebookId, "twice.csv", "x");
+      const session = await loginAsNewUser('deleter2@example.com');
+      const notebookId = await createNotebook(session, 'Delete Notebook 2');
+      const uploadResponse = await uploadFile(session, notebookId, 'twice.csv', 'x');
       const { id: documentId } = uploadResponse.json() as { id: string };
       await app.inject({
-        method: "DELETE",
+        method: 'DELETE',
         url: `/notebooks/${notebookId}/documents/${documentId}`,
         cookies: { session },
       });
 
       const response = await app.inject({
-        method: "DELETE",
+        method: 'DELETE',
         url: `/notebooks/${notebookId}/documents/${documentId}`,
         cookies: { session },
       });
@@ -384,19 +408,22 @@ describe("Document routes", () => {
       expect(response.statusCode).toBe(404);
     });
 
-    it("re-uploading the same filename after its Document was deleted creates a brand-new Document", async () => {
-      const session = await loginAsNewUser("deleter3@example.com");
-      const notebookId = await createNotebook(session, "Delete Notebook 3");
-      const firstUpload = await uploadFile(session, notebookId, "reused.txt", "first");
+    it('re-uploading the same filename after its Document was deleted creates a brand-new Document', async () => {
+      const session = await loginAsNewUser('deleter3@example.com');
+      const notebookId = await createNotebook(session, 'Delete Notebook 3');
+      const firstUpload = await uploadFile(session, notebookId, 'reused.txt', 'first');
       const { id: firstDocumentId } = firstUpload.json() as { id: string };
       await app.inject({
-        method: "DELETE",
+        method: 'DELETE',
         url: `/notebooks/${notebookId}/documents/${firstDocumentId}`,
         cookies: { session },
       });
 
-      const secondUpload = await uploadFile(session, notebookId, "reused.txt", "second");
-      const secondBody = secondUpload.json() as { id: string; latestVersion: { versionNumber: number } };
+      const secondUpload = await uploadFile(session, notebookId, 'reused.txt', 'second');
+      const secondBody = secondUpload.json() as {
+        id: string;
+        latestVersion: { versionNumber: number };
+      };
 
       expect(secondUpload.statusCode).toBe(201);
       expect(secondBody.id).not.toBe(firstDocumentId);
@@ -404,55 +431,54 @@ describe("Document routes", () => {
     });
   });
 
-  describe("POST /notebooks/:notebookId/documents/:documentId/restore", () => {
-    it("rejects an unauthenticated request with 401", async () => {
+  describe('POST /notebooks/:notebookId/documents/:documentId/restore', () => {
+    it('rejects an unauthenticated request with 401', async () => {
       const response = await app.inject({
-        method: "POST",
-        url:
-          "/notebooks/00000000-0000-0000-0000-000000000000/documents/00000000-0000-0000-0000-000000000000/restore",
+        method: 'POST',
+        url: '/notebooks/00000000-0000-0000-0000-000000000000/documents/00000000-0000-0000-0000-000000000000/restore',
       });
 
       expect(response.statusCode).toBe(401);
     });
 
-    it("restores a soft-deleted Document so it reappears in the list", async () => {
-      const session = await loginAsNewUser("restorer1@example.com");
-      const notebookId = await createNotebook(session, "Restore Notebook");
-      const uploadResponse = await uploadFile(session, notebookId, "restorable.txt", "data");
+    it('restores a soft-deleted Document so it reappears in the list', async () => {
+      const session = await loginAsNewUser('restorer1@example.com');
+      const notebookId = await createNotebook(session, 'Restore Notebook');
+      const uploadResponse = await uploadFile(session, notebookId, 'restorable.txt', 'data');
       const { id: documentId } = uploadResponse.json() as { id: string };
       await app.inject({
-        method: "DELETE",
+        method: 'DELETE',
         url: `/notebooks/${notebookId}/documents/${documentId}`,
         cookies: { session },
       });
 
       const response = await app.inject({
-        method: "POST",
+        method: 'POST',
         url: `/notebooks/${notebookId}/documents/${documentId}/restore`,
         cookies: { session },
       });
 
       expect(response.statusCode).toBe(200);
-      expect((response.json() as { filename: string }).filename).toBe("restorable.txt");
+      expect((response.json() as { filename: string }).filename).toBe('restorable.txt');
 
       const listResponse = await app.inject({
-        method: "GET",
+        method: 'GET',
         url: `/notebooks/${notebookId}/documents`,
         cookies: { session },
       });
       expect((listResponse.json() as Array<{ filename: string }>).map((d) => d.filename)).toContain(
-        "restorable.txt",
+        'restorable.txt',
       );
     });
 
     it("returns 404 when restoring a Document that isn't deleted", async () => {
-      const session = await loginAsNewUser("restorer2@example.com");
-      const notebookId = await createNotebook(session, "Restore Notebook 2");
-      const uploadResponse = await uploadFile(session, notebookId, "never-deleted.txt", "data");
+      const session = await loginAsNewUser('restorer2@example.com');
+      const notebookId = await createNotebook(session, 'Restore Notebook 2');
+      const uploadResponse = await uploadFile(session, notebookId, 'never-deleted.txt', 'data');
       const { id: documentId } = uploadResponse.json() as { id: string };
 
       const response = await app.inject({
-        method: "POST",
+        method: 'POST',
         url: `/notebooks/${notebookId}/documents/${documentId}/restore`,
         cookies: { session },
       });
@@ -466,37 +492,37 @@ describe("Document routes", () => {
     // Version — and that leaves the deleted one with nowhere to come back to,
     // because a Notebook can hold only one non-deleted Document per filename.
     // That has to read as a conflict the user can resolve, not as a 500.
-    it("returns 409 when the filename was re-uploaded while the Document was deleted", async () => {
-      const session = await loginAsNewUser("restorer3@example.com");
-      const notebookId = await createNotebook(session, "Restore Notebook 3");
-      const first = await uploadFile(session, notebookId, "contested.txt", "first");
+    it('returns 409 when the filename was re-uploaded while the Document was deleted', async () => {
+      const session = await loginAsNewUser('restorer3@example.com');
+      const notebookId = await createNotebook(session, 'Restore Notebook 3');
+      const first = await uploadFile(session, notebookId, 'contested.txt', 'first');
       const { id: documentId } = first.json() as { id: string };
       await app.inject({
-        method: "DELETE",
+        method: 'DELETE',
         url: `/notebooks/${notebookId}/documents/${documentId}`,
         cookies: { session },
       });
 
       // With the original deleted, this is a new Document at Version 1 —
       // not a new Version of the deleted one.
-      const second = await uploadFile(session, notebookId, "contested.txt", "second");
+      const second = await uploadFile(session, notebookId, 'contested.txt', 'second');
       const replacement = second.json() as { id: string; latestVersion: { versionNumber: number } };
       expect(replacement.id).not.toBe(documentId);
       expect(replacement.latestVersion.versionNumber).toBe(1);
 
       const response = await app.inject({
-        method: "POST",
+        method: 'POST',
         url: `/notebooks/${notebookId}/documents/${documentId}/restore`,
         cookies: { session },
       });
 
       expect(response.statusCode).toBe(409);
-      expect((response.json() as { message: string }).message).toContain("contested.txt");
+      expect((response.json() as { message: string }).message).toContain('contested.txt');
 
       // And the Notebook is left as it was: the replacement alone, with the
       // deleted Document still deleted rather than half-restored.
       const listed = await app.inject({
-        method: "GET",
+        method: 'GET',
         url: `/notebooks/${notebookId}/documents`,
         cookies: { session },
       });
@@ -506,26 +532,26 @@ describe("Document routes", () => {
     // The conflict is about the *current* contents, so clearing them makes
     // the restore possible again — which is what the 409's message tells the
     // user to do.
-    it("restores after the colliding Document is itself deleted", async () => {
-      const session = await loginAsNewUser("restorer4@example.com");
-      const notebookId = await createNotebook(session, "Restore Notebook 4");
-      const first = await uploadFile(session, notebookId, "handover.txt", "first");
+    it('restores after the colliding Document is itself deleted', async () => {
+      const session = await loginAsNewUser('restorer4@example.com');
+      const notebookId = await createNotebook(session, 'Restore Notebook 4');
+      const first = await uploadFile(session, notebookId, 'handover.txt', 'first');
       const { id: documentId } = first.json() as { id: string };
       await app.inject({
-        method: "DELETE",
+        method: 'DELETE',
         url: `/notebooks/${notebookId}/documents/${documentId}`,
         cookies: { session },
       });
-      const second = await uploadFile(session, notebookId, "handover.txt", "second");
+      const second = await uploadFile(session, notebookId, 'handover.txt', 'second');
       const { id: replacementId } = second.json() as { id: string };
       await app.inject({
-        method: "DELETE",
+        method: 'DELETE',
         url: `/notebooks/${notebookId}/documents/${replacementId}`,
         cookies: { session },
       });
 
       const response = await app.inject({
-        method: "POST",
+        method: 'POST',
         url: `/notebooks/${notebookId}/documents/${documentId}/restore`,
         cookies: { session },
       });
@@ -538,7 +564,7 @@ describe("Document routes", () => {
   // NBK-6: an upload is the ingestion pipeline's trigger. Only the hand-off
   // is asserted here — that the job then converts anything belongs to
   // test/convert-to-markdown.job.test.ts and test/job-queue.test.ts.
-  describe("ingestion hand-off", () => {
+  describe('ingestion hand-off', () => {
     /** Builds a second app, sharing these containers, with a JobQueue stub. */
     async function appWith(jobs: JobQueue): Promise<FastifyInstance> {
       return buildApp({
@@ -549,7 +575,7 @@ describe("Document routes", () => {
       });
     }
 
-    it("enqueues Markdown conversion for the Version it just created", async () => {
+    it('enqueues Markdown conversion for the Version it just created', async () => {
       const enqueued: ConvertToMarkdownPayload[] = [];
       const appWithJobs = await appWith({
         enqueueConvertToMarkdown: async (payload) => {
@@ -558,44 +584,48 @@ describe("Document routes", () => {
         stop: async () => {},
       });
       try {
-        const session = await loginAsNewUser("ingestion-handoff@example.com");
-        const notebookId = await createNotebook(session, "Ingestion");
+        const session = await loginAsNewUser('ingestion-handoff@example.com');
+        const notebookId = await createNotebook(session, 'Ingestion');
 
-        const { payload, contentType } = multipartUpload("pipeline.txt", "convert me");
+        const { payload, contentType } = multipartUpload('pipeline.txt', 'convert me');
         const response = await appWithJobs.inject({
-          method: "POST",
+          method: 'POST',
           url: `/notebooks/${notebookId}/documents`,
           cookies: { session },
-          headers: { "content-type": contentType },
+          headers: { 'content-type': contentType },
           payload,
         });
 
         expect(response.statusCode).toBe(201);
-        const body = response.json() as { id: string; status: string; latestVersion: { id: string } };
-        expect(body.status).toBe("queued");
+        const body = response.json() as {
+          id: string;
+          status: string;
+          latestVersion: { id: string };
+        };
+        expect(body.status).toBe('queued');
         expect(enqueued).toEqual([{ documentId: body.id, versionId: body.latestVersion.id }]);
       } finally {
         await appWithJobs.close();
       }
     });
 
-    it("still stores the upload when enqueueing the job fails", async () => {
+    it('still stores the upload when enqueueing the job fails', async () => {
       const appWithJobs = await appWith({
         enqueueConvertToMarkdown: async () => {
-          throw new Error("pg_boss is down");
+          throw new Error('pg_boss is down');
         },
         stop: async () => {},
       });
       try {
-        const session = await loginAsNewUser("ingestion-enqueue-fails@example.com");
-        const notebookId = await createNotebook(session, "Ingestion failure");
+        const session = await loginAsNewUser('ingestion-enqueue-fails@example.com');
+        const notebookId = await createNotebook(session, 'Ingestion failure');
 
-        const { payload, contentType } = multipartUpload("orphan.txt", "stored anyway");
+        const { payload, contentType } = multipartUpload('orphan.txt', 'stored anyway');
         const response = await appWithJobs.inject({
-          method: "POST",
+          method: 'POST',
           url: `/notebooks/${notebookId}/documents`,
           cookies: { session },
-          headers: { "content-type": contentType },
+          headers: { 'content-type': contentType },
           payload,
         });
 
@@ -603,7 +633,7 @@ describe("Document routes", () => {
         // attempted, so failing the request would strand them. The Version
         // stays "queued" — the standing record of work still owed.
         expect(response.statusCode).toBe(201);
-        expect((response.json() as { status: string }).status).toBe("queued");
+        expect((response.json() as { status: string }).status).toBe('queued');
       } finally {
         await appWithJobs.close();
       }
@@ -621,7 +651,7 @@ describe("Document routes", () => {
   // Not one fat payload, because the Converted Markdown can run past 200
   // pages: putting it on the list would make browsing a Notebook download
   // every document in it.
-  describe("NBK-7: reading metadata and the generated artifacts", () => {
+  describe('NBK-7: reading metadata and the generated artifacts', () => {
     /** Writes stage 2's output onto a Version, as the job would. */
     async function seedSummaries(versionId: string): Promise<void> {
       await pool.query(
@@ -636,57 +666,61 @@ describe("Document routes", () => {
          WHERE id = $1`,
         [
           versionId,
-          "# Quarterly Report\n\n## Revenue\n\n| Quarter | Total |\n| --- | --- |\n| Q1 | 12.4M |\n",
-          JSON.stringify({ title: "Quarterly Report", authors: ["A. Analyst"], documentType: "report" }),
-          "Chat Snippet for a model to read.",
-          "## Key points\n\nThe Executive Summary a human sees first.",
-          "The Abstract, short enough to skim in a list.",
+          '# Quarterly Report\n\n## Revenue\n\n| Quarter | Total |\n| --- | --- |\n| Q1 | 12.4M |\n',
+          JSON.stringify({
+            title: 'Quarterly Report',
+            authors: ['A. Analyst'],
+            documentType: 'report',
+          }),
+          'Chat Snippet for a model to read.',
+          '## Key points\n\nThe Executive Summary a human sees first.',
+          'The Abstract, short enough to skim in a list.',
         ],
       );
     }
 
     it("includes each Document's Abstract in the list, but not its Executive Summary or Markdown", async () => {
-      const session = await loginAsNewUser("nbk7-list@example.com");
-      const notebookId = await createNotebook(session, "Summarized");
-      const upload = await uploadFile(session, notebookId, "quarterly.md", "# Quarterly Report");
+      const session = await loginAsNewUser('nbk7-list@example.com');
+      const notebookId = await createNotebook(session, 'Summarized');
+      const upload = await uploadFile(session, notebookId, 'quarterly.md', '# Quarterly Report');
       const { latestVersion } = upload.json() as { latestVersion: { id: string } };
       await seedSummaries(latestVersion.id);
 
       const response = await app.inject({
-        method: "GET",
+        method: 'GET',
         url: `/notebooks/${notebookId}/documents`,
         cookies: { session },
       });
 
       expect(response.statusCode).toBe(200);
       const [document] = response.json() as Array<Record<string, unknown>>;
-      expect(document.status).toBe("summarized");
-      expect(document.abstract).toBe("The Abstract, short enough to skim in a list.");
+      expect(document.status).toBe('summarized');
+      expect(document.abstract).toBe('The Abstract, short enough to skim in a list.');
       // A 200-page document's content must not ride along on a list request.
-      expect(document).not.toHaveProperty("markdown");
-      expect(document).not.toHaveProperty("executiveSummary");
+      expect(document).not.toHaveProperty('markdown');
+      expect(document).not.toHaveProperty('executiveSummary');
     });
 
     it("reports a null Abstract for a Document that hasn't been summarized yet", async () => {
-      const session = await loginAsNewUser("nbk7-list-pending@example.com");
-      const notebookId = await createNotebook(session, "Not yet summarized");
-      await uploadFile(session, notebookId, "fresh.md", "# Fresh");
+      const session = await loginAsNewUser('nbk7-list-pending@example.com');
+      const notebookId = await createNotebook(session, 'Not yet summarized');
+      await uploadFile(session, notebookId, 'fresh.md', '# Fresh');
 
       const response = await app.inject({
-        method: "GET",
+        method: 'GET',
         url: `/notebooks/${notebookId}/documents`,
         cookies: { session },
       });
 
       const [document] = response.json() as Array<{ status: string; abstract: string | null }>;
-      expect(document.status).toBe("queued");
+      expect(document.status).toBe('queued');
       expect(document.abstract).toBeNull();
     });
 
-    it("serves the Executive Summary, Chat Snippet and metadata on the Document detail", async () => {
-      const session = await loginAsNewUser("nbk7-detail@example.com");
-      const notebookId = await createNotebook(session, "Detail");
-      const upload = await uploadFile(session, notebookId, "quarterly.md", "# Quarterly Report");
+    it('serves the Executive Summary, Chat Snippet and metadata on the Document detail', async () => {
+      const session = await loginAsNewUser('nbk7-detail@example.com');
+      const notebookId = await createNotebook(session, 'Detail');
+      const upload = await uploadFile(session, notebookId, 'quarterly.md', '# Quarterly Report');
       const { id: documentId, latestVersion } = upload.json() as {
         id: string;
         latestVersion: { id: string };
@@ -694,7 +728,7 @@ describe("Document routes", () => {
       await seedSummaries(latestVersion.id);
 
       const response = await app.inject({
-        method: "GET",
+        method: 'GET',
         url: `/notebooks/${notebookId}/documents/${documentId}`,
         cookies: { session },
       });
@@ -702,21 +736,23 @@ describe("Document routes", () => {
       expect(response.statusCode).toBe(200);
       const body = response.json() as Record<string, unknown>;
       expect(body.id).toBe(documentId);
-      expect(body.executiveSummary).toBe("## Key points\n\nThe Executive Summary a human sees first.");
-      expect(body.abstract).toBe("The Abstract, short enough to skim in a list.");
-      expect(body.chatSnippet).toBe("Chat Snippet for a model to read.");
-      expect(body.metadata).toMatchObject({ title: "Quarterly Report", documentType: "report" });
+      expect(body.executiveSummary).toBe(
+        '## Key points\n\nThe Executive Summary a human sees first.',
+      );
+      expect(body.abstract).toBe('The Abstract, short enough to skim in a list.');
+      expect(body.chatSnippet).toBe('Chat Snippet for a model to read.');
+      expect(body.metadata).toMatchObject({ title: 'Quarterly Report', documentType: 'report' });
       // Still not the full content: that is a deliberate second request,
       // made only when the user expands past the Executive Summary.
-      expect(body).not.toHaveProperty("markdown");
+      expect(body).not.toHaveProperty('markdown');
     });
 
     it("returns 404 for a Document detail that doesn't exist", async () => {
-      const session = await loginAsNewUser("nbk7-detail-404@example.com");
-      const notebookId = await createNotebook(session, "Missing detail");
+      const session = await loginAsNewUser('nbk7-detail-404@example.com');
+      const notebookId = await createNotebook(session, 'Missing detail');
 
       const response = await app.inject({
-        method: "GET",
+        method: 'GET',
         url: `/notebooks/${notebookId}/documents/00000000-0000-0000-0000-000000000000`,
         cookies: { session },
       });
@@ -724,10 +760,10 @@ describe("Document routes", () => {
       expect(response.statusCode).toBe(404);
     });
 
-    it("serves the Converted Markdown for a Version on its own endpoint", async () => {
-      const session = await loginAsNewUser("nbk7-content@example.com");
-      const notebookId = await createNotebook(session, "Content");
-      const upload = await uploadFile(session, notebookId, "quarterly.md", "# Quarterly Report");
+    it('serves the Converted Markdown for a Version on its own endpoint', async () => {
+      const session = await loginAsNewUser('nbk7-content@example.com');
+      const notebookId = await createNotebook(session, 'Content');
+      const upload = await uploadFile(session, notebookId, 'quarterly.md', '# Quarterly Report');
       const { id: documentId, latestVersion } = upload.json() as {
         id: string;
         latestVersion: { id: string };
@@ -735,7 +771,7 @@ describe("Document routes", () => {
       await seedSummaries(latestVersion.id);
 
       const response = await app.inject({
-        method: "GET",
+        method: 'GET',
         url: `/notebooks/${notebookId}/documents/${documentId}/versions/${latestVersion.id}/content`,
         cookies: { session },
       });
@@ -744,14 +780,14 @@ describe("Document routes", () => {
       const body = response.json() as { markdown: string | null };
       // Markdown, not pre-rendered HTML: the structure (headings, tables)
       // has to survive to the client so it can render it as such.
-      expect(body.markdown).toContain("## Revenue");
-      expect(body.markdown).toContain("| Q1 | 12.4M |");
+      expect(body.markdown).toContain('## Revenue');
+      expect(body.markdown).toContain('| Q1 | 12.4M |');
     });
 
-    it("rejects unauthenticated reads of the detail and the content with 401", async () => {
-      const session = await loginAsNewUser("nbk7-guard@example.com");
-      const notebookId = await createNotebook(session, "Guarded");
-      const upload = await uploadFile(session, notebookId, "guarded.md", "# Guarded");
+    it('rejects unauthenticated reads of the detail and the content with 401', async () => {
+      const session = await loginAsNewUser('nbk7-guard@example.com');
+      const notebookId = await createNotebook(session, 'Guarded');
+      const upload = await uploadFile(session, notebookId, 'guarded.md', '# Guarded');
       const { id: documentId, latestVersion } = upload.json() as {
         id: string;
         latestVersion: { id: string };
@@ -762,7 +798,7 @@ describe("Document routes", () => {
         `/notebooks/${notebookId}/documents/${documentId}/versions/${latestVersion.id}`,
         `/notebooks/${notebookId}/documents/${documentId}/versions/${latestVersion.id}/content`,
       ]) {
-        expect((await app.inject({ method: "GET", url })).statusCode).toBe(401);
+        expect((await app.inject({ method: 'GET', url })).statusCode).toBe(401);
       }
     });
   });
@@ -779,7 +815,7 @@ describe("Document routes", () => {
    * presents two Versions as one document — so the pinned Version needs a
    * read path of its own, carrying its own artifacts.
    */
-  describe("GET .../documents/:documentId/versions/:versionId", () => {
+  describe('GET .../documents/:documentId/versions/:versionId', () => {
     /** Writes stage 2's output onto one Version, as the job would. */
     async function seedVersion(
       versionId: string,
@@ -798,7 +834,7 @@ describe("Document routes", () => {
         [
           versionId,
           fields.markdown,
-          JSON.stringify({ title: fields.title, authors: ["A. Analyst"], documentType: "report" }),
+          JSON.stringify({ title: fields.title, authors: ['A. Analyst'], documentType: 'report' }),
           `Chat Snippet of ${fields.title}.`,
           fields.executiveSummary,
           fields.abstract,
@@ -808,37 +844,37 @@ describe("Document routes", () => {
 
     /** A Document at v2, both Versions carrying their own distinct artifacts. */
     async function twoVersionDocument(session: string, notebookId: string) {
-      const first = await uploadFile(session, notebookId, "quarterly.md", "# Q1 Report");
+      const first = await uploadFile(session, notebookId, 'quarterly.md', '# Q1 Report');
       const v1 = (first.json() as { id: string; latestVersion: { id: string } }).latestVersion.id;
       await seedVersion(v1, {
-        markdown: "# Quarterly Report\n\n## Revenue\n\nRevenue was 12.4M.\n",
-        title: "Quarterly Report, Q1",
-        executiveSummary: "## Key points\n\nRevenue was 12.4M in Q1.",
-        abstract: "The Q1 Abstract.",
+        markdown: '# Quarterly Report\n\n## Revenue\n\nRevenue was 12.4M.\n',
+        title: 'Quarterly Report, Q1',
+        executiveSummary: '## Key points\n\nRevenue was 12.4M in Q1.',
+        abstract: 'The Q1 Abstract.',
       });
 
-      const second = await uploadFile(session, notebookId, "quarterly.md", "# Q2 Report");
+      const second = await uploadFile(session, notebookId, 'quarterly.md', '# Q2 Report');
       const { id: documentId, latestVersion } = second.json() as {
         id: string;
         latestVersion: { id: string; versionNumber: number };
       };
       await seedVersion(latestVersion.id, {
-        markdown: "# Quarterly Report\n\n## Revenue\n\nRevenue was 18.9M.\n",
-        title: "Quarterly Report, Q2",
-        executiveSummary: "## Key points\n\nRevenue was 18.9M in Q2.",
-        abstract: "The Q2 Abstract.",
+        markdown: '# Quarterly Report\n\n## Revenue\n\nRevenue was 18.9M.\n',
+        title: 'Quarterly Report, Q2',
+        executiveSummary: '## Key points\n\nRevenue was 18.9M in Q2.',
+        abstract: 'The Q2 Abstract.',
       });
 
       return { documentId, v1, v2: latestVersion.id };
     }
 
     it("serves a superseded Version's own Executive Summary, metadata and version number", async () => {
-      const session = await loginAsNewUser("version-detail@example.com");
-      const notebookId = await createNotebook(session, "Version-scoped");
+      const session = await loginAsNewUser('version-detail@example.com');
+      const notebookId = await createNotebook(session, 'Version-scoped');
       const { documentId, v1 } = await twoVersionDocument(session, notebookId);
 
       const response = await app.inject({
-        method: "GET",
+        method: 'GET',
         url: `/notebooks/${notebookId}/documents/${documentId}/versions/${v1}`,
         cookies: { session },
       });
@@ -849,27 +885,27 @@ describe("Document routes", () => {
       // and nothing about it describes v2.
       expect(body.version.id).toBe(v1);
       expect(body.version.versionNumber).toBe(1);
-      expect(body.executiveSummary).toBe("## Key points\n\nRevenue was 12.4M in Q1.");
-      expect(body.abstract).toBe("The Q1 Abstract.");
-      expect(body.chatSnippet).toBe("Chat Snippet of Quarterly Report, Q1.");
-      expect(body.metadata).toMatchObject({ title: "Quarterly Report, Q1" });
-      expect(body.filename).toBe("quarterly.md");
+      expect(body.executiveSummary).toBe('## Key points\n\nRevenue was 12.4M in Q1.');
+      expect(body.abstract).toBe('The Q1 Abstract.');
+      expect(body.chatSnippet).toBe('Chat Snippet of Quarterly Report, Q1.');
+      expect(body.metadata).toMatchObject({ title: 'Quarterly Report, Q1' });
+      expect(body.filename).toBe('quarterly.md');
       // And it says where this Version stands, so a reader is told the
       // difference from the Document's current state is deliberate.
       expect(body.isLatestVersion).toBe(false);
       expect(body.latestVersionNumber).toBe(2);
       // Still never the Converted Markdown: that is the up-to-200-page
       // payload, fetched by the content endpoint on expand.
-      expect(body).not.toHaveProperty("markdown");
+      expect(body).not.toHaveProperty('markdown');
     });
 
-    it("serves the latest Version through the same route, saying that it is latest", async () => {
-      const session = await loginAsNewUser("version-detail-latest@example.com");
-      const notebookId = await createNotebook(session, "Version-scoped latest");
+    it('serves the latest Version through the same route, saying that it is latest', async () => {
+      const session = await loginAsNewUser('version-detail-latest@example.com');
+      const notebookId = await createNotebook(session, 'Version-scoped latest');
       const { documentId, v2 } = await twoVersionDocument(session, notebookId);
 
       const response = await app.inject({
-        method: "GET",
+        method: 'GET',
         url: `/notebooks/${notebookId}/documents/${documentId}/versions/${v2}`,
         cookies: { session },
       });
@@ -877,18 +913,18 @@ describe("Document routes", () => {
       expect(response.statusCode).toBe(200);
       const body = response.json() as Record<string, any>;
       expect(body.version.versionNumber).toBe(2);
-      expect(body.executiveSummary).toBe("## Key points\n\nRevenue was 18.9M in Q2.");
+      expect(body.executiveSummary).toBe('## Key points\n\nRevenue was 18.9M in Q2.');
       expect(body.isLatestVersion).toBe(true);
       expect(body.latestVersionNumber).toBe(2);
     });
 
-    it("still opens a Version whose Document has since been soft-deleted", async () => {
-      const session = await loginAsNewUser("version-detail-deleted@example.com");
-      const notebookId = await createNotebook(session, "Version-scoped after delete");
+    it('still opens a Version whose Document has since been soft-deleted', async () => {
+      const session = await loginAsNewUser('version-detail-deleted@example.com');
+      const notebookId = await createNotebook(session, 'Version-scoped after delete');
       const { documentId, v1 } = await twoVersionDocument(session, notebookId);
 
       await app.inject({
-        method: "DELETE",
+        method: 'DELETE',
         url: `/notebooks/${notebookId}/documents/${documentId}`,
         cookies: { session },
       });
@@ -896,7 +932,7 @@ describe("Document routes", () => {
       // The same rule `findDocumentContent` and `findDownloadableVersion`
       // follow: a soft-deleted Document's past answers stay checkable.
       const response = await app.inject({
-        method: "GET",
+        method: 'GET',
         url: `/notebooks/${notebookId}/documents/${documentId}/versions/${v1}`,
         cookies: { session },
       });
@@ -906,12 +942,12 @@ describe("Document routes", () => {
     });
 
     it("returns 404 for a Version that doesn't exist", async () => {
-      const session = await loginAsNewUser("version-detail-404@example.com");
-      const notebookId = await createNotebook(session, "Version-scoped 404");
+      const session = await loginAsNewUser('version-detail-404@example.com');
+      const notebookId = await createNotebook(session, 'Version-scoped 404');
       const { documentId } = await twoVersionDocument(session, notebookId);
 
       const response = await app.inject({
-        method: "GET",
+        method: 'GET',
         url: `/notebooks/${notebookId}/documents/${documentId}/versions/00000000-0000-0000-0000-000000000000`,
         cookies: { session },
       });
@@ -929,22 +965,23 @@ describe("Document routes", () => {
    * enforced this through `notebookExists`; reading one Document by id did
    * not, so every by-id read is checked here rather than one route at a time.
    */
-  describe("a soft-deleted Notebook hides the Documents it contains", () => {
+  describe('a soft-deleted Notebook hides the Documents it contains', () => {
     async function deletedNotebookWithDocument(email: string) {
       const session = await loginAsNewUser(email);
-      const notebookId = await createNotebook(session, "Doomed Notebook");
-      const upload = await uploadFile(session, notebookId, "inside.md", "# Inside");
+      const notebookId = await createNotebook(session, 'Doomed Notebook');
+      const upload = await uploadFile(session, notebookId, 'inside.md', '# Inside');
       const { id: documentId, latestVersion } = upload.json() as {
         id: string;
         latestVersion: { id: string };
       };
-      await app.inject({ method: "DELETE", url: `/notebooks/${notebookId}`, cookies: { session } });
+      await app.inject({ method: 'DELETE', url: `/notebooks/${notebookId}`, cookies: { session } });
       return { session, notebookId, documentId, versionId: latestVersion.id };
     }
 
-    it("answers 404 for the Document detail, the Version detail, the content and the download", async () => {
-      const { session, notebookId, documentId, versionId } =
-        await deletedNotebookWithDocument("deleted-notebook-reads@example.com");
+    it('answers 404 for the Document detail, the Version detail, the content and the download', async () => {
+      const { session, notebookId, documentId, versionId } = await deletedNotebookWithDocument(
+        'deleted-notebook-reads@example.com',
+      );
 
       for (const url of [
         `/notebooks/${notebookId}/documents/${documentId}`,
@@ -952,17 +989,18 @@ describe("Document routes", () => {
         `/notebooks/${notebookId}/documents/${documentId}/versions/${versionId}/content`,
         `/notebooks/${notebookId}/documents/${documentId}/versions/${versionId}/download`,
       ]) {
-        const response = await app.inject({ method: "GET", url, cookies: { session } });
+        const response = await app.inject({ method: 'GET', url, cookies: { session } });
         expect(response.statusCode, url).toBe(404);
       }
     });
 
-    it("serves them again once the Notebook is restored", async () => {
-      const { session, notebookId, documentId, versionId } =
-        await deletedNotebookWithDocument("restored-notebook-reads@example.com");
+    it('serves them again once the Notebook is restored', async () => {
+      const { session, notebookId, documentId, versionId } = await deletedNotebookWithDocument(
+        'restored-notebook-reads@example.com',
+      );
 
       await app.inject({
-        method: "POST",
+        method: 'POST',
         url: `/notebooks/${notebookId}/restore`,
         cookies: { session },
       });
@@ -974,7 +1012,7 @@ describe("Document routes", () => {
         `/notebooks/${notebookId}/documents/${documentId}/versions/${versionId}`,
         `/notebooks/${notebookId}/documents/${documentId}/versions/${versionId}/content`,
       ]) {
-        const response = await app.inject({ method: "GET", url, cookies: { session } });
+        const response = await app.inject({ method: 'GET', url, cookies: { session } });
         expect(response.statusCode, url).toBe(200);
       }
     });
@@ -985,44 +1023,49 @@ describe("Document routes", () => {
   // ownership check on any Document route. This proves that's not an
   // oversight — a second, unrelated user can act on a Document they didn't
   // upload.
-  describe("ADR-0001: shared access (no ownership check)", () => {
+  describe('ADR-0001: shared access (no ownership check)', () => {
     it("lets a different authenticated user list, download, delete, and restore a Document they didn't upload", async () => {
-      const uploaderSession = await loginAsNewUser("adr0001-uploader@example.com");
-      const otherSession = await loginAsNewUser("adr0001-other@example.com");
-      const notebookId = await createNotebook(uploaderSession, "Shared Notebook");
+      const uploaderSession = await loginAsNewUser('adr0001-uploader@example.com');
+      const otherSession = await loginAsNewUser('adr0001-other@example.com');
+      const notebookId = await createNotebook(uploaderSession, 'Shared Notebook');
 
-      const uploadResponse = await uploadFile(uploaderSession, notebookId, "shared.txt", "shared content");
+      const uploadResponse = await uploadFile(
+        uploaderSession,
+        notebookId,
+        'shared.txt',
+        'shared content',
+      );
       const { id: documentId, latestVersion } = uploadResponse.json() as {
         id: string;
         latestVersion: { id: string };
       };
 
       const listByOther = await app.inject({
-        method: "GET",
+        method: 'GET',
         url: `/notebooks/${notebookId}/documents`,
         cookies: { session: otherSession },
       });
       expect((listByOther.json() as Array<{ filename: string }>).map((d) => d.filename)).toContain(
-        "shared.txt",
+        'shared.txt',
       );
 
       const downloadByOther = await app.inject({
-        method: "GET",
+        method: 'GET',
         url: `/notebooks/${notebookId}/documents/${documentId}/versions/${latestVersion.id}/download`,
         cookies: { session: otherSession },
       });
       expect(downloadByOther.statusCode).toBe(200);
-      expect(downloadByOther.body).toBe("shared content");
+      expect(downloadByOther.body).toBe('shared content');
 
       const deleteByOther = await app.inject({
-        method: "DELETE",
+        method: 'DELETE',
         url: `/notebooks/${notebookId}/documents/${documentId}`,
         cookies: { session: otherSession },
       });
       expect(deleteByOther.statusCode).toBe(204);
 
       const restoreByOther = await app.inject({
-        method: "POST",
+        method: 'POST',
         url: `/notebooks/${notebookId}/documents/${documentId}/restore`,
         cookies: { session: otherSession },
       });

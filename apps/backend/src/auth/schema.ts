@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from 'zod';
 
 // A User as returned over the API. Never carries the password hash.
 export const userSchema = z.object({

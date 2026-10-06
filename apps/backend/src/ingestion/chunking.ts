@@ -1,4 +1,4 @@
-import { splitMarkdownSections } from "./markdown-sections.js";
+import { splitMarkdownSections } from './markdown-sections.js';
 
 /**
  * One embeddable piece of a Document Version's Converted Markdown.
@@ -38,7 +38,7 @@ export interface ChunkingOptions {
  * the floor: a single unbroken run longer than `chunkSize` (a base64 blob, a
  * CJK paragraph with no spaces) still has to be cut somewhere.
  */
-const SEPARATORS = ["\n\n", "\n", ". ", " ", ""] as const;
+const SEPARATORS = ['\n\n', '\n', '. ', ' ', ''] as const;
 
 /**
  * Splits `text` on `separator`, leaving the separator attached to the end of
@@ -51,7 +51,7 @@ const SEPARATORS = ["\n\n", "\n", ". ", " ", ""] as const;
  * the document a reader is shown.
  */
 function splitKeepingSeparator(text: string, separator: string): string[] {
-  if (separator === "") return [text];
+  if (separator === '') return [text];
   const parts: string[] = [];
   let from = 0;
   for (;;) {
@@ -76,7 +76,7 @@ function splitKeepingSeparator(text: string, separator: string): string[] {
 function splitIntoPieces(text: string, chunkSize: number, separators: readonly string[]): string[] {
   const [separator, ...rest] = separators;
 
-  if (separator === undefined || separator === "") {
+  if (separator === undefined || separator === '') {
     // The floor: no separator left, so cut on character count alone.
     const pieces: string[] = [];
     for (let start = 0; start < text.length; start += chunkSize) {
@@ -87,7 +87,7 @@ function splitIntoPieces(text: string, chunkSize: number, separators: readonly s
 
   const pieces: string[] = [];
   for (const part of splitKeepingSeparator(text, separator)) {
-    if (part === "") continue;
+    if (part === '') continue;
     if (part.length <= chunkSize) pieces.push(part);
     else pieces.push(...splitIntoPieces(part, chunkSize, rest));
   }
@@ -111,7 +111,7 @@ function mergePieces(pieces: string[], chunkSize: number, chunkOverlap: number):
 
   const flush = (): void => {
     if (length === 0) return;
-    chunks.push(buffer.join(""));
+    chunks.push(buffer.join(''));
 
     if (chunkOverlap <= 0) {
       buffer = [];
@@ -158,15 +158,15 @@ function mergePieces(pieces: string[], chunkSize: number, chunkOverlap: number):
       // tail as there is room for (a tail, so the chunk stays a contiguous
       // slice), down to none at all.
       const room = chunkSize - piece.length;
-      const kept = room > 0 ? buffer[0].slice(-room) : "";
-      buffer = kept === "" ? [] : [kept];
+      const kept = room > 0 ? buffer[0].slice(-room) : '';
+      buffer = kept === '' ? [] : [kept];
       length = kept.length;
     }
 
     buffer.push(piece);
     length += piece.length;
   }
-  if (length > 0) chunks.push(buffer.join(""));
+  if (length > 0) chunks.push(buffer.join(''));
 
   return chunks;
 }
@@ -199,11 +199,15 @@ export function chunkMarkdown(markdown: string, options: ChunkingOptions = {}): 
   const chunks: DocumentChunk[] = [];
   for (const section of splitMarkdownSections(markdown)) {
     const content = section.content.trim();
-    if (content === "") continue;
+    if (content === '') continue;
 
-    for (const text of mergePieces(splitIntoPieces(content, chunkSize, SEPARATORS), chunkSize, chunkOverlap)) {
+    for (const text of mergePieces(
+      splitIntoPieces(content, chunkSize, SEPARATORS),
+      chunkSize,
+      chunkOverlap,
+    )) {
       const trimmed = text.trim();
-      if (trimmed === "") continue;
+      if (trimmed === '') continue;
       chunks.push({ index: chunks.length, headingPath: section.headingPath, text: trimmed });
     }
   }

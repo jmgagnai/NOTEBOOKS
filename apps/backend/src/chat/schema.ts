@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from 'zod';
 
 // Who did something, as surfaced over the API. A Chat Thread's author and
 // every message's asker are rendered next to prose in a shared Chat Thread,
@@ -42,7 +42,7 @@ export type RenameChatThreadRequest = z.infer<typeof renameChatThreadRequestSche
 
 // Who is speaking. 'user' is a question somebody asked; 'assistant' is the
 // grounded answer it produced.
-export const chatMessageRoleSchema = z.enum(["user", "assistant"]);
+export const chatMessageRoleSchema = z.enum(['user', 'assistant']);
 export type ChatMessageRole = z.infer<typeof chatMessageRoleSchema>;
 
 // A Citation, as returned over the API. See GLOSSARY.md: "a pointer into one

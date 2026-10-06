@@ -1,25 +1,25 @@
-import PgBoss from "pg-boss";
+import PgBoss from 'pg-boss';
 import {
   CONVERT_TO_MARKDOWN_QUEUE,
   convertToMarkdownPayloadSchema,
   runConvertToMarkdownJob,
   type ConvertToMarkdownDeps,
   type ConvertToMarkdownPayload,
-} from "../ingestion/convert-to-markdown.js";
+} from '../ingestion/convert-to-markdown.js';
 import {
   SUMMARIZE_DOCUMENT_QUEUE,
   summarizeDocumentPayloadSchema,
   runSummarizeDocumentJob,
   type SummarizeDocumentDeps,
   type SummarizeDocumentPayload,
-} from "../ingestion/summarize-document.js";
+} from '../ingestion/summarize-document.js';
 import {
   EMBED_CHUNKS_QUEUE,
   embedChunksPayloadSchema,
   runEmbedChunksJob,
   type EmbedChunksDeps,
   type EmbedChunksPayload,
-} from "../ingestion/embed-chunks.js";
+} from '../ingestion/embed-chunks.js';
 
 /**
  * Background jobs run on pg_boss against the same Postgres instance as
@@ -64,13 +64,16 @@ export interface JobQueue {
  * pg_boss instance it just created — a caller cannot know them, and
  * shouldn't have to.
  */
-export interface PipelineWorkerDeps extends Omit<ConvertToMarkdownDeps, "enqueueSummarizeDocument"> {
+export interface PipelineWorkerDeps extends Omit<
+  ConvertToMarkdownDeps,
+  'enqueueSummarizeDocument'
+> {
   /** The OpenRouter boundary for stage 2. Omitted, stage 2 isn't worked. */
-  complete?: SummarizeDocumentDeps["complete"];
+  complete?: SummarizeDocumentDeps['complete'];
   /** Fixed model per task type for stage 2. Defaults to the server config. */
-  models?: SummarizeDocumentDeps["models"];
+  models?: SummarizeDocumentDeps['models'];
   /** The OpenRouter embeddings boundary for stage 3. Omitted, stage 3 isn't worked. */
-  embed?: EmbedChunksDeps["embed"];
+  embed?: EmbedChunksDeps['embed'];
 }
 
 export interface StartJobQueueOptions {
@@ -119,13 +122,13 @@ export async function startJobQueue(options: StartJobQueueOptions): Promise<JobQ
     connectionString: options.connectionString,
     ...(options.schema === undefined ? {} : { schema: options.schema }),
   });
-  boss.on("error", (error) => {
+  boss.on('error', (error) => {
     if (options.onError) {
       options.onError(error);
       return;
     }
     // eslint-disable-next-line no-console
-    console.error("pg-boss error", error);
+    console.error('pg-boss error', error);
   });
 
   await boss.start();
@@ -160,39 +163,47 @@ export async function startJobQueue(options: StartJobQueueOptions): Promise<JobQ
   if (options.worker) {
     const { complete, models, embed, ...convertDeps } = options.worker;
 
-    await boss.work<ConvertToMarkdownPayload>(CONVERT_TO_MARKDOWN_QUEUE, workOptions, async (jobs) => {
-      for (const job of jobs) {
-        // `retryCount` is 0 on the first attempt, so a retry is still
-        // pending whenever it hasn't caught up with the limit. The handler
-        // uses this to decide whether a failure is terminal.
-        const willRetry = job.retryCount < job.retryLimit;
-        await runConvertToMarkdownJob(
-          // Stage 1 hands over to stage 2 through this closure — the queue
-          // can't be passed into its own worker deps, so it is injected here
-          // where `boss` is in scope.
-          { ...convertDeps, enqueueSummarizeDocument },
-          { payload: convertToMarkdownPayloadSchema.parse(job.data), willRetry },
-        );
-      }
-    });
-
-    if (complete) {
-      await boss.work<SummarizeDocumentPayload>(SUMMARIZE_DOCUMENT_QUEUE, workOptions, async (jobs) => {
+    await boss.work<ConvertToMarkdownPayload>(
+      CONVERT_TO_MARKDOWN_QUEUE,
+      workOptions,
+      async (jobs) => {
         for (const job of jobs) {
+          // `retryCount` is 0 on the first attempt, so a retry is still
+          // pending whenever it hasn't caught up with the limit. The handler
+          // uses this to decide whether a failure is terminal.
           const willRetry = job.retryCount < job.retryLimit;
-          await runSummarizeDocumentJob(
-            {
-              pool: convertDeps.pool,
-              complete,
-              ...(models === undefined ? {} : { models }),
-              // Stage 2 hands over to stage 3 through this closure, for the
-              // same reason stage 1 hands over to stage 2 here.
-              enqueueEmbedChunks,
-            },
-            { payload: summarizeDocumentPayloadSchema.parse(job.data), willRetry },
+          await runConvertToMarkdownJob(
+            // Stage 1 hands over to stage 2 through this closure — the queue
+            // can't be passed into its own worker deps, so it is injected here
+            // where `boss` is in scope.
+            { ...convertDeps, enqueueSummarizeDocument },
+            { payload: convertToMarkdownPayloadSchema.parse(job.data), willRetry },
           );
         }
-      });
+      },
+    );
+
+    if (complete) {
+      await boss.work<SummarizeDocumentPayload>(
+        SUMMARIZE_DOCUMENT_QUEUE,
+        workOptions,
+        async (jobs) => {
+          for (const job of jobs) {
+            const willRetry = job.retryCount < job.retryLimit;
+            await runSummarizeDocumentJob(
+              {
+                pool: convertDeps.pool,
+                complete,
+                ...(models === undefined ? {} : { models }),
+                // Stage 2 hands over to stage 3 through this closure, for the
+                // same reason stage 1 hands over to stage 2 here.
+                enqueueEmbedChunks,
+              },
+              { payload: summarizeDocumentPayloadSchema.parse(job.data), willRetry },
+            );
+          }
+        },
+      );
     }
 
     if (embed) {

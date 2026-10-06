@@ -1,11 +1,11 @@
-import type { OutgoingHttpHeaders } from "node:http";
-import type { FastifyInstance, FastifyReply } from "fastify";
-import type { ZodTypeProvider } from "fastify-type-provider-zod";
-import type { Pool } from "pg";
-import { z } from "zod";
-import { createAuthGuard } from "../auth/guard.js";
-import { errorResponseSchema } from "../auth/schema.js";
-import type { AppEvent, AppEventSubscriber } from "./bus.js";
+import type { OutgoingHttpHeaders } from 'node:http';
+import type { FastifyInstance, FastifyReply } from 'fastify';
+import type { ZodTypeProvider } from 'fastify-type-provider-zod';
+import type { Pool } from 'pg';
+import { z } from 'zod';
+import { createAuthGuard } from '../auth/guard.js';
+import { errorResponseSchema } from '../auth/schema.js';
+import type { AppEvent, AppEventSubscriber } from './bus.js';
 
 /**
  * `topic` may be repeated (`?topic=a&topic=b`) to follow several topics on
@@ -72,18 +72,21 @@ export interface RegisterEventRoutesOptions {
  * server→client only, and SSE is plain HTTP: the session cookie, CORS, and
  * the auth guard all work unchanged, and browsers reconnect on their own.
  */
-export function registerEventRoutes(app: FastifyInstance, { pool, appEvents }: RegisterEventRoutesOptions): void {
+export function registerEventRoutes(
+  app: FastifyInstance,
+  { pool, appEvents }: RegisterEventRoutesOptions,
+): void {
   const authGuard = createAuthGuard(pool);
 
   app.withTypeProvider<ZodTypeProvider>().get(
-    "/events",
+    '/events',
     {
       preHandler: authGuard,
       schema: {
-        operationId: "streamEvents",
-        tags: ["events"],
+        operationId: 'streamEvents',
+        tags: ['events'],
         summary:
-          "Subscribe to live app events over server-sent events. Generic: every event type (ingestion progress, and later chat streaming) arrives on this one stream.",
+          'Subscribe to live app events over server-sent events. Generic: every event type (ingestion progress, and later chat streaming) arrives on this one stream.',
         querystring: eventStreamQuerySchema,
         response: {
           // The 200 is an endless `text/event-stream`, not JSON. Declared as
@@ -97,7 +100,10 @@ export function registerEventRoutes(app: FastifyInstance, { pool, appEvents }: R
     },
     async (request, reply) => {
       const requested = request.query.topic;
-      const topics = requested === undefined ? null : new Set(Array.isArray(requested) ? requested : [requested]);
+      const topics =
+        requested === undefined
+          ? null
+          : new Set(Array.isArray(requested) ? requested : [requested]);
 
       // Take the socket over from Fastify: this response has no end, so the
       // normal serialize-and-send lifecycle doesn't apply.
@@ -105,16 +111,16 @@ export function registerEventRoutes(app: FastifyInstance, { pool, appEvents }: R
       const { raw } = reply;
       raw.writeHead(200, {
         ...inheritedHeaders(reply),
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache, no-transform",
-        Connection: "keep-alive",
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache, no-transform',
+        Connection: 'keep-alive',
         // Tells any intermediary proxy not to buffer the stream, which would
         // defeat the point of it.
-        "X-Accel-Buffering": "no",
+        'X-Accel-Buffering': 'no',
       });
       // An initial comment flushes response headers immediately, so a client
       // knows it is connected before the first real event.
-      raw.write(": connected\n\n");
+      raw.write(': connected\n\n');
 
       const unsubscribe = appEvents.subscribe((event) => {
         if (topics && !topics.has(event.topic)) return;
@@ -123,14 +129,14 @@ export function registerEventRoutes(app: FastifyInstance, { pool, appEvents }: R
 
       // Keeps idle connections alive through proxies and lets this process
       // notice a client that vanished without closing cleanly.
-      const keepalive = setInterval(() => raw.write(": keepalive\n\n"), KEEPALIVE_INTERVAL_MS);
+      const keepalive = setInterval(() => raw.write(': keepalive\n\n'), KEEPALIVE_INTERVAL_MS);
 
       const cleanup = (): void => {
         clearInterval(keepalive);
         unsubscribe();
       };
-      request.raw.on("close", cleanup);
-      raw.on("error", cleanup);
+      request.raw.on('close', cleanup);
+      raw.on('error', cleanup);
     },
   );
 }

@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from 'zod';
 
 // A Notebook as returned over the API. See GLOSSARY.md: "a shared collection
 // of Documents together with the Chat Threads asked against them."

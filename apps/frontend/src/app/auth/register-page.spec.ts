@@ -13,13 +13,11 @@ class DummyLoginPage {}
 // ng-openapi-gen AuthService.
 describe('RegisterPage', () => {
   it('registers and navigates to the login route on success', async () => {
-    const register = vi
-      .fn()
-      .mockResolvedValue({
-        id: '1',
-        email: 'ada@example.com',
-        createdAt: '2026-01-01T00:00:00.000Z',
-      });
+    const register = vi.fn().mockResolvedValue({
+      id: '1',
+      email: 'ada@example.com',
+      createdAt: '2026-01-01T00:00:00.000Z',
+    });
 
     await render(RegisterPage, {
       providers: [{ provide: AuthService, useValue: { register } }],

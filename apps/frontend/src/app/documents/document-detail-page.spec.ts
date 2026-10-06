@@ -71,7 +71,9 @@ const FULL_MARKDOWN = [
 describe('DocumentDetailPage', () => {
   it('shows the Executive Summary first and does not fetch the full content', async () => {
     const getDocument = vi.fn().mockResolvedValue(SUMMARIZED_DETAIL);
-    const getDocumentVersionContent = vi.fn().mockResolvedValue({ versionId: VERSION_ID, markdown: FULL_MARKDOWN });
+    const getDocumentVersionContent = vi
+      .fn()
+      .mockResolvedValue({ versionId: VERSION_ID, markdown: FULL_MARKDOWN });
 
     await render(DocumentDetailPage, {
       providers: [
@@ -98,7 +100,9 @@ describe('DocumentDetailPage', () => {
 
   it('expands to the full Converted Markdown, rendered with its headings and tables', async () => {
     const getDocument = vi.fn().mockResolvedValue(SUMMARIZED_DETAIL);
-    const getDocumentVersionContent = vi.fn().mockResolvedValue({ versionId: VERSION_ID, markdown: FULL_MARKDOWN });
+    const getDocumentVersionContent = vi
+      .fn()
+      .mockResolvedValue({ versionId: VERSION_ID, markdown: FULL_MARKDOWN });
 
     const { container } = await render(DocumentDetailPage, {
       providers: [
@@ -129,7 +133,9 @@ describe('DocumentDetailPage', () => {
 
   it('collapses back to the Executive Summary without re-fetching the content', async () => {
     const getDocument = vi.fn().mockResolvedValue(SUMMARIZED_DETAIL);
-    const getDocumentVersionContent = vi.fn().mockResolvedValue({ versionId: VERSION_ID, markdown: FULL_MARKDOWN });
+    const getDocumentVersionContent = vi
+      .fn()
+      .mockResolvedValue({ versionId: VERSION_ID, markdown: FULL_MARKDOWN });
 
     await render(DocumentDetailPage, {
       providers: [
@@ -238,7 +244,11 @@ describe('DocumentDetailPage', () => {
       chatSnippet: 'The Chat Snippet as v1 had it.',
       executiveSummary:
         '## Key points\n\n- Revenue grew 11% year on year.\n- The supply-chain review was still open.\n',
-      metadata: { title: 'Quarterly Report 2024', authors: ['B. Bookkeeper'], documentType: 'report' },
+      metadata: {
+        title: 'Quarterly Report 2024',
+        authors: ['B. Bookkeeper'],
+        documentType: 'report',
+      },
       isLatestVersion: false,
       latestVersionNumber: 2,
     };

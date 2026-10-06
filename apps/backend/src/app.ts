@@ -1,21 +1,25 @@
-import cookie from "@fastify/cookie";
-import cors from "@fastify/cors";
-import multipart from "@fastify/multipart";
-import swagger from "@fastify/swagger";
-import type { S3Client } from "@aws-sdk/client-s3";
-import Fastify, { type FastifyInstance } from "fastify";
-import { jsonSchemaTransform, serializerCompiler, validatorCompiler } from "fastify-type-provider-zod";
-import type { Pool } from "pg";
-import { registerAuthRoutes } from "./auth/routes.js";
-import type { ChatDeps } from "./chat/answer-question.js";
-import { registerChatRoutes } from "./chat/routes.js";
-import { registerDocumentRoutes } from "./documents/routes.js";
-import type { AppEventSubscriber } from "./events/bus.js";
-import { registerEventRoutes } from "./events/routes.js";
-import type { JobQueue } from "./jobs/queue.js";
-import type { Embedder } from "./llm/embeddings.js";
-import { registerNotebookRoutes } from "./notebooks/routes.js";
-import { registerSearchRoutes } from "./search/routes.js";
+import cookie from '@fastify/cookie';
+import cors from '@fastify/cors';
+import multipart from '@fastify/multipart';
+import swagger from '@fastify/swagger';
+import type { S3Client } from '@aws-sdk/client-s3';
+import Fastify, { type FastifyInstance } from 'fastify';
+import {
+  jsonSchemaTransform,
+  serializerCompiler,
+  validatorCompiler,
+} from 'fastify-type-provider-zod';
+import type { Pool } from 'pg';
+import { registerAuthRoutes } from './auth/routes.js';
+import type { ChatDeps } from './chat/answer-question.js';
+import { registerChatRoutes } from './chat/routes.js';
+import { registerDocumentRoutes } from './documents/routes.js';
+import type { AppEventSubscriber } from './events/bus.js';
+import { registerEventRoutes } from './events/routes.js';
+import type { JobQueue } from './jobs/queue.js';
+import type { Embedder } from './llm/embeddings.js';
+import { registerNotebookRoutes } from './notebooks/routes.js';
+import { registerSearchRoutes } from './search/routes.js';
 
 export interface BuildAppOptions {
   pool: Pool;
@@ -73,10 +77,10 @@ export async function buildApp({
   await app.register(multipart);
   await app.register(swagger, {
     openapi: {
-      openapi: "3.0.3",
+      openapi: '3.0.3',
       info: {
-        title: "RAG Notebook API",
-        version: "0.0.1",
+        title: 'RAG Notebook API',
+        version: '0.0.1',
       },
     },
     transform: jsonSchemaTransform,

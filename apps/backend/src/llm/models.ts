@@ -52,22 +52,22 @@ export interface TaskModels {
  *   a request a user is sitting and waiting on.
  */
 export const DEFAULT_TASK_MODELS: TaskModels = {
-  metadata: "qwen/qwen3-30b-a3b-instruct-2507",
-  sectionSummary: "mistralai/mistral-small-3.2-24b-instruct",
-  chatSnippet: "qwen/qwen3-30b-a3b-instruct-2507",
-  executiveSummary: "qwen/qwen3-235b-a22b-2507",
-  abstract: "qwen/qwen3-30b-a3b-instruct-2507",
-  chatAnswer: "qwen/qwen3-235b-a22b-2507",
+  metadata: 'qwen/qwen3-30b-a3b-instruct-2507',
+  sectionSummary: 'mistralai/mistral-small-3.2-24b-instruct',
+  chatSnippet: 'qwen/qwen3-30b-a3b-instruct-2507',
+  executiveSummary: 'qwen/qwen3-235b-a22b-2507',
+  abstract: 'qwen/qwen3-30b-a3b-instruct-2507',
+  chatAnswer: 'qwen/qwen3-235b-a22b-2507',
 };
 
 /** The environment variable that overrides each task's model. */
 export const TASK_MODEL_ENV_VARS: Record<keyof TaskModels, string> = {
-  metadata: "OPENROUTER_MODEL_METADATA",
-  sectionSummary: "OPENROUTER_MODEL_SECTION_SUMMARY",
-  chatSnippet: "OPENROUTER_MODEL_CHAT_SNIPPET",
-  executiveSummary: "OPENROUTER_MODEL_EXECUTIVE_SUMMARY",
-  abstract: "OPENROUTER_MODEL_ABSTRACT",
-  chatAnswer: "OPENROUTER_MODEL_CHAT_ANSWER",
+  metadata: 'OPENROUTER_MODEL_METADATA',
+  sectionSummary: 'OPENROUTER_MODEL_SECTION_SUMMARY',
+  chatSnippet: 'OPENROUTER_MODEL_CHAT_SNIPPET',
+  executiveSummary: 'OPENROUTER_MODEL_EXECUTIVE_SUMMARY',
+  abstract: 'OPENROUTER_MODEL_ABSTRACT',
+  chatAnswer: 'OPENROUTER_MODEL_CHAT_ANSWER',
 };
 
 /**
@@ -76,7 +76,9 @@ export const TASK_MODEL_ENV_VARS: Record<keyof TaskModels, string> = {
  * is a pure function and a caller can resolve against something other than
  * `process.env`.
  */
-export function resolveTaskModels(env: Record<string, string | undefined> = process.env): TaskModels {
+export function resolveTaskModels(
+  env: Record<string, string | undefined> = process.env,
+): TaskModels {
   const resolved = { ...DEFAULT_TASK_MODELS };
   for (const task of Object.keys(TASK_MODEL_ENV_VARS) as (keyof TaskModels)[]) {
     const override = env[TASK_MODEL_ENV_VARS[task]]?.trim();
@@ -97,10 +99,10 @@ export function resolveTaskModels(env: Record<string, string | undefined> = proc
  * re-embedding every chunk. ADR-0002 calls that "a real migration, not a
  * config change", and these two constants sitting together is the reminder.
  */
-export const DEFAULT_EMBEDDING_MODEL = "qwen/qwen3-embedding-4b";
+export const DEFAULT_EMBEDDING_MODEL = 'qwen/qwen3-embedding-4b';
 
 /** Overrides {@link DEFAULT_EMBEDDING_MODEL}. See the dimension warning above. */
-export const EMBEDDING_MODEL_ENV_VAR = "OPENROUTER_MODEL_EMBEDDING";
+export const EMBEDDING_MODEL_ENV_VAR = 'OPENROUTER_MODEL_EMBEDDING';
 
 /**
  * How many components a Qwen3-Embedding-4B vector has on OpenRouter.
@@ -127,6 +129,8 @@ export const EMBEDDING_DIMENSIONS = 2560;
  * vectors will be rejected chunk-by-chunk by stage 3 rather than corrupting
  * the column; swapping the model for real needs a migration.
  */
-export function resolveEmbeddingModel(env: Record<string, string | undefined> = process.env): string {
+export function resolveEmbeddingModel(
+  env: Record<string, string | undefined> = process.env,
+): string {
   return env[EMBEDDING_MODEL_ENV_VAR]?.trim() || DEFAULT_EMBEDDING_MODEL;
 }

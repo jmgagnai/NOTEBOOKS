@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from 'zod';
 
 // A Document Version as returned over the API. See GLOSSARY.md: "a specific
 // revision of a Document."
@@ -25,14 +25,14 @@ export type DocumentVersion = z.infer<typeof documentVersionSchema>;
 // why. Later stages add their own values to this progression rather than a
 // parallel field.
 export const documentStatusSchema = z.enum([
-  "queued",
-  "converting",
-  "converted",
-  "summarizing",
-  "summarized",
-  "indexing",
-  "ready",
-  "failed",
+  'queued',
+  'converting',
+  'converted',
+  'summarizing',
+  'summarized',
+  'indexing',
+  'ready',
+  'failed',
 ]);
 export type DocumentStatus = z.infer<typeof documentStatusSchema>;
 

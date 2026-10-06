@@ -1,6 +1,6 @@
-import type { Pool } from "pg";
-import { inTransaction } from "../db/transaction.js";
-import { notebookIsActive } from "../notebooks/active-notebooks.js";
+import type { Pool } from 'pg';
+import { inTransaction } from '../db/transaction.js';
+import { notebookIsActive } from '../notebooks/active-notebooks.js';
 import type {
   Document,
   DocumentContent,
@@ -8,7 +8,7 @@ import type {
   DocumentStatus,
   DocumentVersion,
   DocumentVersionDetail,
-} from "./schema.js";
+} from './schema.js';
 
 /**
  * Exactly the columns a `Document` (as the API returns it) is built from — a
@@ -146,7 +146,7 @@ export async function findDocumentDetail(
   const { rows } = await pool.query<DocumentWithLatestVersionRow>(
     `${SELECT_DOCUMENTS_WITH_LATEST_VERSION}
      WHERE d.id = $1 AND d.notebook_id = $2 AND d.deleted_at IS NULL
-       AND ${notebookIsActive("d.notebook_id")}`,
+       AND ${notebookIsActive('d.notebook_id')}`,
     [documentId, notebookId],
   );
   return rows[0] ? toDocumentDetail(rows[0]) : null;
@@ -229,7 +229,7 @@ export async function findDocumentVersionDetail(
      JOIN documents d ON d.id = v.document_id
      WHERE v.id = $1 AND v.document_id = $2 AND d.notebook_id = $3
        AND v.deleted_at IS NULL
-       AND ${notebookIsActive("d.notebook_id")}`,
+       AND ${notebookIsActive('d.notebook_id')}`,
     [versionId, documentId, notebookId],
   );
 
@@ -282,7 +282,7 @@ export async function findDocumentContent(
      FROM document_versions v
      JOIN documents d ON d.id = v.document_id
      WHERE v.id = $1 AND v.document_id = $2 AND d.notebook_id = $3 AND v.deleted_at IS NULL
-       AND ${notebookIsActive("d.notebook_id")}`,
+       AND ${notebookIsActive('d.notebook_id')}`,
     [versionId, documentId, notebookId],
   );
   const row = rows[0];
@@ -307,7 +307,7 @@ export async function createDocumentVersion(
 ): Promise<Document> {
   const documentId = await inTransaction(pool, async (client) => {
     const existing = await client.query<{ id: string }>(
-      "SELECT id FROM documents WHERE notebook_id = $1 AND filename = $2 AND deleted_at IS NULL FOR UPDATE",
+      'SELECT id FROM documents WHERE notebook_id = $1 AND filename = $2 AND deleted_at IS NULL FOR UPDATE',
       [notebookId, filename],
     );
 
@@ -316,14 +316,14 @@ export async function createDocumentVersion(
       documentId = existing.rows[0].id;
     } else {
       const inserted = await client.query<{ id: string }>(
-        "INSERT INTO documents (notebook_id, filename) VALUES ($1, $2) RETURNING id",
+        'INSERT INTO documents (notebook_id, filename) VALUES ($1, $2) RETURNING id',
         [notebookId, filename],
       );
       documentId = inserted.rows[0].id;
     }
 
     const { rows: versionRows } = await client.query<{ max_version: number | null }>(
-      "SELECT MAX(version_number) AS max_version FROM document_versions WHERE document_id = $1",
+      'SELECT MAX(version_number) AS max_version FROM document_versions WHERE document_id = $1',
       [documentId],
     );
     const nextVersion = (versionRows[0].max_version ?? 0) + 1;
@@ -342,7 +342,7 @@ export async function createDocumentVersion(
   // keeps an upload's response the same shape as every other.
   const document = await findDocumentWithLatestVersion(pool, notebookId, documentId);
   if (!document) {
-    throw new Error("Document vanished immediately after its Version was committed.");
+    throw new Error('Document vanished immediately after its Version was committed.');
   }
   return document;
 }
@@ -352,9 +352,13 @@ export async function createDocumentVersion(
  * ownership check. Returns `false` if no matching, non-deleted Document
  * exists in this Notebook (caller maps this to 404).
  */
-export async function softDeleteDocument(pool: Pool, notebookId: string, documentId: string): Promise<boolean> {
+export async function softDeleteDocument(
+  pool: Pool,
+  notebookId: string,
+  documentId: string,
+): Promise<boolean> {
   const { rowCount } = await pool.query(
-    "UPDATE documents SET deleted_at = now() WHERE id = $1 AND notebook_id = $2 AND deleted_at IS NULL",
+    'UPDATE documents SET deleted_at = now() WHERE id = $1 AND notebook_id = $2 AND deleted_at IS NULL',
     [documentId, notebookId],
   );
   return rowCount === 1;
@@ -371,12 +375,12 @@ export async function softDeleteDocument(pool: Pool, notebookId: string, documen
  * able to say so instead of surfacing a constraint violation.
  */
 export type RestoreDocumentResult =
-  | { outcome: "restored"; document: Document }
-  | { outcome: "not-found" }
-  | { outcome: "filename-taken"; filename: string };
+  | { outcome: 'restored'; document: Document }
+  | { outcome: 'not-found' }
+  | { outcome: 'filename-taken'; filename: string };
 
 /** Postgres' unique-violation SQLSTATE. */
-const UNIQUE_VIOLATION = "23505";
+const UNIQUE_VIOLATION = '23505';
 
 /**
  * Restores a soft-deleted Document (clears `deleted_at`). Per ADR-0001 there
@@ -395,22 +399,23 @@ export async function restoreDocument(
   let restored: number | null;
   try {
     ({ rowCount: restored } = await pool.query(
-      "UPDATE documents SET deleted_at = NULL WHERE id = $1 AND notebook_id = $2 AND deleted_at IS NOT NULL",
+      'UPDATE documents SET deleted_at = NULL WHERE id = $1 AND notebook_id = $2 AND deleted_at IS NOT NULL',
       [documentId, notebookId],
     ));
   } catch (err) {
     if ((err as { code?: string }).code !== UNIQUE_VIOLATION) throw err;
     // The only unique constraint this statement can break is the one on
     // (notebook_id, filename) for non-deleted Documents.
-    const { rows } = await pool.query<{ filename: string }>("SELECT filename FROM documents WHERE id = $1", [
-      documentId,
-    ]);
-    return { outcome: "filename-taken", filename: rows[0]?.filename ?? "" };
+    const { rows } = await pool.query<{ filename: string }>(
+      'SELECT filename FROM documents WHERE id = $1',
+      [documentId],
+    );
+    return { outcome: 'filename-taken', filename: rows[0]?.filename ?? '' };
   }
 
-  if (restored !== 1) return { outcome: "not-found" };
+  if (restored !== 1) return { outcome: 'not-found' };
   const document = await findDocumentWithLatestVersion(pool, notebookId, documentId);
-  return document ? { outcome: "restored", document } : { outcome: "not-found" };
+  return document ? { outcome: 'restored', document } : { outcome: 'not-found' };
 }
 
 export interface DownloadableVersion {
@@ -439,9 +444,11 @@ export async function findDownloadableVersion(
      FROM document_versions v
      JOIN documents d ON d.id = v.document_id
      WHERE v.id = $1 AND v.document_id = $2 AND d.notebook_id = $3 AND v.deleted_at IS NULL
-       AND ${notebookIsActive("d.notebook_id")}`,
+       AND ${notebookIsActive('d.notebook_id')}`,
     [versionId, documentId, notebookId],
   );
   const row = rows[0];
-  return row ? { storageKey: row.storage_key, mimeType: row.mime_type, filename: row.filename } : null;
+  return row
+    ? { storageKey: row.storage_key, mimeType: row.mime_type, filename: row.filename }
+    : null;
 }
