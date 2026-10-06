@@ -107,6 +107,12 @@ export const DocumentsStore = signalStore(
       // a template renders.
       let watching: Subscription | null = null;
 
+      /** Closes the live connection, if one is open. */
+      function stopWatching(): void {
+        watching?.unsubscribe();
+        watching = null;
+      }
+
       return {
       async loadDocuments(notebookId: string): Promise<void> {
         patchState(store, { loading: true, error: null });
@@ -190,7 +196,7 @@ export const DocumentsStore = signalStore(
        * everything, including event types belonging to other features.
        */
       watchNotebook(notebookId: string): void {
-        this.stopWatching();
+        stopWatching();
         watching = appEvents.stream([`notebook:${notebookId}`]).subscribe((event) => {
           const change = asStatusChange(event);
           if (!change) return;
@@ -208,10 +214,7 @@ export const DocumentsStore = signalStore(
       },
 
       /** Closes the live connection opened by `watchNotebook`. */
-      stopWatching(): void {
-        watching?.unsubscribe();
-        watching = null;
-      },
+      stopWatching,
       };
     },
   ),

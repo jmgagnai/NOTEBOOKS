@@ -1,73 +1,82 @@
-# Ingestion: Docling install
+# Ingestion: Docling setup
 
 Ingestion stage 1 (NBK-6) converts an uploaded Document to Markdown with
-[Docling](https://github.com/docling-project/docling), a Python library. The
-backend does not embed a Python runtime and does not talk to a Docling
-service: the convert-to-Markdown job **spawns a Python subprocess**, one per
-conversion, passing an input path and an output path. See
-`apps/backend/src/ingestion/docling.ts` for the reasoning, and
-`apps/backend/scripts/docling_convert.py` for the script it spawns.
+[Docling](https://github.com/docling-project/docling). Docling is a Python
+library, and the backend has no Python runtime — so the convert-to-Markdown
+job **spawns a one-shot Docker container per conversion**, bind-mounting the
+input file in and an output directory out, and reads the Markdown back from a
+file in that directory (never from stdout, which Python warnings pollute).
 
-So Docling has to be installed separately from `pnpm install`.
+See `apps/backend/src/ingestion/docling.ts` for the invocation and
+`docs/adr/0004-pg-boss-jobs-and-listen-notify-sse.md` for the reasoning.
 
-## Install
+## Setup
 
-From the repo root:
-
-```bash
-python3 -m venv .venv-docling
-./.venv-docling/bin/pip install --upgrade pip setuptools wheel
-./.venv-docling/bin/pip install docling
-```
-
-`.venv-docling/` is git-ignored. The backend looks for the interpreter at
-`<repo root>/.venv-docling/bin/python` by default, so nothing else needs
-configuring if you use that path.
-
-Verify it:
+One image pull, from the repo root:
 
 ```bash
-./.venv-docling/bin/python apps/backend/scripts/docling_convert.py \
-  --input README.md --output /tmp/converted.md
+docker pull ghcr.io/docling-project/docling-serve-cpu:v1.1.0
 ```
 
-Docling downloads its models on first use, so the first conversion is slow
-and needs network access.
+That's the whole setup. No Python, no virtualenv, no `pip install`.
+
+Verify it, with any document:
+
+```bash
+mkdir -p /tmp/docling-out
+docker run --rm --network none \
+  --volume "$PWD/README.md:/work/in/README.md:ro" \
+  --volume /tmp/docling-out:/work/out \
+  --entrypoint docling \
+  ghcr.io/docling-project/docling-serve-cpu:v1.1.0 \
+  --to md --output /work/out /work/in/README.md
+cat /tmp/docling-out/README.md
+```
+
+### Why that image
+
+There is no published CLI-only Docling image. Checked against both
+registries' APIs: `ghcr.io/docling-project/docling` and
+`.../docling-cli` do not exist, and `quay.io/docling-project/docling`
+requires authentication — the same kind of gating that made this repo switch
+from `minio/minio` to `bitnamilegacy/minio` (see `docker-compose.yml`).
+
+What *is* pullable anonymously is `docling-serve-cpu`, which is packaged as
+an HTTP service but contains the `docling` CLI and the full library. So its
+entrypoint is overridden (`--entrypoint docling`) and it runs one-shot and
+exits. That is preferable to a repo-built `python:slim + pip install docling`
+image: no build step for anyone cloning the repo, no dependency resolution to
+go stale, and the models are already baked in — which is also why the
+container can run with `--network none`.
+
+The `-cpu` variant is deliberate: the CUDA variant is much larger and buys
+nothing without a GPU.
+
+The tag is pinned, not `latest` or `main`. Conversion output feeds every
+later Stage, so the converter must not change under the app without someone
+deciding to change it.
 
 ## Configuration
 
-| Variable            | Default                                 | Purpose                                      |
-| ------------------- | --------------------------------------- | -------------------------------------------- |
-| `DOCLING_PYTHON`    | `<repo root>/.venv-docling/bin/python`  | Interpreter to run the entry script with     |
-| `DOCLING_SCRIPT`    | `apps/backend/scripts/docling_convert.py` | The entry script                           |
-| `DOCLING_TIMEOUT_MS`| `600000`                                 | Hard cap on one conversion                   |
+| Variable             | Default                                            | Purpose                      |
+| -------------------- | -------------------------------------------------- | ---------------------------- |
+| `DOCLING_IMAGE`      | `ghcr.io/docling-project/docling-serve-cpu:v1.1.0` | Image to run                 |
+| `DOCKER_BIN`         | `docker`                                           | The `docker` binary          |
+| `DOCLING_TIMEOUT_MS` | `600000`                                           | Hard cap on one conversion   |
 
-Point `DOCLING_PYTHON` at any interpreter that can `import docling` — a
-conda env, a `uv`-managed venv, or a system Python with Docling installed
-globally.
-
-## Platform note (macOS on Intel)
-
-Docling depends on `docling-parse`, which stopped publishing macOS
-**x86_64** wheels after `4.7.2`; newer versions ship arm64 macOS, Linux and
-Windows wheels only, and building from source needs a full C++ toolchain. On
-an Intel Mac, pin that one dependency:
-
-```bash
-./.venv-docling/bin/pip install "docling-parse==4.7.2" docling
-```
-
-Linux, Windows and Apple Silicon are unaffected — plain `pip install docling`
-works there.
-
-## Tests don't need Docling
+## Tests
 
 `MarkdownConverter` (a `({ inputPath, outputPath }) => Promise<void>`
-function) is the seam, and the tests stub it:
+function) is the seam, and most tests stub it:
 
 - `apps/backend/test/convert-to-markdown.job.test.ts` — seam-2: the job
-  handler against real Postgres and real MinIO, with the subprocess stubbed.
+  handler against real Postgres and real MinIO, conversion stubbed.
 - `apps/backend/test/job-queue.test.ts` — pg_boss wiring, retry, restart.
 
-So `pnpm test` is green without Docling installed. Only actually running the
-backend (`pnpm backend:dev`) needs it.
+One test does run the real container:
+
+- `apps/backend/test/docling.converter.test.ts` — proves the `docker run`
+  invocation and the output-file contract actually work.
+
+It is skipped unless the image is already present locally, so `pnpm test`
+is green on a machine that hasn't pulled it. Pull the image to include it.

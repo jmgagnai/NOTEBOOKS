@@ -113,6 +113,26 @@ describe("GET /events (SSE)", () => {
     await response.body?.cancel();
   });
 
+  it("keeps the CORS headers a cross-origin EventSource needs", async () => {
+    const session = await loginAsNewUser("sse-cors@example.com");
+    const controller = new AbortController();
+    try {
+      const response = await fetch(`${baseUrl}/events`, {
+        headers: { cookie: `session=${session}`, origin: "http://localhost:4200" },
+        signal: controller.signal,
+      });
+
+      // The frontend dev server is a different origin from the backend, and
+      // the session cookie is httpOnly, so a browser EventSource needs both
+      // of these or it never connects. They're set by @fastify/cors on the
+      // reply — which `reply.hijack()` in the handler must not discard.
+      expect(response.headers.get("access-control-allow-origin")).toBe("http://localhost:4200");
+      expect(response.headers.get("access-control-allow-credentials")).toBe("true");
+    } finally {
+      controller.abort();
+    }
+  });
+
   it("delivers an event published elsewhere to a connected client", async () => {
     const session = await loginAsNewUser("sse-listener@example.com");
 

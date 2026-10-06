@@ -107,24 +107,44 @@ export async function createAppEventSubscriber(connectionString: string): Promis
     }
   }
 
+  const RECONNECT_DELAY_MS = 1000;
+
+  function scheduleReconnect(): void {
+    if (closed) return;
+    client = null;
+    setTimeout(() => void reconnect(), RECONNECT_DELAY_MS);
+  }
+
   async function connect(): Promise<void> {
     if (closed) return;
     const next = new Client({ connectionString });
     next.on("notification", (message) => handleNotification(message.payload));
     next.on("error", () => {
-      // `end()` on an already-broken client throws; the 'end' handler below
-      // is what actually schedules the reconnect.
+      // Swallowed deliberately: an unhandled 'error' on a pg Client would
+      // crash the process. The 'end' handler schedules the reconnect.
     });
-    next.on("end", () => {
-      if (closed) return;
-      client = null;
-      setTimeout(() => void connect().catch(() => {}), 1000);
-    });
+    next.on("end", scheduleReconnect);
     await next.connect();
     await next.query(`LISTEN ${APP_EVENT_CHANNEL}`);
     client = next;
   }
 
+  /**
+   * Retries `connect` indefinitely. Separate from `connect` because a failure
+   * to *establish* a connection may never produce an 'end' event, so the
+   * retry has to be driven from the rejection as well.
+   */
+  async function reconnect(): Promise<void> {
+    try {
+      await connect();
+    } catch {
+      scheduleReconnect();
+    }
+  }
+
+  // The first connection is awaited and its failure thrown: a process that
+  // can't subscribe at startup is misconfigured, and should say so rather
+  // than silently serving an SSE endpoint that never emits anything.
   await connect();
 
   return {

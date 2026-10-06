@@ -1,4 +1,5 @@
-import type { FastifyInstance } from "fastify";
+import type { OutgoingHttpHeaders } from "node:http";
+import type { FastifyInstance, FastifyReply } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import type { Pool } from "pg";
 import { z } from "zod";
@@ -33,6 +34,25 @@ function toSseFrame(event: AppEvent): string {
   // not honour it (NOTIFY has no replay), so a reconnecting client re-fetches
   // current state over the REST routes instead.
   return `id: ${event.id}\ndata: ${JSON.stringify(event)}\n\n`;
+}
+
+/**
+ * The headers earlier hooks put on the reply — crucially @fastify/cors's
+ * Access-Control-Allow-Origin/-Credentials, without which a browser
+ * EventSource can't connect to this different-origin backend at all.
+ *
+ * They have to be read off the reply and written to the raw socket by hand:
+ * `reply.hijack()` skips the rest of the lifecycle, so nothing else would
+ * ever send them, and `writeHead` replaces the whole header set. Fastify's
+ * header bag allows `undefined` values, which `writeHead` does not, so they
+ * are filtered out here.
+ */
+function inheritedHeaders(reply: FastifyReply): OutgoingHttpHeaders {
+  const headers: OutgoingHttpHeaders = {};
+  for (const [name, value] of Object.entries(reply.getHeaders())) {
+    if (value !== undefined) headers[name] = value;
+  }
+  return headers;
 }
 
 export interface RegisterEventRoutesOptions {
@@ -84,6 +104,7 @@ export function registerEventRoutes(app: FastifyInstance, { pool, appEvents }: R
       reply.hijack();
       const { raw } = reply;
       raw.writeHead(200, {
+        ...inheritedHeaders(reply),
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache, no-transform",
         Connection: "keep-alive",
