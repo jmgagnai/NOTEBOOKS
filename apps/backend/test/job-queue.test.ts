@@ -9,6 +9,8 @@ import { createPool } from "../src/db/pool.js";
 import { startJobQueue, type JobQueue } from "../src/jobs/queue.js";
 import type { MarkdownConverter } from "../src/ingestion/docling.js";
 import type { ChatCompleter } from "../src/llm/openrouter.js";
+import type { Embedder } from "../src/llm/embeddings.js";
+import { EMBEDDING_DIMENSIONS } from "../src/llm/models.js";
 import { createS3Client, ensureBucket, getObject, putObject } from "../src/storage/s3-client.js";
 import { startMinio } from "./support/minio-container.js";
 
@@ -60,6 +62,7 @@ describe("job queue", () => {
     schema: string;
     convertToMarkdown?: MarkdownConverter;
     complete?: ChatCompleter;
+    embed?: Embedder;
     retryLimit?: number;
   }): Promise<JobQueue> {
     const queue = await startJobQueue({
@@ -76,9 +79,11 @@ describe("job queue", () => {
             s3,
             documentsBucket: DOCUMENTS_BUCKET,
             convertToMarkdown: options.convertToMarkdown,
-            // Stage 2 (NBK-7) only has a worker when a completer is given,
-            // so the stage-1-only tests below stay exactly as they were.
+            // Stage 2 (NBK-7) only has a worker when a completer is given and
+            // stage 3 (NBK-8) only when an embedder is, so the earlier tests
+            // below stay exactly as they were.
             ...(options.complete ? { complete: options.complete } : {}),
+            ...(options.embed ? { embed: options.embed } : {}),
           }
         : undefined,
     });
@@ -127,6 +132,22 @@ describe("job queue", () => {
   const passthrough: MarkdownConverter = async ({ inputPath, outputPath }) => {
     const raw = await import("node:fs/promises").then((fs) => fs.readFile(inputPath, "utf8"));
     await writeFile(outputPath, `# converted\n\n${raw}`, "utf8");
+  };
+
+  /**
+   * Stage 2's OpenRouter calls, stubbed at the `ChatCompleter` rather than at
+   * `fetch`: this file is about queue wiring, and OpenRouter request/response
+   * handling is covered at its HTTP boundary in
+   * summarize-document.job.test.ts.
+   */
+  const stubCompleter: ChatCompleter = async ({ system }) => {
+    if (system.includes("extract bibliographic metadata")) {
+      return '{"title":"Chained","authors":[],"documentType":"note","language":"en","publishedOn":null,"keywords":[]}';
+    }
+    if (system.includes("summarize one section")) return "A section summary.";
+    // Enough words to satisfy the widest range (Executive Summary), so no
+    // artifact triggers a corrective rewrite.
+    return Array.from({ length: 600 }, (_, i) => `w${i}`).join(" ");
   };
 
   it("runs a convert job enqueued through the queue", async () => {
@@ -178,20 +199,7 @@ describe("job queue", () => {
   it("chains stage 1 into stage 2, carrying a Version through to 'summarized'", async () => {
     const seeded = await seedUploadedVersion("chained.txt", "convert then summarize");
 
-    // Stubbed at the ChatCompleter rather than at `fetch`: this file is
-    // about queue wiring, and OpenRouter request/response handling is
-    // covered at its HTTP boundary in summarize-document.job.test.ts.
-    const complete: ChatCompleter = async ({ system }) => {
-      if (system.includes("extract bibliographic metadata")) {
-        return '{"title":"Chained","authors":[],"documentType":"note","language":"en","publishedOn":null,"keywords":[]}';
-      }
-      if (system.includes("summarize one section")) return "A section summary.";
-      // Enough words to satisfy the widest range (Executive Summary), so no
-      // artifact triggers a corrective rewrite.
-      return Array.from({ length: 600 }, (_, i) => `w${i}`).join(" ");
-    };
-
-    const queue = await start({ schema: "pgboss_chain", convertToMarkdown: passthrough, complete });
+    const queue = await start({ schema: "pgboss_chain", convertToMarkdown: passthrough, complete: stubCompleter });
     await queue.enqueueConvertToMarkdown({
       documentId: seeded.documentId,
       versionId: seeded.versionId,
@@ -209,6 +217,44 @@ describe("job queue", () => {
     expect(rows[0].abstract).toBeTruthy();
     expect(rows[0].chat_snippet).toBeTruthy();
     expect(rows[0].metadata).toMatchObject({ title: "Chained" });
+  });
+
+  // The whole chain through pg_boss: one enqueue of stage 1 carries a
+  // Document Version to "ready" (NBK-8), across three queues with three
+  // independent retry policies. The handler-level half is in
+  // embed-chunks.job.test.ts; what's under test here is that all three
+  // queues are wired together — and that stage 3 only has a worker when it
+  // has an embedder, the same way stage 2 only has one when it has a
+  // completer.
+  it("chains all three stages, carrying a Version through to 'ready'", async () => {
+    const seeded = await seedUploadedVersion("full-chain.txt", "convert, summarize, then embed");
+
+    const queue = await start({
+      schema: "pgboss_full_chain",
+      convertToMarkdown: passthrough,
+      complete: stubCompleter,
+      // Stubbed at the Embedder rather than at `fetch`: this file is about
+      // queue wiring, and OpenRouter's embeddings request/response handling
+      // is covered at its HTTP boundary in embed-chunks.job.test.ts.
+      embed: async (texts) => texts.map(() => new Array<number>(EMBEDDING_DIMENSIONS).fill(0.01)),
+    });
+    await queue.enqueueConvertToMarkdown({
+      documentId: seeded.documentId,
+      versionId: seeded.versionId,
+    });
+
+    const version = await waitForStatus(seeded.versionId, ["ready", "failed"]);
+    expect(version.ingestion_status).toBe("ready");
+    // Every earlier stage's output survives the ones after it.
+    expect(version.markdown).toContain("convert, summarize, then embed");
+
+    const { rows } = await pool.query<{ count: string; dims: number }>(
+      `SELECT count(*)::text AS count, max(vector_dims(embedding)) AS dims
+       FROM chunks WHERE document_version_id = $1`,
+      [seeded.versionId],
+    );
+    expect(Number(rows[0].count)).toBeGreaterThan(0);
+    expect(Number(rows[0].dims)).toBe(EMBEDDING_DIMENSIONS);
   });
 
   it("completes a job enqueued before the backend started", async () => {

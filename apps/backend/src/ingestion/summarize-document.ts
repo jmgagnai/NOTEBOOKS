@@ -31,6 +31,17 @@ export interface SummarizeDocumentDeps {
   models?: TaskModels;
   /** Parallel map-pass calls. Defaults to the generation module's own default. */
   mapConcurrency?: number;
+  /**
+   * Hands this Document Version to ingestion stage 3 (NBK-8). The same
+   * chaining, and for the same reason, as stage 1's `enqueueSummarizeDocument`
+   * (see convert-to-markdown.ts): a plain callback rather than the `JobQueue`,
+   * because `startJobQueue` builds the queue *from* these deps.
+   *
+   * Omitted, stage 2 still succeeds and the Version simply stays
+   * "summarized" — which is what keeps this handler testable without stage 3
+   * in the picture.
+   */
+  enqueueEmbedChunks?: (payload: { documentId: string; versionId: string }) => Promise<void>;
 }
 
 export interface SummarizeDocumentInvocation {
@@ -179,6 +190,16 @@ export async function runSummarizeDocumentJob(
       artifacts: result.artifacts,
       error: null,
     });
+
+    // Enqueued only after the summaries are committed, and thrown rather than
+    // logged if it fails — the same contract as stage 1's hand-over, for the
+    // same reason: this caller is already a retryable job, and a swallowed
+    // failure would leave the Version sitting at "summarized" with nothing
+    // coming for it. Re-running the summaries on the retry costs OpenRouter
+    // calls; a silently stalled pipeline is a bug.
+    if (deps.enqueueEmbedChunks) {
+      await deps.enqueueEmbedChunks({ documentId: payload.documentId, versionId: payload.versionId });
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     await transitionTo(pool, version, willRetry ? "converted" : "failed", { error: message });

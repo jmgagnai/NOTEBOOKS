@@ -16,7 +16,9 @@ export interface DocumentVersion {
 /**
  * Where a Document's latest Version is in the ingestion pipeline. Mirrors the
  * backend's `documentStatusSchema`: stage 1 is conversion (NBK-6), stage 2 is
- * metadata extraction and the three generated summaries (NBK-7).
+ * metadata extraction and the three generated summaries (NBK-7), and stage 3
+ * is chunking and embeddings (NBK-8). 'ready' is the end of the pipeline —
+ * the point at which a Document is safe to rely on for chat.
  */
 export type DocumentStatus =
   | 'queued'
@@ -24,6 +26,8 @@ export type DocumentStatus =
   | 'converted'
   | 'summarizing'
   | 'summarized'
+  | 'indexing'
+  | 'ready'
   | 'failed';
 
 // A Document as returned over the API. See GLOSSARY.md: "a source file

@@ -29,12 +29,16 @@ _Avoid_: conversation, session.
 ### Ingestion
 
 **Ingestion**:
-The background pipeline that turns an uploaded Document Version into something chat can be grounded in. It runs as a chain of independently retryable **Stages**, each one enqueuing the next on success; stage 1 is conversion to Markdown and stage 2 is metadata extraction plus the three Generated document artifacts. A Document Version's progress through it is its status: `queued` → `converting` → `converted` → `summarizing` → `summarized`, or `failed` for whichever Stage exhausted its retries. A Stage whose failure will still be retried returns the Version to the status it consumes, not to `failed`.
-_Avoid_: processing, indexing (reserve "indexing" for the embedding/retrieval stage specifically), import.
+The background pipeline that turns an uploaded Document Version into something chat can be grounded in. It runs as a chain of independently retryable **Stages**, each one enqueuing the next on success; stage 1 is conversion to Markdown, stage 2 is metadata extraction plus the three Generated document artifacts, and stage 3 is chunking plus embeddings. A Document Version's progress through it is its status: `queued` → `converting` → `converted` → `summarizing` → `summarized` → `indexing` → `ready`, or `failed` for whichever Stage exhausted its retries. `ready` is the end of the pipeline and the only status that means a Document is safe to rely on for chat. A Stage whose failure will still be retried returns the Version to the status it consumes, not to `failed`.
+_Avoid_: processing, import. "Indexing" is reserved for the embedding/retrieval Stage specifically, which is why it is that Stage's status name.
 
 **Converted Markdown**:
 The Markdown rendering of a Document Version's original file, produced by stage 1 of Ingestion and stored on that Version. The single input every later Stage and every Generated document artifact reads from — nothing downstream re-reads the original upload.
 _Avoid_: extracted text, plain text, content.
+
+**Chunk**:
+One embeddable slice of a Document Version's Converted Markdown, produced by stage 3 of Ingestion together with its embedding vector and the heading path it sits under. Chunks are what retrieval searches and what a Citation points at, so a Chunk's text is a verbatim, contiguous slice of the Converted Markdown — never a rewritten or summarized form of it. A Chunk belongs to exactly one Document Version, and re-running stage 3 replaces that Version's Chunks rather than adding to them.
+_Avoid_: passage, segment, fragment, span.
 
 **App Event**:
 One thing that happened on the backend and that connected clients are told about immediately — an Ingestion stage transition, and later chat answer chunks and other background-task progress. App Events are notifications, not state: they carry what changed, and a client that missed one re-reads the truth over the normal API.

@@ -47,7 +47,7 @@ export class DocumentsService extends BaseService {
 'id': string;
 'notebookId': string;
 'filename': string;
-'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'failed';
+'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'indexing' | 'ready' | 'failed';
 'abstract': string | null;
 'createdAt': string;
 'latestVersion': {
@@ -76,7 +76,7 @@ export class DocumentsService extends BaseService {
 'id': string;
 'notebookId': string;
 'filename': string;
-'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'failed';
+'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'indexing' | 'ready' | 'failed';
 'abstract': string | null;
 'createdAt': string;
 'latestVersion': {
@@ -92,7 +92,7 @@ export class DocumentsService extends BaseService {
 'id': string;
 'notebookId': string;
 'filename': string;
-'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'failed';
+'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'indexing' | 'ready' | 'failed';
 'abstract': string | null;
 'createdAt': string;
 'latestVersion': {
@@ -106,7 +106,7 @@ export class DocumentsService extends BaseService {
 'id': string;
 'notebookId': string;
 'filename': string;
-'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'failed';
+'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'indexing' | 'ready' | 'failed';
 'abstract': string | null;
 'createdAt': string;
 'latestVersion': {
@@ -136,7 +136,7 @@ export class DocumentsService extends BaseService {
 'id': string;
 'notebookId': string;
 'filename': string;
-'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'failed';
+'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'indexing' | 'ready' | 'failed';
 'abstract': string | null;
 'createdAt': string;
 'latestVersion': {
@@ -165,7 +165,7 @@ export class DocumentsService extends BaseService {
 'id': string;
 'notebookId': string;
 'filename': string;
-'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'failed';
+'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'indexing' | 'ready' | 'failed';
 'abstract': string | null;
 'createdAt': string;
 'latestVersion': {
@@ -181,7 +181,7 @@ export class DocumentsService extends BaseService {
 'id': string;
 'notebookId': string;
 'filename': string;
-'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'failed';
+'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'indexing' | 'ready' | 'failed';
 'abstract': string | null;
 'createdAt': string;
 'latestVersion': {
@@ -195,7 +195,7 @@ export class DocumentsService extends BaseService {
 'id': string;
 'notebookId': string;
 'filename': string;
-'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'failed';
+'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'indexing' | 'ready' | 'failed';
 'abstract': string | null;
 'createdAt': string;
 'latestVersion': {
@@ -225,7 +225,7 @@ export class DocumentsService extends BaseService {
 'id': string;
 'notebookId': string;
 'filename': string;
-'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'failed';
+'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'indexing' | 'ready' | 'failed';
 'abstract': string | null;
 'createdAt': string;
 'latestVersion': {
@@ -259,7 +259,7 @@ export class DocumentsService extends BaseService {
 'id': string;
 'notebookId': string;
 'filename': string;
-'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'failed';
+'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'indexing' | 'ready' | 'failed';
 'abstract': string | null;
 'createdAt': string;
 'latestVersion': {
@@ -280,7 +280,7 @@ export class DocumentsService extends BaseService {
 'id': string;
 'notebookId': string;
 'filename': string;
-'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'failed';
+'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'indexing' | 'ready' | 'failed';
 'abstract': string | null;
 'createdAt': string;
 'latestVersion': {
@@ -299,7 +299,7 @@ export class DocumentsService extends BaseService {
 'id': string;
 'notebookId': string;
 'filename': string;
-'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'failed';
+'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'indexing' | 'ready' | 'failed';
 'abstract': string | null;
 'createdAt': string;
 'latestVersion': {
@@ -412,7 +412,7 @@ export class DocumentsService extends BaseService {
 'id': string;
 'notebookId': string;
 'filename': string;
-'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'failed';
+'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'indexing' | 'ready' | 'failed';
 'abstract': string | null;
 'createdAt': string;
 'latestVersion': {
@@ -441,7 +441,7 @@ export class DocumentsService extends BaseService {
 'id': string;
 'notebookId': string;
 'filename': string;
-'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'failed';
+'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'indexing' | 'ready' | 'failed';
 'abstract': string | null;
 'createdAt': string;
 'latestVersion': {
@@ -457,7 +457,7 @@ export class DocumentsService extends BaseService {
 'id': string;
 'notebookId': string;
 'filename': string;
-'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'failed';
+'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'indexing' | 'ready' | 'failed';
 'abstract': string | null;
 'createdAt': string;
 'latestVersion': {
@@ -471,7 +471,7 @@ export class DocumentsService extends BaseService {
 'id': string;
 'notebookId': string;
 'filename': string;
-'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'failed';
+'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'indexing' | 'ready' | 'failed';
 'abstract': string | null;
 'createdAt': string;
 'latestVersion': {

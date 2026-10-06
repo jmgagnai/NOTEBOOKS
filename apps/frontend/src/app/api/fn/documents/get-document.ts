@@ -17,7 +17,7 @@ export function getDocument(http: HttpClient, rootUrl: string, params: GetDocume
 'id': string;
 'notebookId': string;
 'filename': string;
-'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'failed';
+'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'indexing' | 'ready' | 'failed';
 'abstract': string | null;
 'createdAt': string;
 'latestVersion': {
@@ -48,7 +48,7 @@ export function getDocument(http: HttpClient, rootUrl: string, params: GetDocume
       'id': string;
       'notebookId': string;
       'filename': string;
-      'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'failed';
+      'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'indexing' | 'ready' | 'failed';
       'abstract': string | null;
       'createdAt': string;
       'latestVersion': {

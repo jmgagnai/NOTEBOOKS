@@ -13,6 +13,13 @@ import {
   type SummarizeDocumentDeps,
   type SummarizeDocumentPayload,
 } from "../ingestion/summarize-document.js";
+import {
+  EMBED_CHUNKS_QUEUE,
+  embedChunksPayloadSchema,
+  runEmbedChunksJob,
+  type EmbedChunksDeps,
+  type EmbedChunksPayload,
+} from "../ingestion/embed-chunks.js";
 
 /**
  * Background jobs run on pg_boss against the same Postgres instance as
@@ -23,9 +30,10 @@ import {
  * The pipeline is one queue *per stage*, not one job that does everything. A
  * stage that fails is retried on its own, and on success a stage enqueues the
  * next — so a later stage's bug never re-runs an expensive earlier stage.
- * Stage 1 is Markdown conversion (NBK-6) and stage 2 is metadata extraction
- * plus the three Generated document artifacts (NBK-7); stage 2's handler is
- * handed the `enqueue` for the stage after it the same way stage 1's is here.
+ * Stage 1 is Markdown conversion (NBK-6), stage 2 is metadata extraction
+ * plus the three Generated document artifacts (NBK-7), and stage 3 is
+ * chunking plus embeddings (NBK-8); each handler is handed the `enqueue` for
+ * the stage after it.
  */
 export interface JobQueue {
   /** Enqueues ingestion stage 1 for one Document Version. */
@@ -36,22 +44,33 @@ export interface JobQueue {
    * Version stuck at "converted" can be re-driven without re-converting it.
    */
   enqueueSummarizeDocument(payload: SummarizeDocumentPayload): Promise<void>;
+  /**
+   * Enqueues ingestion stage 3 for one Document Version. Normally called by
+   * stage 2 on success; exposed for the same reason — so a Version stuck at
+   * "summarized" can be re-chunked and re-embedded without paying for its
+   * summaries again.
+   */
+  enqueueEmbedChunks(payload: EmbedChunksPayload): Promise<void>;
   stop(): Promise<void>;
 }
 
 /**
  * The dependencies a worker process needs for the whole pipeline. Stage 2's
- * are optional so a deployment (or a test) can work stage 1 alone.
+ * and stage 3's are optional so a deployment (or a test) can work stage 1
+ * alone — a backend with no OpenRouter key converts documents and stops.
  *
- * Note what is NOT here: the chaining callback stage 1 uses to hand over to
- * stage 2. `startJobQueue` supplies that itself, closing over the pg_boss
- * instance it just created — a caller cannot know it, and shouldn't have to.
+ * Note what is NOT here: the chaining callbacks each stage uses to hand over
+ * to the next. `startJobQueue` supplies those itself, closing over the
+ * pg_boss instance it just created — a caller cannot know them, and
+ * shouldn't have to.
  */
 export interface PipelineWorkerDeps extends Omit<ConvertToMarkdownDeps, "enqueueSummarizeDocument"> {
   /** The OpenRouter boundary for stage 2. Omitted, stage 2 isn't worked. */
   complete?: SummarizeDocumentDeps["complete"];
   /** Fixed model per task type for stage 2. Defaults to the server config. */
   models?: SummarizeDocumentDeps["models"];
+  /** The OpenRouter embeddings boundary for stage 3. Omitted, stage 3 isn't worked. */
+  embed?: EmbedChunksDeps["embed"];
 }
 
 export interface StartJobQueueOptions {
@@ -117,7 +136,7 @@ export async function startJobQueue(options: StartJobQueueOptions): Promise<JobQ
   // precisely so these policies can diverge later (stage 2 is rate-limit
   // bound, stage 1 is CPU bound).
   const policy = { retryLimit, retryDelay, retryBackoff: retryDelay > 0 };
-  for (const queue of [CONVERT_TO_MARKDOWN_QUEUE, SUMMARIZE_DOCUMENT_QUEUE]) {
+  for (const queue of [CONVERT_TO_MARKDOWN_QUEUE, SUMMARIZE_DOCUMENT_QUEUE, EMBED_CHUNKS_QUEUE]) {
     await boss.createQueue(queue, { name: queue, ...policy });
     await boss.updateQueue(queue, { name: queue, ...policy });
   }
@@ -134,8 +153,12 @@ export async function startJobQueue(options: StartJobQueueOptions): Promise<JobQ
     await boss.send(SUMMARIZE_DOCUMENT_QUEUE, summarizeDocumentPayloadSchema.parse(payload));
   }
 
+  async function enqueueEmbedChunks(payload: EmbedChunksPayload): Promise<void> {
+    await boss.send(EMBED_CHUNKS_QUEUE, embedChunksPayloadSchema.parse(payload));
+  }
+
   if (options.worker) {
-    const { complete, models, ...convertDeps } = options.worker;
+    const { complete, models, embed, ...convertDeps } = options.worker;
 
     await boss.work<ConvertToMarkdownPayload>(CONVERT_TO_MARKDOWN_QUEUE, workOptions, async (jobs) => {
       for (const job of jobs) {
@@ -158,8 +181,27 @@ export async function startJobQueue(options: StartJobQueueOptions): Promise<JobQ
         for (const job of jobs) {
           const willRetry = job.retryCount < job.retryLimit;
           await runSummarizeDocumentJob(
-            { pool: convertDeps.pool, complete, ...(models === undefined ? {} : { models }) },
+            {
+              pool: convertDeps.pool,
+              complete,
+              ...(models === undefined ? {} : { models }),
+              // Stage 2 hands over to stage 3 through this closure, for the
+              // same reason stage 1 hands over to stage 2 here.
+              enqueueEmbedChunks,
+            },
             { payload: summarizeDocumentPayloadSchema.parse(job.data), willRetry },
+          );
+        }
+      });
+    }
+
+    if (embed) {
+      await boss.work<EmbedChunksPayload>(EMBED_CHUNKS_QUEUE, workOptions, async (jobs) => {
+        for (const job of jobs) {
+          const willRetry = job.retryCount < job.retryLimit;
+          await runEmbedChunksJob(
+            { pool: convertDeps.pool, embed },
+            { payload: embedChunksPayloadSchema.parse(job.data), willRetry },
           );
         }
       });
@@ -171,6 +213,7 @@ export async function startJobQueue(options: StartJobQueueOptions): Promise<JobQ
       await boss.send(CONVERT_TO_MARKDOWN_QUEUE, convertToMarkdownPayloadSchema.parse(payload));
     },
     enqueueSummarizeDocument,
+    enqueueEmbedChunks,
     async stop(): Promise<void> {
       await boss.stop({ wait: true });
     },

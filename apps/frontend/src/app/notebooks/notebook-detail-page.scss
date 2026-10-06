@@ -77,15 +77,25 @@
     background: var(--mat-sys-secondary-container, #e0e0e0);
     color: var(--mat-sys-on-secondary-container, #333);
 
-    // Ingestion outcomes (NBK-6, NBK-7) need to be distinguishable at a
-    // glance — a failed conversion must not look like a finished one. The
-    // in-progress statuses (queued, converting, summarizing) keep the
-    // neutral default. "converted" is a *stage* boundary, not the end of
-    // ingestion, so it shares the finished-a-step look with "summarized".
+    // Ingestion outcomes (NBK-6, NBK-7, NBK-8) need to be distinguishable at
+    // a glance — a failed conversion must not look like a finished one. The
+    // in-progress statuses (queued, converting, summarizing, indexing) keep
+    // the neutral default. "converted" and "summarized" are *stage*
+    // boundaries, not the end of ingestion, so they share a finished-a-step
+    // look.
     &--converted,
     &--summarized {
       background: var(--mat-sys-tertiary-container, #d7f0d7);
       color: var(--mat-sys-on-tertiary-container, #1b4d1b);
+    }
+
+    // "ready" is the end of the pipeline, and the only status that means the
+    // Document is safe to rely on for chat (NBK-8). It gets its own, stronger
+    // treatment so it can't be read as "another stage done".
+    &--ready {
+      background: var(--mat-sys-primary, #1b5e20);
+      color: var(--mat-sys-on-primary, #ffffff);
+      font-weight: 600;
     }
 
     &--failed {

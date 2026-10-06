@@ -667,6 +667,60 @@ describe("summarize-document job", () => {
     expect((version.executive_summary ?? "").trim().split(/\s+/)).toHaveLength(700);
   });
 
+  // Per ADR-0004 and GLOSSARY.md, Ingestion is "a chain of independently
+  // retryable Stages, each one enqueuing the next on success". Stage 2 is
+  // now in the middle of that chain, so it has to hand over to stage 3
+  // (chunking and embeddings, NBK-8) exactly the way stage 1 hands over to
+  // it.
+  it("enqueues ingestion stage 3 once the summaries are stored, and not when it fails", async () => {
+    const enqueued: { documentId: string; versionId: string }[] = [];
+    const enqueueEmbedChunks = async (payload: { documentId: string; versionId: string }) => {
+      enqueued.push(payload);
+    };
+
+    const succeeded = await seedConvertedVersion("chained.md", `# Chained\n\n${body("chaining")}\n`);
+    const { fetchStub } = stubOpenRouter((call) => {
+      switch (call.task) {
+        case "metadata":
+          return '{"title":"Chained","authors":[],"documentType":"note","language":"en","publishedOn":null,"keywords":[]}';
+        case "sectionSummary":
+          return "A section summary.";
+        case "chatSnippet":
+          return words(200);
+        case "executiveSummary":
+          return words(700);
+        default:
+          return words(70);
+      }
+    });
+
+    await runSummarizeDocumentJob(
+      { ...depsWith(fetchStub), enqueueEmbedChunks },
+      { payload: { documentId: succeeded.documentId, versionId: succeeded.versionId }, willRetry: false },
+    );
+
+    expect(enqueued).toEqual([{ documentId: succeeded.documentId, versionId: succeeded.versionId }]);
+
+    // A failed stage 2 leaves no summaries, so handing over would only queue
+    // a stage-3 job for a Version the pipeline hasn't finished with.
+    const failed = await seedConvertedVersion("unchained.md", "# Unchained\n\nNot going anywhere.\n");
+    const failingFetch: typeof globalThis.fetch = async () => {
+      throw new Error("socket hang up");
+    };
+    await expect(
+      runSummarizeDocumentJob(
+        {
+          pool,
+          complete: createOpenRouterCompleter({ apiKey: "k", fetch: failingFetch, retries: 0 }),
+          enqueueEmbedChunks,
+        },
+        { payload: { documentId: failed.documentId, versionId: failed.versionId }, willRetry: false },
+      ),
+    ).rejects.toThrow("socket hang up");
+
+    expect(enqueued).toHaveLength(1);
+  });
+
   it("marks the Version failed and keeps the Converted Markdown when summarization can't be retried", async () => {
     const seeded = await seedConvertedVersion("doomed.md", "# Doomed\n\nStill here afterwards.\n");
 

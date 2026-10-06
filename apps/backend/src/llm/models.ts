@@ -73,3 +73,49 @@ export function resolveTaskModels(env: Record<string, string | undefined> = proc
   }
   return resolved;
 }
+
+/**
+ * The embedding model for ingestion stage 3 (NBK-8), per ADR-0002:
+ * OpenRouter-hosted Qwen3-Embedding-4B rather than a self-hosted bge-m3
+ * sidecar.
+ *
+ * Kept out of {@link TaskModels} on purpose. Those are generation tasks and
+ * moving one is a pure configuration change; this one is welded to the
+ * database — every stored vector has {@link EMBEDDING_DIMENSIONS} components
+ * and `chunks.embedding` is declared that wide — so changing it means
+ * re-embedding every chunk. ADR-0002 calls that "a real migration, not a
+ * config change", and these two constants sitting together is the reminder.
+ */
+export const DEFAULT_EMBEDDING_MODEL = "qwen/qwen3-embedding-4b";
+
+/** Overrides {@link DEFAULT_EMBEDDING_MODEL}. See the dimension warning above. */
+export const EMBEDDING_MODEL_ENV_VAR = "OPENROUTER_MODEL_EMBEDDING";
+
+/**
+ * How many components a Qwen3-Embedding-4B vector has on OpenRouter.
+ *
+ * **Measured, not assumed.** NBK-1 requires this be "confirmed before the
+ * schema migration is written", and OpenRouter's embeddings catalogue
+ * publishes no dimension for this model — so it was confirmed by calling
+ * `POST /api/v1/embeddings` against the live API and counting what came
+ * back: 2560, Qwen3-Embedding-4B's full hidden size, for both a single input
+ * and a batch.
+ *
+ * It must stay equal to the width of `chunks.embedding` in migration
+ * `0007_create_chunks.sql`, which is why stage 3 refuses a vector of any
+ * other length rather than letting Postgres reject the insert later.
+ */
+export const EMBEDDING_DIMENSIONS = 2560;
+
+/**
+ * Resolves the embedding model from the environment. Same shape and same
+ * reasoning as {@link resolveTaskModels} — server-side configuration only,
+ * never user-selectable (NBK-1 puts a model picker out of scope).
+ *
+ * An override that does not return {@link EMBEDDING_DIMENSIONS}-component
+ * vectors will be rejected chunk-by-chunk by stage 3 rather than corrupting
+ * the column; swapping the model for real needs a migration.
+ */
+export function resolveEmbeddingModel(env: Record<string, string | undefined> = process.env): string {
+  return env[EMBEDDING_MODEL_ENV_VAR]?.trim() || DEFAULT_EMBEDDING_MODEL;
+}

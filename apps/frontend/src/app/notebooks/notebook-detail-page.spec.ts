@@ -245,6 +245,65 @@ describe('NotebookDetailPage', () => {
     expect(listDocuments).toHaveBeenCalledTimes(1);
   });
 
+  // NBK-8: ingestion ends at "ready", and NBK-1's user story is that a user
+  // can "see a Document's ingestion status ... so that I know when it's safe
+  // to rely on it for chat". So the badge has to reach "ready" live, and
+  // "ready" has to look different from a mid-pipeline stage boundary.
+  it('follows a Document through stage 3 to the "ready" badge', async () => {
+    const listNotebooks = vi.fn().mockResolvedValue([]);
+    const listDocuments = vi.fn().mockResolvedValue([
+      {
+        id: 'doc-9',
+        notebookId: NOTEBOOK_ID,
+        filename: 'report.pdf',
+        status: 'summarized',
+        abstract: 'An abstract.',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        latestVersion: {
+          id: 'v-9',
+          versionNumber: 1,
+          mimeType: 'application/pdf',
+          sizeBytes: 100,
+          createdAt: '2026-01-01T00:00:00.000Z',
+        },
+      },
+    ]);
+    const appEvents = appEventsStub();
+
+    await render(NotebookDetailPage, {
+      providers: [
+        activatedRouteFor(NOTEBOOK_ID),
+        { provide: NotebooksService, useValue: { listNotebooks } },
+        { provide: DocumentsService, useValue: { listDocuments } },
+        { provide: DocumentTransferService, useValue: {} },
+        appEvents.provider,
+      ],
+    });
+
+    await screen.findByText('report.pdf');
+
+    appEvents.events.next({
+      id: 'event-1',
+      type: 'document-version-status-changed',
+      topic: `notebook:${NOTEBOOK_ID}`,
+      occurredAt: '2026-01-01T00:00:01.000Z',
+      data: { documentId: 'doc-9', versionId: 'v-9', status: 'indexing' },
+    });
+    expect(await screen.findByText('indexing')).toBeTruthy();
+
+    appEvents.events.next({
+      id: 'event-2',
+      type: 'document-version-status-changed',
+      topic: `notebook:${NOTEBOOK_ID}`,
+      occurredAt: '2026-01-01T00:00:02.000Z',
+      data: { documentId: 'doc-9', versionId: 'v-9', status: 'ready' },
+    });
+    const badge = await screen.findByText('ready');
+    expect(badge.className).toContain('notebook-detail-page__badge--ready');
+    // The event alone drove it; nothing was re-fetched.
+    expect(listDocuments).toHaveBeenCalledTimes(1);
+  });
+
   it('ignores a status event for a Version that is no longer the latest', async () => {
     const listNotebooks = vi.fn().mockResolvedValue([]);
     const listDocuments = vi.fn().mockResolvedValue([

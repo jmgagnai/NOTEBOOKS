@@ -16,16 +16,22 @@ export type DocumentVersion = z.infer<typeof documentVersionSchema>;
 // ("converting"), and it reaches "converted". Stage 2 is metadata extraction
 // and the three Generated document artifacts (NBK-7), chained off stage 1:
 // it picks a converted Version up ("summarizing") and leaves it
-// "summarized" — the state stage 3 (chunking) will consume. "failed" is
-// terminal for whichever stage exhausted its retries; `ingestion_error` says
-// which and why. Later stages add their own values to this progression
-// rather than a parallel field.
+// "summarized". Stage 3 is chunking and embeddings (NBK-8), chained off
+// stage 2: it picks a summarized Version up ("indexing" — GLOSSARY.md
+// reserves that word "for the embedding/retrieval stage specifically") and
+// leaves it "ready", which is terminal for the pipeline and what tells a
+// user the Document is safe to rely on for chat. "failed" is terminal for
+// whichever stage exhausted its retries; `ingestion_error` says which and
+// why. Later stages add their own values to this progression rather than a
+// parallel field.
 export const documentStatusSchema = z.enum([
   "queued",
   "converting",
   "converted",
   "summarizing",
   "summarized",
+  "indexing",
+  "ready",
   "failed",
 ]);
 export type DocumentStatus = z.infer<typeof documentStatusSchema>;
