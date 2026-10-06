@@ -13,7 +13,9 @@ import { registerDocumentRoutes } from "./documents/routes.js";
 import type { AppEventSubscriber } from "./events/bus.js";
 import { registerEventRoutes } from "./events/routes.js";
 import type { JobQueue } from "./jobs/queue.js";
+import type { Embedder } from "./llm/embeddings.js";
 import { registerNotebookRoutes } from "./notebooks/routes.js";
+import { registerSearchRoutes } from "./search/routes.js";
 
 export interface BuildAppOptions {
   pool: Pool;
@@ -39,6 +41,12 @@ export interface BuildAppOptions {
   // deployment without an OpenRouter key still serves Thread CRUD, and
   // asking a question reports 503 instead of recording an unanswerable one.
   chat?: ChatDeps;
+  // Notebook search (NBK-9) embeds the incoming query with the same model
+  // ingestion stage 3 embedded the chunks with. Unlike the options above,
+  // omitting it does NOT drop the route: `GET /notebooks/:id/search` stays
+  // registered and answers 503, so the published contract has one shape
+  // whether or not an OpenRouter key is configured.
+  embed?: Embedder;
 }
 
 /**
@@ -53,6 +61,7 @@ export async function buildApp({
   jobs,
   appEvents,
   chat,
+  embed,
 }: BuildAppOptions): Promise<FastifyInstance> {
   const app = Fastify({ logger: false });
 
@@ -76,6 +85,7 @@ export async function buildApp({
   registerAuthRoutes(app, pool);
   registerNotebookRoutes(app, pool);
   registerChatRoutes(app, { pool, chat });
+  registerSearchRoutes(app, { pool, embed });
   if (s3 && documentsBucket) {
     registerDocumentRoutes(app, { pool, s3, documentsBucket, jobs });
   }

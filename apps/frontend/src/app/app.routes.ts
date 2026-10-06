@@ -8,6 +8,14 @@ import { NotebooksPage } from './notebooks/notebooks-page';
 export const routes: Routes = [
   { path: '', component: NotebooksPage, canActivate: [authGuard] },
   { path: 'notebooks/:notebookId', component: NotebookDetailPage, canActivate: [authGuard] },
+  // Searching a Notebook's Documents (NBK-9). Its own page rather than a
+  // panel on the Notebook, so a search is a place a user can be — and link
+  // to — rather than a transient state of the document list.
+  {
+    path: 'notebooks/:notebookId/search',
+    loadComponent: () => import('./search/search-page').then((m) => m.SearchPage),
+    canActivate: [authGuard],
+  },
   // Opening a Document (NBK-7): its Executive Summary first, with an action
   // to expand to the full Converted Markdown.
   //

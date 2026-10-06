@@ -8,6 +8,19 @@
 
     <h2>Documents</h2>
 
+    <!--
+      Search (NBK-9) is how a user finds a source without opening a chat, so
+      it has to be reachable from the Notebook they are already looking at.
+    -->
+    <a
+      mat-button
+      class="notebook-detail-page__search"
+      [routerLink]="['/notebooks', notebookId, 'search']"
+      aria-label="Search this Notebook"
+    >
+      Search this Notebook
+    </a>
+
     <label class="notebook-detail-page__upload">
       Upload a Document
       <input type="file" (change)="onFileSelected($event)" aria-label="Upload a Document" />

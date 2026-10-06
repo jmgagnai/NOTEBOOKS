@@ -29,6 +29,8 @@ export type { ListChatMessages$Params as ListChatMessages$Params } from './fn/ch
 export { listChatMessages as listChatMessages } from './fn/chat/list-chat-messages';
 export type { SendChatMessage$Params as SendChatMessage$Params } from './fn/chat/send-chat-message';
 export { sendChatMessage as sendChatMessage } from './fn/chat/send-chat-message';
+export type { SearchNotebook$Params as SearchNotebook$Params } from './fn/search/search-notebook';
+export { searchNotebook as searchNotebook } from './fn/search/search-notebook';
 export type { ListDocuments$Params as ListDocuments$Params } from './fn/documents/list-documents';
 export { listDocuments as listDocuments } from './fn/documents/list-documents';
 export type { UploadDocument$Params as UploadDocument$Params } from './fn/documents/upload-document';

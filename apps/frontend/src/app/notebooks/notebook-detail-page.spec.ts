@@ -543,4 +543,24 @@ describe('NotebookDetailPage', () => {
 
     expect(downloadDocumentVersion).toHaveBeenCalledWith(NOTEBOOK_ID, 'doc-4', 'v-9', 'sheet.xlsx');
   });
+
+  // NBK-9: search is how a user finds a source without opening a chat, so it
+  // has to be reachable from the Notebook they are already looking at.
+  it("links to this Notebook's search page", async () => {
+    const listNotebooks = vi.fn().mockResolvedValue([]);
+    const listDocuments = vi.fn().mockResolvedValue([]);
+
+    await render(NotebookDetailPage, {
+      providers: [
+        activatedRouteFor(NOTEBOOK_ID),
+        { provide: NotebooksService, useValue: { listNotebooks } },
+        { provide: DocumentsService, useValue: { listDocuments } },
+        { provide: DocumentTransferService, useValue: {} },
+        appEventsStub().provider,
+      ],
+    });
+
+    const link = await screen.findByLabelText('Search this Notebook');
+    expect(link.getAttribute('href')).toBe(`/notebooks/${NOTEBOOK_ID}/search`);
+  });
 });
