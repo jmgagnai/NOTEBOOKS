@@ -4,11 +4,12 @@ import type { Pool } from "pg";
  * One Chunk retrieved for a question, with everything the answer path needs
  * about where it came from.
  *
- * `chunkId` and `documentVersionId` are carried even though NBK-10 does not
- * use them: per GLOSSARY.md a Citation is "a pointer into one specific
- * Document Version at one specific chunk", so NBK-12 can attach Citations to
- * an answer from exactly this, without the retrieval or the prompt-building
- * having to be restructured to find out what was retrieved.
+ * `chunkId` and `documentVersionId` are both carried because a Citation is,
+ * per GLOSSARY.md, "a pointer into one specific Document Version at one
+ * specific chunk" — and the Version a Citation pins is the one retrieval
+ * chose here, not whatever is latest when someone later follows it (NBK-12).
+ * That is why the Version id travels out of retrieval rather than being
+ * looked up again downstream.
  */
 export interface RetrievedChunk {
   chunkId: string;
