@@ -1,4 +1,5 @@
 import type { Pool } from "pg";
+import { toVectorLiteral } from "../db/vector.js";
 import { SEARCHABLE_VERSIONS_CTE } from "../documents/searchable-versions.js";
 
 /**
@@ -99,7 +100,7 @@ export async function retrieveChunks(
      JOIN searchable_versions l ON l.version_id = c.document_version_id
      ORDER BY c.embedding <=> $2::vector, c.id
      LIMIT $3`,
-    [notebookId, `[${queryEmbedding.join(",")}]`, limit],
+    [notebookId, toVectorLiteral(queryEmbedding), limit],
   );
 
   return rows.map((row) => ({

@@ -23,7 +23,7 @@ import { NotebooksStore } from './notebooks.store';
  * Document's status badge tracks the background pipeline without a refresh.
  *
  * Below the Documents sits the chat panel (NBK-10) — the Notebook's Chat
- * Threads and the open conversation. Per NBK-1 a Notebook's detail page is
+ * Threads and the open Thread. Per NBK-1 a Notebook's detail page is
  * "composed of a sources panel ... [and] a chat panel", so the two live on
  * one page; the chat panel owns its own store and data loading.
  */

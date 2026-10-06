@@ -48,9 +48,9 @@
     }
   </div>
 
-  <div class="chat-panel__conversation">
+  <div class="chat-panel__thread-view">
     @if (activeThread(); as thread) {
-      <div class="chat-panel__conversation-head">
+      <div class="chat-panel__thread-view-head">
         <h3>{{ thread.title }}</h3>
         <!--
           Renaming is open to anyone (ADR-0001), so this is not gated on
@@ -91,7 +91,7 @@
                 The prose, with each source marker turned into a link to the
                 exact Document Version and chunk it cites (NBK-12). A marker
                 the backend recorded no Citation for stays plain text — it
-                named a passage the answer was not grounded in.
+                named a Chunk the answer was not grounded in.
               -->
               <p class="chat-panel__message-content">
                 @for (segment of segments(message.content, message.citations); track $index) {

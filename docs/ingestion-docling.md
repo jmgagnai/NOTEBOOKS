@@ -56,6 +56,64 @@ The tag is pinned, not `latest` or `main`. Conversion output feeds every
 later Stage, so the converter must not change under the app without someone
 deciding to change it.
 
+## What this image can and cannot convert
+
+The upload route's accepted extensions (`src/documents/file-types.ts`) are
+bounded by what this image can read, because an accepted upload that cannot be
+converted is a Document stuck at `failed`, not a feature. Read out of the
+pinned image (`docling.datamodel.base_models.FormatToExtensions`):
+
+| Docling input format | Extensions                                   | Accepted on upload |
+| -------------------- | -------------------------------------------- | ------------------ |
+| `PDF`                | `pdf`                                        | yes                |
+| `DOCX`               | `docx`, `dotx`, `docm`, `dotm`               | `.docx` only       |
+| `XLSX`               | `xlsx`, `xlsm`                               | `.xlsx` only       |
+| `MD`                 | `md`                                         | yes (`.markdown` too) |
+| `CSV`                | `csv`                                        | yes                |
+| `HTML`, `PPTX`, `ASCIIDOC`, `IMAGE`, `AUDIO`, `XML_*`, `JSON_DOCLING` | — | no — outside NBK-1's list |
+
+Plain text has no Docling format of its own; a `.txt` falls through content
+sniffing to `text/plain` and passes through essentially unchanged, which is
+what NBK-1 anticipated for "plain text, Markdown, and CSV inputs".
+
+### Legacy `.xls` is not supported, and why
+
+NBK-1 lists "Excel" unqualified, so a `.xls` upload is a reasonable thing for
+a user to try. It is rejected, with a message that says why rather than just
+listing what is accepted.
+
+The reason is the converter, verified by running a real OLE2/BIFF workbook
+through the pinned image rather than inferred:
+
+- `InputFormat.XLSX` maps to the `xlsx` and `xlsm` extensions only.
+- The image ships `openpyxl` (which reads the modern zip-based format) but
+  neither `xlrd` nor `olefile`, so nothing in it can parse a BIFF workbook.
+- There is no `application/vnd.ms-excel` entry in its MIME-to-format table,
+  and the `filetype` library it sniffs with returns `None` for the OLE2
+  signature.
+
+So format detection resolves a `.xls` to `None`, Docling logs
+
+```
+Input document report.xls with format None does not match any allowed format
+```
+
+writes no output file, **and exits 0** — which stage 1 catches as "exited 0 but
+produced no Markdown" (that guard exists for exactly this class of input; see
+`createDoclingConverter`). Accepting `.xls` would therefore trade an immediate,
+actionable 400 at upload for a Document that sits in `converting` and then
+`failed` several minutes later.
+
+Note that Docling sniffs *content*, not only the extension: a CSV or an actual
+`.xlsx` renamed to `.xls` converts fine. That is not a reason to accept the
+extension — it means accepting it would succeed for the files that were never
+really `.xls` and fail for the ones that were, which is the worst of both.
+
+Supporting legacy `.xls` properly needs a pre-conversion step this pipeline
+does not have — LibreOffice headless, or an `xlrd`-based shim, either of which
+is a new external dependency and a new failure mode. That is a feature, not a
+validation tweak.
+
 ## Configuration
 
 | Variable             | Default                                            | Purpose                      |

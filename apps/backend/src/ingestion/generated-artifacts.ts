@@ -33,20 +33,39 @@ export type DocumentMetadata = z.infer<typeof documentMetadataSchema>;
  * 500-1000 words at the conventional ~500 words a page, because a word range
  * is the only form a model can be held to and a test can assert.
  */
+/**
+ * How an over-long artifact may be cut back.
+ *
+ * Both are deterministic last resorts after the model has had its one
+ * corrective rewrite, and both cut at a boundary the artifact's *own
+ * definition* makes safe — which is why there are two of them rather than one
+ * shared trim and one artifact with no backstop at all:
+ *
+ * - `"sentences"` drops whole trailing sentences. Correct for the artifacts
+ *   that are plain prose by definition (the Chat Snippet and the Abstract,
+ *   whose brief says "no headings, no bullet points, no Markdown"), where the
+ *   only structure is the sentence.
+ * - `"sections"` drops whole trailing heading-delimited sections. Correct for
+ *   the Executive Summary, whose brief *asks* for "short Markdown sections
+ *   with headings and bullet points": cutting its trailing sentences would
+ *   end the document mid-table, mid-bullet, or on a heading introducing
+ *   content that is no longer there, so the section is the smallest unit that
+ *   can be removed without producing something that reads as broken.
+ */
+export type TrimStrategy = "sentences" | "sections";
+
 export interface ArtifactSpec {
   minWords: number;
   maxWords: number;
   /** What this artifact is and who reads it — goes into the system prompt. */
   brief: string;
   /**
-   * Whether an over-long answer may be cut back by dropping whole trailing
-   * sentences.
-   *
-   * True only for the artifacts that are plain prose *by definition*. For
-   * structured Markdown (the Executive Summary) the same operation would
-   * strand a heading over nothing, so that one is only ever re-asked for.
+   * Which boundary an over-long answer may be cut back at. See
+   * {@link TrimStrategy} — every artifact has one, because an artifact
+   * defined by its size with nothing enforcing that size ships whatever the
+   * model felt like producing.
    */
-  trimmable: boolean;
+  trim: TrimStrategy;
 }
 
 export const ARTIFACT_SPECS = {
@@ -59,8 +78,8 @@ export const ARTIFACT_SPECS = {
       "language model's context as grounding about this source. Write it for a model to read, not a human: " +
       "no preamble, no hedging, no marketing tone. State what the document is, what it covers, the entities, " +
       "dates and figures that identify it, and what kinds of question it can answer.",
-    // Prose by definition, so a too-long answer can be cut back safely.
-    trimmable: true,
+    // Prose by definition, so whole trailing sentences can go.
+    trim: "sentences",
   },
   // "Shown first when a user opens a document" (GLOSSARY.md).
   executiveSummary: {
@@ -71,9 +90,12 @@ export const ARTIFACT_SPECS = {
       "will decide from it whether to read the full document. Use short Markdown sections with headings and " +
       "bullet points where they help. Cover the document's purpose, its main findings or provisions, and any " +
       "conclusions, obligations or figures a reader must not miss.",
-    // Structured Markdown: cutting trailing sentences would leave a heading
-    // over nothing, so this one is only ever re-asked for.
-    trimmable: false,
+    // Structured Markdown, so the cut is at a section boundary: whole
+    // heading-delimited sections go, never part of one. Cutting its trailing
+    // *sentences* instead would end the summary mid-table or on a heading
+    // over nothing — which is why this used to have no backstop at all, and
+    // why it needed a different one rather than none.
+    trim: "sections",
   },
   // "Written to be skimmed in a list, not to stand in for the full document"
   // (GLOSSARY.md).
@@ -84,8 +106,9 @@ export const ARTIFACT_SPECS = {
       "an Abstract: a single short paragraph describing what this document is, to be skimmed in a list of " +
       "search results and on a document card. Plain prose, no headings, no bullet points, no Markdown. It " +
       "must help a reader judge relevance at a glance — it does not stand in for the document.",
-    // "Plain prose, no headings" above is exactly what makes the trim safe.
-    trimmable: true,
+    // "Plain prose, no headings" above is exactly what makes a sentence cut
+    // safe.
+    trim: "sentences",
   },
 } as const satisfies Record<string, ArtifactSpec>;
 
@@ -142,37 +165,83 @@ function truncate(text: string, limit: number): string {
 }
 
 /**
- * Cuts `text` back under `spec.maxWords` by dropping whole trailing
- * sentences, or returns it unchanged if that can't be done without falling
- * below `spec.minWords`.
+ * Splits structured Markdown into the units a section-boundary trim may drop.
+ *
+ * A unit is an ATX heading together with everything under it up to the next
+ * heading — so a heading never becomes the last thing in a trimmed summary,
+ * and a table or bullet list inside a section is never cut in half, because
+ * nothing smaller than a section is ever removed. Anything before the first
+ * heading is its own leading unit, which is what keeps a summary with no
+ * headings at all representable (as exactly one unit, and therefore
+ * untrimmable — see {@link trimToWordRange}).
+ *
+ * Fenced code blocks are tracked so a `#` comment inside one cannot be
+ * mistaken for a heading and split a section down the middle.
+ */
+function splitIntoSections(text: string): string[] {
+  const sections: string[] = [];
+  let current: string[] = [];
+  let inFence = false;
+
+  for (const line of text.split("\n")) {
+    if (/^\s*(```|~~~)/.test(line)) inFence = !inFence;
+    const isHeading = !inFence && /^#{1,6}\s/.test(line);
+    if (isHeading && current.some((l) => l.trim() !== "")) {
+      sections.push(current.join("\n"));
+      current = [];
+    }
+    current.push(line);
+  }
+  if (current.some((l) => l.trim() !== "")) sections.push(current.join("\n"));
+  return sections;
+}
+
+/**
+ * Cuts `text` back under `spec.maxWords` at the boundary `spec.trim` names,
+ * or returns it unchanged if that can't be done without falling below
+ * `spec.minWords`.
  *
  * This is the last line of defence on the sizes GLOSSARY.md gives the three
- * artifacts. Verified against the real API: asked for 50-100 words, the
- * model returns 99, 108, 112, 126 — in range about half the time, and the
- * corrective rewrite does not reliably fix it. For the Abstract that is not
- * cosmetic, because being skimmable on a card is what the Abstract *is*.
+ * artifacts, and it runs only after the model has had its one corrective
+ * rewrite. It is needed because models do not reliably count: verified
+ * against the real API, an Abstract asked for at 50-100 words came back at
+ * 99, 108, 112 and 126 across runs, and the corrective rewrite does not
+ * reliably fix it. For the Abstract that is not cosmetic — being skimmable on
+ * a card is what the Abstract *is*.
  *
- * Whole sentences, never a word cap: an Abstract ending mid-clause reads as
- * a bug, and a card is exactly where a user would see it.
+ * The boundary is always one the artifact's own definition makes safe (see
+ * {@link TrimStrategy}): whole sentences for plain prose, whole
+ * heading-delimited sections for the Executive Summary's structured Markdown.
+ * Never a word cap — an artifact ending mid-clause, mid-table or mid-bullet
+ * reads as a bug, and the places these are displayed are exactly where a user
+ * would see it.
+ *
+ * Returns the text unchanged when the trim would push it under `minWords` —
+ * better a slightly-long artifact than one cut below the length its
+ * definition requires. That is also what happens to an over-long Executive
+ * Summary with no internal structure to cut at: it is one section, so there
+ * is no boundary, and it ships whole. {@link reduceToArtifact}'s caller
+ * records that, because "we stored it anyway" and "we stored it anyway and
+ * nobody can tell" are different things.
  */
 export function trimToWordRange(text: string, spec: ArtifactSpec): string {
-  if (!spec.trimmable || countWords(text) <= spec.maxWords) return text;
+  if (countWords(text) <= spec.maxWords) return text;
 
-  const sentences = text.match(/[^.!?]+(?:[.!?]+|$)/g);
-  if (!sentences) return text;
+  const units =
+    spec.trim === "sections" ? splitIntoSections(text) : (text.match(/[^.!?]+(?:[.!?]+|$)/g) ?? []);
+  if (units.length <= 1) return text;
 
+  const separator = spec.trim === "sections" ? "\n\n" : "";
   const kept: string[] = [];
   let words = 0;
-  for (const sentence of sentences) {
-    const next = words + countWords(sentence);
+  for (const unit of units) {
+    const next = words + countWords(unit);
     if (next > spec.maxWords) break;
-    kept.push(sentence);
+    kept.push(unit.trim());
     words = next;
   }
 
-  const trimmed = kept.join("").trim();
-  // Better a slightly-long artifact than one cut below the length its
-  // definition requires.
+  const trimmed = kept.join(separator).trim();
   return words >= spec.minWords ? trimmed : text;
 }
 
@@ -181,11 +250,68 @@ export function describeSection(section: MarkdownSection): string {
   return section.headingPath.length > 0 ? section.headingPath.join(" > ") : "(document preamble)";
 }
 
+/**
+ * Somewhere completed section summaries survive a failed attempt.
+ *
+ * The map pass over a 200-page document is dozens of OpenRouter calls and
+ * essentially the whole cost of stage 2 (~$0.05 and 5-8 minutes measured; see
+ * docs/ingestion-summaries.md). Without this, a rate-limited *reduction* —
+ * the last three calls of the job — discards every one of them, which is
+ * precisely what NBK-1's operator story says must not happen: "a transient
+ * failure in one stage ... doesn't force the whole pipeline to restart". The
+ * store makes the expensive half resumable instead of splitting stage 2 into
+ * more queues (ADR-0006).
+ *
+ * An interface rather than a database call, for the usual reason in this
+ * module: `generateArtifacts` touches no database and publishes no events,
+ * and keeping it that way is what makes the generation logic testable without
+ * one. `summarize-document.ts` supplies the Postgres-backed implementation.
+ */
+export interface SectionSummaryStore {
+  /**
+   * Summaries already completed for this document, by section index.
+   *
+   * The caller is responsible for only returning entries that belong to the
+   * *current* Converted Markdown — a cache keyed by a section index means
+   * nothing against text that has changed since.
+   */
+  completed: ReadonlyMap<number, string>;
+  /**
+   * Records one freshly generated summary. Awaited, so a summary is on the
+   * record before the next call is made; failures propagate, because a store
+   * that silently drops writes would quietly turn resumability back off.
+   */
+  record(index: number, summary: string): Promise<void>;
+}
+
 export interface GenerationDeps {
   complete: ChatCompleter;
   models: TaskModels;
   /** Parallel map-pass calls. Defaults to 4. */
   mapConcurrency?: number;
+  /**
+   * Where completed section summaries are kept so a retry can reuse them.
+   * Omitted, the map pass simply runs every section — which is what keeps
+   * this module callable without a database.
+   */
+  sectionSummaries?: SectionSummaryStore;
+}
+
+/**
+ * One Generated document artifact that ended up outside the word range
+ * GLOSSARY.md defines it by, after the corrective rewrite and the trim.
+ *
+ * Surfaced rather than swallowed. Storing a slightly-off artifact is the
+ * right call — it is worth far more to a user than a Document stuck in
+ * `failed` because a model would not count — but a size guarantee that is
+ * quietly abandoned whenever it is inconvenient is not a guarantee, so the
+ * exceptions are counted where an operator can find them.
+ */
+export interface ArtifactWarning {
+  artifact: ArtifactName;
+  words: number;
+  minWords: number;
+  maxWords: number;
 }
 
 /**
@@ -258,13 +384,30 @@ export async function extractMetadata(
  *
  * This is what makes a 200-page Document summarizable at all — no prompt here
  * ever holds more than one section.
+ *
+ * Resumable when `deps.sectionSummaries` is given: a section already in the
+ * store is taken from it rather than regenerated, and each new summary is
+ * recorded as it completes. So a job that dies in the reduce pass costs its
+ * retry three calls instead of forty.
  */
 export async function summarizeSections(deps: GenerationDeps, sections: MarkdownSection[]): Promise<string[]> {
-  return mapWithConcurrency(sections, deps.mapConcurrency ?? DEFAULT_MAP_CONCURRENCY, async (section) => {
+  const store = deps.sectionSummaries;
+  return mapWithConcurrency(sections, deps.mapConcurrency ?? DEFAULT_MAP_CONCURRENCY, async (section, index) => {
+    // Already paid for on an earlier attempt. Checked before the
+    // passthrough below so one branch decides reuse for every section,
+    // whatever produced its text.
+    const done = store?.completed.get(index);
+    if (done !== undefined) return done;
+
     // Shorter than a summary would be: pass it through rather than asking a
     // model to "shorten" it (see SECTION_PASSTHROUGH_CHARS).
     if (section.content.length <= SECTION_PASSTHROUGH_CHARS) {
-      return `## ${describeSection(section)}\n${section.content}`;
+      const passedThrough = `## ${describeSection(section)}\n${section.content}`;
+      // Recorded like any other: it costs nothing to regenerate, but the
+      // store's keys have to stay dense so a partial cache is still a
+      // faithful picture of which sections are done.
+      await store?.record(index, passedThrough);
+      return passedThrough;
     }
 
     const summary = await deps.complete({
@@ -283,7 +426,11 @@ export async function summarizeSections(deps: GenerationDeps, sections: Markdown
       user: [`Section: ${describeSection(section)}`, "", truncate(section.content, SECTION_CHAR_BUDGET)].join("\n"),
       maxOutputTokens: 400,
     });
-    return `## ${describeSection(section)}\n${summary.trim()}`;
+    const text = `## ${describeSection(section)}\n${summary.trim()}`;
+    // Recorded before this runner moves on to the next section, so whatever
+    // has completed when a later call fails is already durable.
+    await store?.record(index, text);
+    return text;
   });
 }
 
@@ -338,7 +485,7 @@ export async function reduceToArtifact(
   deps: GenerationDeps,
   artifact: ArtifactName,
   { filename, metadata, summaryContext }: { filename: string; metadata: DocumentMetadata; summaryContext: string },
-): Promise<string> {
+): Promise<{ text: string; warning: ArtifactWarning | null }> {
   const spec = ARTIFACT_SPECS[artifact];
   const model = deps.models[artifact];
   const system =
@@ -362,11 +509,18 @@ export async function reduceToArtifact(
     .filter((line) => line !== null)
     .join("\n");
 
+  /** An artifact's size, as something to store or `null` when it fitted. */
+  const check = (text: string): ArtifactWarning | null => {
+    const n = countWords(text);
+    if (n >= spec.minWords && n <= spec.maxWords) return null;
+    return { artifact, words: n, minWords: spec.minWords, maxWords: spec.maxWords };
+  };
+
   const first = (
     await deps.complete({ model, system, user, maxOutputTokens: Math.ceil(spec.maxWords * 2) + 200 })
   ).trim();
   const count = countWords(first);
-  if (count >= spec.minWords && count <= spec.maxWords) return first;
+  if (count >= spec.minWords && count <= spec.maxWords) return { text: first, warning: null };
 
   const corrected = (
     await deps.complete({
@@ -391,10 +545,16 @@ export async function reduceToArtifact(
   };
   const best = distance(corrected) <= distance(first) ? corrected : first;
 
-  // Last resort, and only for the artifacts that are plain prose: cut whole
-  // trailing sentences so the size GLOSSARY.md requires actually holds,
-  // rather than depending on the model having counted.
-  return trimToWordRange(best, spec);
+  // Last resort: cut at the boundary this artifact's definition makes safe —
+  // whole sentences for plain prose, whole sections for structured Markdown —
+  // so the size GLOSSARY.md requires actually holds rather than depending on
+  // the model having counted.
+  const trimmed = trimToWordRange(best, spec);
+
+  // And if even that could not bring it into range (an over-long summary with
+  // no internal structure to cut at; a rewrite that came back *too short*,
+  // which no trim can fix), it is still stored — and said out loud.
+  return { text: trimmed, warning: check(trimmed) };
 }
 
 export interface GenerationResult {
@@ -402,6 +562,12 @@ export interface GenerationResult {
   artifacts: GeneratedArtifacts;
   /** How many header-delimited sections the map pass ran over. */
   sectionCount: number;
+  /**
+   * Artifacts that ended up outside their required word range anyway, in the
+   * order GLOSSARY.md lists them. Empty when everything fitted — which is the
+   * usual case, and the reason the caller stores `null` rather than `[]`.
+   */
+  warnings: ArtifactWarning[];
 }
 
 /**
@@ -462,7 +628,14 @@ export async function generateArtifacts(
 
   return {
     metadata,
-    artifacts: { chatSnippet, executiveSummary, abstract },
+    artifacts: {
+      chatSnippet: chatSnippet.text,
+      executiveSummary: executiveSummary.text,
+      abstract: abstract.text,
+    },
     sectionCount: effectiveSections.length,
+    warnings: [chatSnippet.warning, executiveSummary.warning, abstract.warning].filter(
+      (warning): warning is ArtifactWarning => warning !== null,
+    ),
   };
 }

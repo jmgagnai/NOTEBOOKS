@@ -1,10 +1,27 @@
 import type { Pool } from "pg";
+import { notebookIsActive } from "./active-notebooks.js";
 import type { Notebook } from "./schema.js";
 
 interface NotebookRow {
   id: string;
   title: string;
   created_at: Date;
+}
+
+/**
+ * Whether a non-deleted Notebook with this id exists — what every route
+ * nested under a Notebook asks before it does anything, so a request against
+ * a Notebook that is gone answers 404 rather than an empty success.
+ *
+ * Lives here, with the Notebooks it is about, rather than in
+ * `documents/repository.ts` where it started: Documents, Chat Threads and
+ * search all ask it, and none of them is where the answer comes from. It is
+ * the same rule as `notebookIsActive`, which is why it is written in terms of
+ * it instead of repeating the `deleted_at` test.
+ */
+export async function notebookExists(pool: Pool, notebookId: string): Promise<boolean> {
+  const { rows } = await pool.query(`SELECT 1 WHERE ${notebookIsActive("$1::uuid")}`, [notebookId]);
+  return rows.length === 1;
 }
 
 /**

@@ -1,12 +1,17 @@
-import type { Pool, PoolClient } from "pg";
-import { z } from "zod";
+import type { Pool } from "pg";
+import { inTransaction } from "../db/transaction.js";
+import { toVectorLiteral } from "../db/vector.js";
 import { publishAppEvent } from "../events/bus.js";
-import { notebookTopic } from "../events/schema.js";
 import type { DocumentStatus } from "../documents/schema.js";
 import { EMBEDDING_DIMENSIONS } from "../llm/models.js";
 import type { Embedder } from "../llm/embeddings.js";
-import { DOCUMENT_VERSION_STATUS_CHANGED } from "./convert-to-markdown.js";
 import { chunkMarkdown, type DocumentChunk } from "./chunking.js";
+import {
+  documentVersionRefSchema,
+  versionStatusChanged,
+  type DocumentVersionRef,
+  type IngestionVersion,
+} from "./stage.js";
 
 /**
  * The pg_boss queue name for ingestion stage 3 — chunking and embeddings
@@ -17,11 +22,8 @@ import { chunkMarkdown, type DocumentChunk } from "./chunking.js";
 export const EMBED_CHUNKS_QUEUE = "embed-chunks";
 
 /** Ids only, same as stages 1 and 2: the job re-reads current truth on every retry. */
-export const embedChunksPayloadSchema = z.object({
-  documentId: z.string().uuid(),
-  versionId: z.string().uuid(),
-});
-export type EmbedChunksPayload = z.infer<typeof embedChunksPayloadSchema>;
+export const embedChunksPayloadSchema = documentVersionRefSchema;
+export type EmbedChunksPayload = DocumentVersionRef;
 
 export interface EmbedChunksDeps {
   pool: Pool;
@@ -43,9 +45,8 @@ export interface EmbedChunksInvocation {
   willRetry: boolean;
 }
 
+/** Stage 3's own input: the Converted Markdown it chunks. */
 interface VersionRow {
-  notebook_id: string;
-  filename: string;
   markdown: string | null;
 }
 
@@ -54,20 +55,21 @@ interface VersionRow {
  * one transaction. `pg_notify` is transactional, so a status nobody committed
  * is never announced.
  *
- * Mirrors stages 1 and 2 deliberately — this is the same lifecycle contract,
- * extended one stage further. Unlike theirs it writes no content columns:
- * stage 3's output is rows in `chunks`, which `replaceChunks` writes in its
- * own transaction before the Version is moved to "ready".
+ * Stage 3's own `UPDATE`, and the shortest of the three: unlike stages 1 and
+ * 2 it writes no content columns at all, because stage 3's output is rows in
+ * `chunks`, which `replaceChunks` writes in its own transaction before the
+ * Version is moved to "ready". `embedded_at` is its own stamp. The
+ * transaction wrapper and the event envelope are shared
+ * (`db/transaction.ts`, `stage.ts`); which *status* to move to is decided by
+ * the caller below.
  */
 async function transitionTo(
   pool: Pool,
-  version: VersionRow & { documentId: string; versionId: string },
+  version: IngestionVersion,
   status: DocumentStatus,
   fields: { error?: string | null } = {},
 ): Promise<void> {
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
+  await inTransaction(pool, async (client) => {
     await client.query(
       `UPDATE document_versions
        SET ingestion_status = $2,
@@ -76,30 +78,8 @@ async function transitionTo(
        WHERE id = $1`,
       [version.versionId, status, fields.error ?? null],
     );
-    await publishAppEvent(client, {
-      type: DOCUMENT_VERSION_STATUS_CHANGED,
-      topic: notebookTopic(version.notebook_id),
-      data: {
-        notebookId: version.notebook_id,
-        documentId: version.documentId,
-        versionId: version.versionId,
-        filename: version.filename,
-        status,
-        ...(fields.error ? { error: fields.error } : {}),
-      },
-    });
-    await client.query("COMMIT");
-  } catch (err) {
-    await client.query("ROLLBACK");
-    throw err;
-  } finally {
-    client.release();
-  }
-}
-
-/** pgvector's text input format. `[1,2,3]` — not a Postgres array literal. */
-function toVectorLiteral(vector: number[]): string {
-  return `[${vector.join(",")}]`;
+    await publishAppEvent(client, versionStatusChanged(version, status, fields.error));
+  });
 }
 
 /**
@@ -107,14 +87,12 @@ function toVectorLiteral(vector: number[]): string {
  *
  * Delete-then-insert, not an upsert: a retry (or a re-run after the chunker
  * itself changed) can legitimately produce *fewer* chunks than the attempt
- * before it, and an upsert would leave the surplus behind — stale passages
+ * before it, and an upsert would leave the surplus behind — stale Chunks
  * that a Citation could still point at. One transaction so a reader never
  * sees a Version with half its chunks.
  */
 async function replaceChunks(pool: Pool, versionId: string, chunks: DocumentChunk[], vectors: number[][]): Promise<void> {
-  const client: PoolClient = await pool.connect();
-  try {
-    await client.query("BEGIN");
+  await inTransaction(pool, async (client) => {
     await client.query("DELETE FROM chunks WHERE document_version_id = $1", [versionId]);
     for (const [i, chunk] of chunks.entries()) {
       await client.query(
@@ -123,13 +101,7 @@ async function replaceChunks(pool: Pool, versionId: string, chunks: DocumentChun
         [versionId, chunk.index, chunk.headingPath, chunk.text, toVectorLiteral(vectors[i])],
       );
     }
-    await client.query("COMMIT");
-  } catch (err) {
-    await client.query("ROLLBACK");
-    throw err;
-  } finally {
-    client.release();
-  }
+  });
 }
 
 /**
@@ -150,7 +122,7 @@ export async function runEmbedChunksJob(
 ): Promise<void> {
   const { pool } = deps;
 
-  const { rows } = await pool.query<VersionRow>(
+  const { rows } = await pool.query<VersionRow & { notebook_id: string; filename: string }>(
     `SELECT d.notebook_id, d.filename, v.markdown
      FROM document_versions v
      JOIN documents d ON d.id = v.document_id
@@ -164,7 +136,12 @@ export async function runEmbedChunksJob(
     return;
   }
 
-  const version = { ...row, documentId: payload.documentId, versionId: payload.versionId };
+  const version: IngestionVersion = {
+    notebookId: row.notebook_id,
+    filename: row.filename,
+    documentId: payload.documentId,
+    versionId: payload.versionId,
+  };
 
   if (row.markdown === null || row.markdown.trim() === "") {
     // Stage 3's input is missing, which means stage 1 either hasn't run or

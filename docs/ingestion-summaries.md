@@ -81,11 +81,11 @@ are not interchangeable. `ARTIFACT_SPECS` in
 `src/ingestion/generated-artifacts.ts` is the only place those sizes are
 written down:
 
-| Artifact          | Size (GLOSSARY.md) | Enforced as   |
-| ----------------- | ------------------ | ------------- |
-| Chat Snippet      | 150–300 words      | 150–300 words |
+| Artifact          | Size (GLOSSARY.md) | Enforced as    |
+| ----------------- | ------------------ | -------------- |
+| Chat Snippet      | 150–300 words      | 150–300 words  |
 | Executive Summary | 1–2 pages          | 500–1000 words |
-| Abstract          | 50–100 words       | 50–100 words  |
+| Abstract          | 50–100 words       | 50–100 words   |
 
 "1–2 pages" becomes 500–1000 words at the conventional ~500 words a page,
 because a word range is the only form a model can be held to and a test can
@@ -93,21 +93,77 @@ assert.
 
 Models do not reliably count. Measured against the real API, an Abstract
 asked for at 50–100 words came back at 99, 108, 112 and 126 words across
-runs. So the range is enforced in three steps, in order:
+runs. So the range is enforced in four steps, in order:
 
 1. the prompt states the range;
 2. an answer outside it gets **one** corrective rewrite, told the actual count
    and the required range (one, not a loop: models converge on the second try
    or not at all, and the job has its own retry budget to protect);
-3. for the two artifacts that are plain prose *by definition* — the Chat
-   Snippet and the Abstract — a still-too-long answer is cut back by dropping
-   whole trailing sentences. The Executive Summary is structured Markdown, so
-   the same cut would strand a heading over nothing; it is only ever re-asked
-   for.
+3. a still-too-long answer is cut back at a boundary that artifact's own
+   definition makes safe. All three have one — an artifact defined by its size
+   with nothing enforcing that size ships whatever the model felt like
+   producing:
+
+   | Artifact          | `trim`        | Cuts at                            |
+   | ----------------- | ------------- | ---------------------------------- |
+   | Chat Snippet      | `"sentences"` | whole trailing sentences           |
+   | Abstract          | `"sentences"` | whole trailing sentences           |
+   | Executive Summary | `"sections"`  | whole trailing `#`-headed sections |
+
+   The two prose artifacts are cut by sentence because the sentence is their
+   only structure — the Abstract's brief says "no headings, no bullet points,
+   no Markdown" outright. The Executive Summary's brief *asks* for "short
+   Markdown sections with headings and bullet points", so cutting its trailing
+   sentences would end it mid-table, mid-bullet, or on a heading introducing
+   content that is no longer there. Its unit is therefore the section:
+   everything under a heading goes or stays together, and a fenced code block
+   can't be split by a `#` comment inside it being mistaken for a heading.
+
+4. if even that can't bring it into range without dropping below `minWords`,
+   the artifact is stored **unchanged** and the out-of-range result is recorded
+   in `document_versions.artifact_warnings` (migration 0011), naming the
+   artifact, the count it measured and the range it needed.
 
 A still-out-of-range artifact is stored anyway rather than failing the stage:
 a slightly-long Abstract is worth far more to a user than a Document stuck in
-`failed` because a model would not count.
+`failed` because a model would not count. Step 4 exists because that trade is
+right and is also how a size guarantee quietly stops being one — it is the
+difference between "stored anyway" and "stored anyway, and nobody can tell".
+The column is `NULL` when everything fitted, so "nothing to report" is one
+value rather than two, and it is deliberately *not* `ingestion_error`, which
+means the stage failed and is read as such by the UI's status badge.
+
+The residual case is a real one: an over-long Executive Summary with no
+internal structure at all is one section, so there is no boundary to cut at
+and nothing safe to drop. That is what gets written down.
+
+## Retrying without re-paying for the map pass
+
+Stage 2 is one job making 1 metadata call, one call **per section**, and 3
+reductions. On a 200-page document the map pass is dozens of calls and
+essentially the whole bill, so a rate-limited *reduction* — the last three
+calls — used to discard every section summary with it. NBK-1's operator story
+is explicit that a transient failure must not force expensive work to be
+redone.
+
+Each section summary is therefore persisted as it completes, in
+`document_versions.section_summaries`, keyed by section index and
+fingerprinted with a SHA-256 of the Converted Markdown it came from. A retry
+reuses what is done and generates only the rest: a failed reduction now costs
+its retry three calls instead of forty.
+
+The fingerprint is what makes reuse safe rather than merely fast — stage 1 can
+re-run against the same Version id and leave different Markdown behind, and
+reducing last attempt's summaries of text that is no longer in the document
+would leave every status reading `summarized` with only the content wrong. A
+cache whose fingerprint doesn't match is discarded wholesale.
+
+The cache is cleared once stage 2 succeeds: it is work-in-progress, not an
+artifact. `generated-artifacts.ts` reaches it through a `SectionSummaryStore`
+interface and still touches no database.
+
+`docs/adr/0006-three-ingestion-queues-with-a-resumable-map-pass.md` records why
+this is a resumable job rather than one queue per stage named in the spec.
 
 ## Two things found by running it for real
 
@@ -131,16 +187,22 @@ miles" — both wrong.
 
 ## Reading the results
 
-| Endpoint                                                      | Carries                                                         |
-| ------------------------------------------------------------- | --------------------------------------------------------------- |
-| `GET /notebooks/:id/documents`                                | each Document's **Abstract** (for cards and search results)     |
-| `GET /notebooks/:id/documents/:documentId`                    | metadata, **Executive Summary**, Chat Snippet, Abstract         |
-| `GET .../documents/:documentId/versions/:versionId/content`   | the **Converted Markdown**                                      |
+| Endpoint                                                    | Carries                                                                     |
+| ----------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `GET /notebooks/:id/documents`                              | each Document's **Abstract** (for cards and search results)                 |
+| `GET /notebooks/:id/documents/:documentId`                  | the **latest** Version's metadata, Executive Summary, Chat Snippet, Abstract |
+| `GET .../documents/:documentId/versions/:versionId`         | **that** Version's own metadata, Executive Summary, Chat Snippet, Abstract   |
+| `GET .../documents/:documentId/versions/:versionId/content` | the **Converted Markdown**                                                   |
 
-Three endpoints, not one payload, because the split follows the artifacts'
+Four endpoints, not one payload, because the split follows the artifacts'
 consumers: an Abstract belongs in a list, an Executive Summary belongs on an
 opened Document, and the Converted Markdown — up to 200+ pages — is fetched
 only when a reader expands past the summary.
+
+The third row is the one a Citation reads, and it is a separate endpoint
+rather than a parameter on the second because the two answer different
+questions: "what does this Document say now" and "what did this Version say".
+See `docs/versioning.md`.
 
 The frontend renders both the Executive Summary and the full content through
 `MarkdownView`, which runs `marked` and binds the result with `[innerHTML]`

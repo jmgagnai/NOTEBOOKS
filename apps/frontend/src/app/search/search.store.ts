@@ -2,11 +2,12 @@ import { inject } from '@angular/core';
 import { patchState, signalStore, withMethods, withState } from '@ngrx/signals';
 import { SearchService } from '../api/services/search.service';
 import { Document } from '../documents/documents.store';
+import { errorMessage } from '../shared/error-message';
 
 /**
  * One search hit. A `Document` — not a Chunk — because the backend rolls
  * Chunk matches up to their parent Document (NBK-9), so the same Document
- * never appears twice however many of its passages matched.
+ * never appears twice however many of its Chunks matched.
  *
  * It is deliberately the same `Document` the Notebook's card list renders:
  * both carry the `abstract`, which per GLOSSARY.md is what belongs in
@@ -41,16 +42,6 @@ const initialState: SearchState = {
   error: null,
   searched: false,
 };
-
-function errorMessage(err: unknown, fallback: string): string {
-  if (err && typeof err === 'object' && 'error' in err) {
-    const body = (err as { error?: unknown }).error;
-    if (body && typeof body === 'object' && 'message' in body && typeof body.message === 'string') {
-      return body.message;
-    }
-  }
-  return err instanceof Error ? err.message : fallback;
-}
 
 /**
  * Holds one Notebook's search results, fetched through the generated

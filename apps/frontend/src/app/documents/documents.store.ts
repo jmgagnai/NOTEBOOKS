@@ -3,6 +3,7 @@ import { patchState, signalStore, withMethods, withState } from '@ngrx/signals';
 import { Subscription } from 'rxjs';
 import { DocumentsService } from '../api/services/documents.service';
 import { AppEvent, AppEventsService } from '../events/app-events.service';
+import { errorMessage } from '../shared/error-message';
 import { DocumentTransferService } from './document-transfer.service';
 
 export interface DocumentVersion {
@@ -84,6 +85,99 @@ export interface DocumentDetail extends Document {
   executiveSummary: string | null;
 }
 
+// One *named* Document Version opened on its own, as
+// `GET .../documents/:documentId/versions/:versionId` returns it — what
+// following a Citation reads. Every artifact here belongs to the Version
+// named in the path, which is the whole point: per GLOSSARY.md a Citation
+// "opens that exact Version at that location, even after newer Versions
+// exist", and an Executive Summary or a version badge from the *current*
+// Version would be describing a different document than the content beside
+// it.
+export interface DocumentVersionDetail {
+  documentId: string;
+  notebookId: string;
+  filename: string;
+  documentCreatedAt: string;
+  version: DocumentVersion;
+  status: DocumentStatus;
+  abstract: string | null;
+  chatSnippet: string | null;
+  executiveSummary: string | null;
+  metadata: Record<string, unknown> | null;
+  isLatestVersion: boolean;
+  latestVersionNumber: number;
+}
+
+/**
+ * The Document an opened page is showing, whichever way it was opened.
+ *
+ * One view model for both reads, deliberately. The page renders the same
+ * things either way — a filename, a status badge, a version number, the
+ * extracted metadata, the Executive Summary, and an action to expand to the
+ * content — and the only question that ever differs is *which Version* all of
+ * that describes. Making that a field (`version`) rather than two shapes is
+ * what stops a template from reaching for `latestVersion` on a page that is
+ * deliberately not showing the latest Version, which is exactly how the
+ * blended page happened.
+ *
+ * `isLatestVersion` and `latestVersionNumber` let the page say where the
+ * reader is standing in the Document's history without a second request.
+ */
+export interface OpenDocument {
+  id: string;
+  notebookId: string;
+  filename: string;
+  /** The ingestion status of `version` — not of the Document's latest. */
+  status: DocumentStatus;
+  abstract: string | null;
+  chatSnippet: string | null;
+  executiveSummary: string | null;
+  metadata: Record<string, unknown> | null;
+  createdAt: string;
+  /** The Version every other field on this object describes. */
+  version: DocumentVersion;
+  isLatestVersion: boolean;
+  latestVersionNumber: number;
+}
+
+/** The latest-Version read, as the page's view model. */
+function fromDocumentDetail(detail: DocumentDetail): OpenDocument {
+  return {
+    id: detail.id,
+    notebookId: detail.notebookId,
+    filename: detail.filename,
+    status: detail.status,
+    abstract: detail.abstract,
+    chatSnippet: detail.chatSnippet,
+    executiveSummary: detail.executiveSummary,
+    metadata: detail.metadata,
+    createdAt: detail.createdAt,
+    version: detail.latestVersion,
+    // This read is *defined* as "the latest Version", so it is by
+    // construction, not a claim needing a second lookup.
+    isLatestVersion: true,
+    latestVersionNumber: detail.latestVersion.versionNumber,
+  };
+}
+
+/** The Version-scoped read, as the same view model. */
+function fromVersionDetail(detail: DocumentVersionDetail): OpenDocument {
+  return {
+    id: detail.documentId,
+    notebookId: detail.notebookId,
+    filename: detail.filename,
+    status: detail.status,
+    abstract: detail.abstract,
+    chatSnippet: detail.chatSnippet,
+    executiveSummary: detail.executiveSummary,
+    metadata: detail.metadata,
+    createdAt: detail.documentCreatedAt,
+    version: detail.version,
+    isLatestVersion: detail.isLatestVersion,
+    latestVersionNumber: detail.latestVersionNumber,
+  };
+}
+
 // The Converted Markdown of one Version, fetched only when a reader expands
 // past the Executive Summary. Held separately from the Document because it
 // can run past 200 pages — nothing should load it by accident.
@@ -98,7 +192,7 @@ interface DocumentsState {
   uploading: boolean;
   error: string | null;
   // The currently open Document, and its content once expanded.
-  openDocument: DocumentDetail | null;
+  openDocument: OpenDocument | null;
   openDocumentLoading: boolean;
   openContent: DocumentContent | null;
   openContentLoading: boolean;
@@ -120,16 +214,6 @@ const initialState: DocumentsState = {
   openContentLoading: false,
   lastDeleted: null,
 };
-
-function errorMessage(err: unknown, fallback: string): string {
-  if (err && typeof err === 'object' && 'error' in err) {
-    const body = (err as { error?: unknown }).error;
-    if (body && typeof body === 'object' && 'message' in body && typeof body.message === 'string') {
-      return body.message;
-    }
-  }
-  return err instanceof Error ? err.message : fallback;
-}
 
 /**
  * Holds the Document list for one Notebook, fetched through the generated
@@ -174,10 +258,11 @@ export const DocumentsStore = signalStore(
       },
 
       /**
-       * Loads one Document with its metadata and summaries (NBK-7) — what a
-       * Document's own page shows. Deliberately a separate call from
-       * `loadDocuments`: the Executive Summary runs to 1-2 pages, so it
-       * belongs on an opened Document and not on every card in a list.
+       * Loads one Document's *latest* Version with its metadata and summaries
+       * (NBK-7) — what opening a Document from the Notebook shows.
+       * Deliberately a separate call from `loadDocuments`: the Executive
+       * Summary runs to 1-2 pages, so it belongs on an opened Document and
+       * not on every card in a list.
        */
       async loadDocument(notebookId: string, documentId: string): Promise<void> {
         // Any previously expanded content belongs to a different Document.
@@ -188,15 +273,54 @@ export const DocumentsStore = signalStore(
           openContent: null,
         });
         try {
-          const openDocument = (await documentsService.getDocument({
+          const detail = (await documentsService.getDocument({
             notebookId,
             documentId,
           })) as DocumentDetail;
-          patchState(store, { openDocument, openDocumentLoading: false });
+          patchState(store, { openDocument: fromDocumentDetail(detail), openDocumentLoading: false });
         } catch (err) {
           patchState(store, {
             openDocumentLoading: false,
             error: errorMessage(err, 'Failed to load Document.'),
+          });
+        }
+      },
+
+      /**
+       * Loads one *named* Document Version with its own metadata and
+       * summaries — what following a Citation opens (NBK-12).
+       *
+       * A different endpoint, not the same one with a parameter, because what
+       * it answers is a different question: `loadDocument` says what this
+       * Document says *now*, and this says what that Version said. Mixing the
+       * two is what produced a page showing a pinned Version's Converted
+       * Markdown beneath the latest Version's Executive Summary, metadata and
+       * version badge — and GLOSSARY.md's promise that a Citation "opens that
+       * exact Version at that location" is about the page a reader lands on,
+       * not only about which bytes of Markdown it fetched.
+       */
+      async loadDocumentVersion(
+        notebookId: string,
+        documentId: string,
+        versionId: string,
+      ): Promise<void> {
+        patchState(store, {
+          openDocumentLoading: true,
+          error: null,
+          openDocument: null,
+          openContent: null,
+        });
+        try {
+          const detail = (await documentsService.getDocumentVersion({
+            notebookId,
+            documentId,
+            versionId,
+          })) as DocumentVersionDetail;
+          patchState(store, { openDocument: fromVersionDetail(detail), openDocumentLoading: false });
+        } catch (err) {
+          patchState(store, {
+            openDocumentLoading: false,
+            error: errorMessage(err, 'Failed to load this Document Version.'),
           });
         }
       },

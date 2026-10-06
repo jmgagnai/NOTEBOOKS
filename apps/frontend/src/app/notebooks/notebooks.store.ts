@@ -1,6 +1,7 @@
 import { inject } from '@angular/core';
 import { patchState, signalStore, withMethods, withState } from '@ngrx/signals';
 import { NotebooksService } from '../api/services/notebooks.service';
+import { errorMessage } from '../shared/error-message';
 
 export interface Notebook {
   id: string;
@@ -24,16 +25,6 @@ const initialState: NotebooksState = {
   error: null,
   lastDeleted: null,
 };
-
-function errorMessage(err: unknown, fallback: string): string {
-  if (err && typeof err === 'object' && 'error' in err) {
-    const body = (err as { error?: unknown }).error;
-    if (body && typeof body === 'object' && 'message' in body && typeof body.message === 'string') {
-      return body.message;
-    }
-  }
-  return err instanceof Error ? err.message : fallback;
-}
 
 /**
  * Holds the Notebook list fetched through the generated ng-openapi-gen

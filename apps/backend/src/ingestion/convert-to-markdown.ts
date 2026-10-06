@@ -5,12 +5,17 @@ import { basename, join } from "node:path";
 import { pipeline } from "node:stream/promises";
 import type { S3Client } from "@aws-sdk/client-s3";
 import type { Pool } from "pg";
-import { z } from "zod";
+import { inTransaction } from "../db/transaction.js";
 import { publishAppEvent } from "../events/bus.js";
-import { notebookTopic } from "../events/schema.js";
 import { getObject } from "../storage/s3-client.js";
 import type { DocumentStatus } from "../documents/schema.js";
 import { markdownOutputPath, type MarkdownConverter } from "./docling.js";
+import {
+  documentVersionRefSchema,
+  versionStatusChanged,
+  type DocumentVersionRef,
+  type IngestionVersion,
+} from "./stage.js";
 
 /**
  * The pg_boss queue name for ingestion stage 1. Each pipeline stage gets its
@@ -20,19 +25,13 @@ import { markdownOutputPath, type MarkdownConverter } from "./docling.js";
  */
 export const CONVERT_TO_MARKDOWN_QUEUE = "convert-to-markdown";
 
-/** The app-event type every Document Version lifecycle change is published as. */
-export const DOCUMENT_VERSION_STATUS_CHANGED = "document-version-status-changed";
+// Re-exported from `stage.ts`, where the three Stages' shared job payload and
+// event envelope live.
+export { DOCUMENT_VERSION_STATUS_CHANGED } from "./stage.js";
 
-/**
- * A convert job carries ids only, never the file or its bytes: the job table
- * is not a place to park a 200-page document, and ids re-read the current
- * truth on every retry.
- */
-export const convertToMarkdownPayloadSchema = z.object({
-  documentId: z.string().uuid(),
-  versionId: z.string().uuid(),
-});
-export type ConvertToMarkdownPayload = z.infer<typeof convertToMarkdownPayloadSchema>;
+/** A convert job's payload: the Document Version to convert, and nothing else. */
+export const convertToMarkdownPayloadSchema = documentVersionRefSchema;
+export type ConvertToMarkdownPayload = DocumentVersionRef;
 
 export interface ConvertToMarkdownDeps {
   pool: Pool;
@@ -68,9 +67,8 @@ export interface ConvertToMarkdownInvocation {
   willRetry: boolean;
 }
 
+/** Stage 1's own input: where in object storage the raw upload is. */
 interface VersionRow {
-  notebook_id: string;
-  filename: string;
   storage_key: string;
 }
 
@@ -78,16 +76,20 @@ interface VersionRow {
  * Updates a Document Version's ingestion status and announces it, in one
  * transaction. `pg_notify` is transactional, so a status nobody committed is
  * never announced — and an announcement is never lost after a commit.
+ *
+ * Stage 1's own `UPDATE`: the Converted Markdown and `converted_at` are
+ * columns no other Stage writes. The transaction wrapper and the event
+ * envelope are shared (`db/transaction.ts`, `stage.ts`); which *status* to
+ * move to is decided by the caller below, which is where a reader of this
+ * Stage can see it.
  */
 async function transitionTo(
   pool: Pool,
-  version: VersionRow & { documentId: string; versionId: string },
+  version: IngestionVersion,
   status: DocumentStatus,
   fields: { markdown?: string; error?: string | null } = {},
 ): Promise<void> {
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
+  await inTransaction(pool, async (client) => {
     await client.query(
       `UPDATE document_versions
        SET ingestion_status = $2,
@@ -97,25 +99,8 @@ async function transitionTo(
        WHERE id = $1`,
       [version.versionId, status, fields.markdown ?? null, fields.error ?? null],
     );
-    await publishAppEvent(client, {
-      type: DOCUMENT_VERSION_STATUS_CHANGED,
-      topic: notebookTopic(version.notebook_id),
-      data: {
-        notebookId: version.notebook_id,
-        documentId: version.documentId,
-        versionId: version.versionId,
-        filename: version.filename,
-        status,
-        ...(fields.error ? { error: fields.error } : {}),
-      },
-    });
-    await client.query("COMMIT");
-  } catch (err) {
-    await client.query("ROLLBACK");
-    throw err;
-  } finally {
-    client.release();
-  }
+    await publishAppEvent(client, versionStatusChanged(version, status, fields.error));
+  });
 }
 
 /**
@@ -138,7 +123,7 @@ export async function runConvertToMarkdownJob(
 ): Promise<void> {
   const { pool, s3, documentsBucket, convertToMarkdown } = deps;
 
-  const { rows } = await pool.query<VersionRow>(
+  const { rows } = await pool.query<VersionRow & { notebook_id: string; filename: string }>(
     `SELECT d.notebook_id, d.filename, v.storage_key
      FROM document_versions v
      JOIN documents d ON d.id = v.document_id
@@ -153,7 +138,12 @@ export async function runConvertToMarkdownJob(
     return;
   }
 
-  const version = { ...row, documentId: payload.documentId, versionId: payload.versionId };
+  const version: IngestionVersion = {
+    notebookId: row.notebook_id,
+    filename: row.filename,
+    documentId: payload.documentId,
+    versionId: payload.versionId,
+  };
   await transitionTo(pool, version, "converting");
 
   const workDir = await mkdtemp(join(deps.tempDir ?? tmpdir(), "nbk-convert-"));
@@ -164,7 +154,7 @@ export async function runConvertToMarkdownJob(
     const inputPath = join(workDir, basename(version.filename));
     const outputPath = markdownOutputPath(workDir);
 
-    const stored = await getObject(s3, documentsBucket, version.storage_key);
+    const stored = await getObject(s3, documentsBucket, row.storage_key);
     await pipeline(stored.body, createWriteStream(inputPath));
 
     await convertToMarkdown({ inputPath, outputPath });

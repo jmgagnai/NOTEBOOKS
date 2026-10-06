@@ -1,10 +1,13 @@
 import type { Pool } from "pg";
+import { inTransaction } from "../db/transaction.js";
+import { notebookIsActive } from "../notebooks/active-notebooks.js";
 import type {
   Document,
   DocumentContent,
   DocumentDetail,
   DocumentStatus,
   DocumentVersion,
+  DocumentVersionDetail,
 } from "./schema.js";
 
 /**
@@ -101,14 +104,6 @@ function toDocumentDetail(row: DocumentWithLatestVersionRow): DocumentDetail {
   };
 }
 
-/** Whether a non-deleted Notebook with this id exists. */
-export async function notebookExists(pool: Pool, notebookId: string): Promise<boolean> {
-  const { rows } = await pool.query("SELECT 1 FROM notebooks WHERE id = $1 AND deleted_at IS NULL", [
-    notebookId,
-  ]);
-  return rows.length === 1;
-}
-
 /**
  * Lists every non-deleted Document in a Notebook, oldest first, each paired
  * with its latest Version. Per ADR-0001 there is no ownership check.
@@ -138,6 +133,10 @@ async function findDocumentWithLatestVersion(
  * artifacts (NBK-7) — what the UI shows when a Document is opened, before
  * the user expands to the full Converted Markdown. Per ADR-0001 there is no
  * ownership check. Returns `null` if no match (caller maps this to 404).
+ *
+ * Scoped to a live Notebook as well as a live Document — see
+ * `notebooks/active-notebooks.ts` for why holding a Document id must not keep
+ * a soft-deleted Notebook's contents readable.
  */
 export async function findDocumentDetail(
   pool: Pool,
@@ -145,10 +144,117 @@ export async function findDocumentDetail(
   documentId: string,
 ): Promise<DocumentDetail | null> {
   const { rows } = await pool.query<DocumentWithLatestVersionRow>(
-    `${SELECT_DOCUMENTS_WITH_LATEST_VERSION} WHERE d.id = $1 AND d.notebook_id = $2 AND d.deleted_at IS NULL`,
+    `${SELECT_DOCUMENTS_WITH_LATEST_VERSION}
+     WHERE d.id = $1 AND d.notebook_id = $2 AND d.deleted_at IS NULL
+       AND ${notebookIsActive("d.notebook_id")}`,
     [documentId, notebookId],
   );
   return rows[0] ? toDocumentDetail(rows[0]) : null;
+}
+
+interface DocumentVersionDetailRow {
+  document_id: string;
+  notebook_id: string;
+  filename: string;
+  document_created_at: Date;
+  version_id: string;
+  version_number: number;
+  mime_type: string;
+  size_bytes: string;
+  version_created_at: Date;
+  ingestion_status: DocumentStatus;
+  abstract: string | null;
+  chat_snippet: string | null;
+  executive_summary: string | null;
+  metadata: Record<string, unknown> | null;
+  latest_version_number: number;
+}
+
+/**
+ * One *named* Document Version with its own metadata and generated artifacts.
+ *
+ * The Version-scoped twin of {@link findDocumentDetail}, and the read path a
+ * Citation needs. Per GLOSSARY.md following a Citation "opens that exact
+ * Version at that location, even after newer Versions exist" — so every field
+ * here comes off the Version that was asked for, never off the Document's
+ * current one. That is the whole difference between the two functions:
+ * `findDocumentDetail` answers "what does this Document say now",
+ * this answers "what did this Version say", and mixing them produces a page
+ * showing one Version's Converted Markdown under another Version's Executive
+ * Summary, metadata and version badge.
+ *
+ * `latest_version_number` rides along so the caller can tell a reader where
+ * the Version they are looking at stands, without a second request and
+ * without having to resolve "latest" itself. It is the only field about any
+ * Version other than the one asked for, and it is a number rather than a
+ * Version so nothing here can be mistaken for the pinned Version's own data.
+ *
+ * Like `findDocumentContent` and `findDownloadableVersion`, this deliberately
+ * does *not* require the parent Document to still be undeleted: a Citation
+ * into a Document someone has since deleted stays checkable. It does require
+ * a live Notebook (`notebooks/active-notebooks.ts`). Returns `null` if no
+ * match (caller maps this to 404).
+ */
+export async function findDocumentVersionDetail(
+  pool: Pool,
+  notebookId: string,
+  documentId: string,
+  versionId: string,
+): Promise<DocumentVersionDetail | null> {
+  const { rows } = await pool.query<DocumentVersionDetailRow>(
+    `SELECT
+       d.id AS document_id,
+       d.notebook_id,
+       d.filename,
+       d.created_at AS document_created_at,
+       v.id AS version_id,
+       v.version_number,
+       v.mime_type,
+       v.size_bytes,
+       v.created_at AS version_created_at,
+       v.ingestion_status,
+       v.abstract,
+       v.chat_snippet,
+       v.executive_summary,
+       v.metadata,
+       -- The Document's current latest Version number, computed the same way
+       -- SELECT_DOCUMENTS_WITH_LATEST_VERSION picks a latest Version, so the
+       -- two can never disagree about which Version is current.
+       (
+         SELECT MAX(latest.version_number)
+         FROM document_versions latest
+         WHERE latest.document_id = d.id AND latest.deleted_at IS NULL
+       ) AS latest_version_number
+     FROM document_versions v
+     JOIN documents d ON d.id = v.document_id
+     WHERE v.id = $1 AND v.document_id = $2 AND d.notebook_id = $3
+       AND v.deleted_at IS NULL
+       AND ${notebookIsActive("d.notebook_id")}`,
+    [versionId, documentId, notebookId],
+  );
+
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    documentId: row.document_id,
+    notebookId: row.notebook_id,
+    filename: row.filename,
+    documentCreatedAt: row.document_created_at.toISOString(),
+    version: {
+      id: row.version_id,
+      versionNumber: row.version_number,
+      mimeType: row.mime_type,
+      sizeBytes: Number(row.size_bytes),
+      createdAt: row.version_created_at.toISOString(),
+    },
+    status: row.ingestion_status,
+    abstract: row.abstract,
+    chatSnippet: row.chat_snippet,
+    executiveSummary: row.executive_summary,
+    metadata: row.metadata,
+    isLatestVersion: row.version_number === row.latest_version_number,
+    latestVersionNumber: row.latest_version_number,
+  };
 }
 
 /**
@@ -161,7 +267,9 @@ export async function findDocumentDetail(
  * Scoped to its Notebook and Document but, like `findDownloadableVersion`,
  * it does not require the parent Document to still be non-deleted — per
  * GLOSSARY.md a Citation keeps pointing at an older Version, and following
- * one has to be able to open it. Returns `null` if no match.
+ * one has to be able to open it. A live *Notebook* is still required
+ * (`notebooks/active-notebooks.ts`): a deleted Document is a Citation
+ * target, a deleted Notebook is not. Returns `null` if no match.
  */
 export async function findDocumentContent(
   pool: Pool,
@@ -173,7 +281,8 @@ export async function findDocumentContent(
     `SELECT v.id, v.markdown
      FROM document_versions v
      JOIN documents d ON d.id = v.document_id
-     WHERE v.id = $1 AND v.document_id = $2 AND d.notebook_id = $3 AND v.deleted_at IS NULL`,
+     WHERE v.id = $1 AND v.document_id = $2 AND d.notebook_id = $3 AND v.deleted_at IS NULL
+       AND ${notebookIsActive("d.notebook_id")}`,
     [versionId, documentId, notebookId],
   );
   const row = rows[0];
@@ -196,10 +305,7 @@ export async function createDocumentVersion(
   sizeBytes: number,
   storageKey: string,
 ): Promise<Document> {
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-
+  const documentId = await inTransaction(pool, async (client) => {
     const existing = await client.query<{ id: string }>(
       "SELECT id FROM documents WHERE notebook_id = $1 AND filename = $2 AND deleted_at IS NULL FOR UPDATE",
       [notebookId, filename],
@@ -228,18 +334,17 @@ export async function createDocumentVersion(
       [documentId, nextVersion, mimeType, sizeBytes, storageKey],
     );
 
-    await client.query("COMMIT");
-    const document = await findDocumentWithLatestVersion(pool, notebookId, documentId);
-    if (!document) {
-      throw new Error("Document vanished immediately after its Version was committed.");
-    }
-    return document;
-  } catch (err) {
-    await client.query("ROLLBACK");
-    throw err;
-  } finally {
-    client.release();
+    return documentId;
+  });
+
+  // Read back outside the transaction, deliberately: this is the committed
+  // Document, and reading it through the same query a listing uses is what
+  // keeps an upload's response the same shape as every other.
+  const document = await findDocumentWithLatestVersion(pool, notebookId, documentId);
+  if (!document) {
+    throw new Error("Document vanished immediately after its Version was committed.");
   }
+  return document;
 }
 
 /**
@@ -319,7 +424,9 @@ export interface DownloadableVersion {
  * and Document. Per GLOSSARY.md, Citations keep pointing at older Versions
  * even after newer ones exist, so this deliberately doesn't require the
  * parent Document to still be non-deleted — only the Version itself must not
- * be deleted. Returns `null` if no match (caller maps this to 404).
+ * be deleted, and its Notebook must not be
+ * (`notebooks/active-notebooks.ts`). Returns `null` if no match (caller maps
+ * this to 404).
  */
 export async function findDownloadableVersion(
   pool: Pool,
@@ -331,7 +438,8 @@ export async function findDownloadableVersion(
     `SELECT v.storage_key, v.mime_type, d.filename
      FROM document_versions v
      JOIN documents d ON d.id = v.document_id
-     WHERE v.id = $1 AND v.document_id = $2 AND d.notebook_id = $3 AND v.deleted_at IS NULL`,
+     WHERE v.id = $1 AND v.document_id = $2 AND d.notebook_id = $3 AND v.deleted_at IS NULL
+       AND ${notebookIsActive("d.notebook_id")}`,
     [versionId, documentId, notebookId],
   );
   const row = rows[0];

@@ -17,7 +17,7 @@ interface AnswerBlock {
  *
  * Splitting the answer rather than rewriting it is what keeps the prose
  * exactly as the model wrote it — a marker the backend dropped (because it
- * named a passage that was never retrieved) stays visible as the plain text
+ * named a Chunk that was never retrieved) stays visible as the plain text
  * it is instead of becoming a link to nowhere.
  */
 interface AnswerSegment {
@@ -31,7 +31,7 @@ const MARKER = /\[(\d{1,3})\]/g;
 
 /**
  * The chat panel of a Notebook (NBK-10): the Notebook's Chat Threads on one
- * side, the open conversation on the other.
+ * side, the open Thread's messages on the other.
  *
  * Per GLOSSARY.md and ADR-0001 the list is every Thread in the Notebook, not
  * this user's — so each entry names its author, and every message names who
@@ -101,8 +101,8 @@ export class ChatPanel implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
-    // The store is root-provided and outlives this panel, so a stale
-    // conversation would otherwise show up on the next Notebook opened.
+    // The store is root-provided and outlives this panel, so a stale Chat
+    // Thread would otherwise show up on the next Notebook opened.
     // `reset` also closes the live connection, so a panel that is gone stops
     // costing one.
     this.store.reset();
@@ -120,7 +120,7 @@ export class ChatPanel implements OnInit, OnDestroy {
    * Citation it refers to.
    *
    * A marker with no Citation stays a plain-text segment: the backend only
-   * records Citations for markers that named a passage the answer was
+   * records Citations for markers that named a Chunk the answer was
    * actually grounded in, so an unmatched marker is one it deliberately
    * dropped and must not be made clickable.
    *
@@ -171,7 +171,7 @@ export class ChatPanel implements OnInit, OnDestroy {
    * GLOSSARY.md requires that following a Citation still open "that exact
    * Version at that location, even after newer Versions exist". The character
    * range rides along so the link is self-sufficient: copied, bookmarked or
-   * shared, it still scrolls to the cited passage, because the range is fixed
+   * shared, it still scrolls to the cited Chunk, because the range is fixed
    * to a Version whose content can never change.
    */
   protected citationLink(citation: Citation): (string | number)[] {
@@ -183,7 +183,7 @@ export class ChatPanel implements OnInit, OnDestroy {
       version: citation.documentVersionId,
       chunk: citation.chunkId,
     };
-    // Omitted rather than sent as null when the passage could not be located
+    // Omitted rather than sent as null when the Chunk could not be located
     // in the Converted Markdown: the Version still opens, just not scrolled.
     if (citation.charStart !== null) params['from'] = citation.charStart;
     if (citation.charEnd !== null) params['to'] = citation.charEnd;

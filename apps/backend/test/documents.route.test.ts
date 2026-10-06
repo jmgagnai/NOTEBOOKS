@@ -222,6 +222,37 @@ describe("Document routes", () => {
       },
     );
 
+    /**
+     * NBK-1 lists "Excel" among the accepted formats, and a user who reads
+     * that and uploads a `.xls` deserves to be told why it bounced rather
+     * than being left to guess that "Excel" meant `.xlsx` only.
+     *
+     * Legacy `.xls` really is unsupported: the pinned Docling image
+     * (`ghcr.io/docling-project/docling-serve-cpu:v1.1.0`) maps its XLSX
+     * backend to the `xlsx`/`xlsm` extensions and ships openpyxl but neither
+     * `xlrd` nor `olefile`, so a BIFF workbook resolves to no input format at
+     * all — verified by running one through the container, which logs "does
+     * not match any allowed format", writes nothing and exits 0. Accepting
+     * `.xls` would therefore trade a clear 400 at upload for a Document stuck
+     * at `failed` after a conversion attempt that never had a chance. See
+     * docs/ingestion-docling.md.
+     */
+    it.each([["budget.xls"], ["Budget.XLS"]])(
+      "explains why legacy %s is rejected, naming .xlsx as the way in",
+      async (filename) => {
+        const session = await loginAsNewUser(`legacy-xls-${filename}@example.com`);
+        const notebookId = await createNotebook(session, `Legacy ${filename}`);
+
+        const response = await uploadFile(session, notebookId, filename, "whatever bytes");
+
+        expect(response.statusCode).toBe(400);
+        const { message } = response.json() as { message: string };
+        expect(message).toMatch(/\.xls\b/i);
+        expect(message).toMatch(/Docling/i);
+        expect(message).toMatch(/\.xlsx/i);
+      },
+    );
+
     it("re-uploading an existing, undeleted filename creates a new Version on the same Document instead of a new one", async () => {
       const session = await loginAsNewUser("versioner1@example.com");
       const notebookId = await createNotebook(session, "Versioned Notebook");
@@ -728,9 +759,223 @@ describe("Document routes", () => {
 
       for (const url of [
         `/notebooks/${notebookId}/documents/${documentId}`,
+        `/notebooks/${notebookId}/documents/${documentId}/versions/${latestVersion.id}`,
         `/notebooks/${notebookId}/documents/${documentId}/versions/${latestVersion.id}/content`,
       ]) {
         expect((await app.inject({ method: "GET", url })).statusCode).toBe(401);
+      }
+    });
+  });
+
+  /**
+   * A Version-scoped read of a Document (NBK-12's half of NBK-7).
+   *
+   * This is what following a Citation needs and what `GET
+   * .../documents/:documentId` structurally cannot give: per GLOSSARY.md a
+   * Citation "opens that exact Version at that location, even after newer
+   * Versions exist", and the Document detail is always the *latest* Version's
+   * artifacts. Reading the pinned Version's Converted Markdown while showing
+   * the latest Version's Executive Summary, metadata and version number
+   * presents two Versions as one document — so the pinned Version needs a
+   * read path of its own, carrying its own artifacts.
+   */
+  describe("GET .../documents/:documentId/versions/:versionId", () => {
+    /** Writes stage 2's output onto one Version, as the job would. */
+    async function seedVersion(
+      versionId: string,
+      fields: { markdown: string; title: string; executiveSummary: string; abstract: string },
+    ): Promise<void> {
+      await pool.query(
+        `UPDATE document_versions
+         SET ingestion_status = 'ready',
+             markdown = $2,
+             metadata = $3::jsonb,
+             chat_snippet = $4,
+             executive_summary = $5,
+             abstract = $6,
+             summarized_at = now()
+         WHERE id = $1`,
+        [
+          versionId,
+          fields.markdown,
+          JSON.stringify({ title: fields.title, authors: ["A. Analyst"], documentType: "report" }),
+          `Chat Snippet of ${fields.title}.`,
+          fields.executiveSummary,
+          fields.abstract,
+        ],
+      );
+    }
+
+    /** A Document at v2, both Versions carrying their own distinct artifacts. */
+    async function twoVersionDocument(session: string, notebookId: string) {
+      const first = await uploadFile(session, notebookId, "quarterly.md", "# Q1 Report");
+      const v1 = (first.json() as { id: string; latestVersion: { id: string } }).latestVersion.id;
+      await seedVersion(v1, {
+        markdown: "# Quarterly Report\n\n## Revenue\n\nRevenue was 12.4M.\n",
+        title: "Quarterly Report, Q1",
+        executiveSummary: "## Key points\n\nRevenue was 12.4M in Q1.",
+        abstract: "The Q1 Abstract.",
+      });
+
+      const second = await uploadFile(session, notebookId, "quarterly.md", "# Q2 Report");
+      const { id: documentId, latestVersion } = second.json() as {
+        id: string;
+        latestVersion: { id: string; versionNumber: number };
+      };
+      await seedVersion(latestVersion.id, {
+        markdown: "# Quarterly Report\n\n## Revenue\n\nRevenue was 18.9M.\n",
+        title: "Quarterly Report, Q2",
+        executiveSummary: "## Key points\n\nRevenue was 18.9M in Q2.",
+        abstract: "The Q2 Abstract.",
+      });
+
+      return { documentId, v1, v2: latestVersion.id };
+    }
+
+    it("serves a superseded Version's own Executive Summary, metadata and version number", async () => {
+      const session = await loginAsNewUser("version-detail@example.com");
+      const notebookId = await createNotebook(session, "Version-scoped");
+      const { documentId, v1 } = await twoVersionDocument(session, notebookId);
+
+      const response = await app.inject({
+        method: "GET",
+        url: `/notebooks/${notebookId}/documents/${documentId}/versions/${v1}`,
+        cookies: { session },
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = response.json() as Record<string, any>;
+      // Everything about this payload describes v1 — the Version asked for —
+      // and nothing about it describes v2.
+      expect(body.version.id).toBe(v1);
+      expect(body.version.versionNumber).toBe(1);
+      expect(body.executiveSummary).toBe("## Key points\n\nRevenue was 12.4M in Q1.");
+      expect(body.abstract).toBe("The Q1 Abstract.");
+      expect(body.chatSnippet).toBe("Chat Snippet of Quarterly Report, Q1.");
+      expect(body.metadata).toMatchObject({ title: "Quarterly Report, Q1" });
+      expect(body.filename).toBe("quarterly.md");
+      // And it says where this Version stands, so a reader is told the
+      // difference from the Document's current state is deliberate.
+      expect(body.isLatestVersion).toBe(false);
+      expect(body.latestVersionNumber).toBe(2);
+      // Still never the Converted Markdown: that is the up-to-200-page
+      // payload, fetched by the content endpoint on expand.
+      expect(body).not.toHaveProperty("markdown");
+    });
+
+    it("serves the latest Version through the same route, saying that it is latest", async () => {
+      const session = await loginAsNewUser("version-detail-latest@example.com");
+      const notebookId = await createNotebook(session, "Version-scoped latest");
+      const { documentId, v2 } = await twoVersionDocument(session, notebookId);
+
+      const response = await app.inject({
+        method: "GET",
+        url: `/notebooks/${notebookId}/documents/${documentId}/versions/${v2}`,
+        cookies: { session },
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = response.json() as Record<string, any>;
+      expect(body.version.versionNumber).toBe(2);
+      expect(body.executiveSummary).toBe("## Key points\n\nRevenue was 18.9M in Q2.");
+      expect(body.isLatestVersion).toBe(true);
+      expect(body.latestVersionNumber).toBe(2);
+    });
+
+    it("still opens a Version whose Document has since been soft-deleted", async () => {
+      const session = await loginAsNewUser("version-detail-deleted@example.com");
+      const notebookId = await createNotebook(session, "Version-scoped after delete");
+      const { documentId, v1 } = await twoVersionDocument(session, notebookId);
+
+      await app.inject({
+        method: "DELETE",
+        url: `/notebooks/${notebookId}/documents/${documentId}`,
+        cookies: { session },
+      });
+
+      // The same rule `findDocumentContent` and `findDownloadableVersion`
+      // follow: a soft-deleted Document's past answers stay checkable.
+      const response = await app.inject({
+        method: "GET",
+        url: `/notebooks/${notebookId}/documents/${documentId}/versions/${v1}`,
+        cookies: { session },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect((response.json() as { version: { id: string } }).version.id).toBe(v1);
+    });
+
+    it("returns 404 for a Version that doesn't exist", async () => {
+      const session = await loginAsNewUser("version-detail-404@example.com");
+      const notebookId = await createNotebook(session, "Version-scoped 404");
+      const { documentId } = await twoVersionDocument(session, notebookId);
+
+      const response = await app.inject({
+        method: "GET",
+        url: `/notebooks/${notebookId}/documents/${documentId}/versions/00000000-0000-0000-0000-000000000000`,
+        cookies: { session },
+      });
+
+      expect(response.statusCode).toBe(404);
+    });
+  });
+
+  /**
+   * A soft-deleted Notebook takes its Documents with it.
+   *
+   * NBK-4 makes a deleted Notebook recoverable, which means its rows survive
+   * — but a Notebook a user deleted must not keep answering reads of what it
+   * contains just because the caller still has a Document id. Listing already
+   * enforced this through `notebookExists`; reading one Document by id did
+   * not, so every by-id read is checked here rather than one route at a time.
+   */
+  describe("a soft-deleted Notebook hides the Documents it contains", () => {
+    async function deletedNotebookWithDocument(email: string) {
+      const session = await loginAsNewUser(email);
+      const notebookId = await createNotebook(session, "Doomed Notebook");
+      const upload = await uploadFile(session, notebookId, "inside.md", "# Inside");
+      const { id: documentId, latestVersion } = upload.json() as {
+        id: string;
+        latestVersion: { id: string };
+      };
+      await app.inject({ method: "DELETE", url: `/notebooks/${notebookId}`, cookies: { session } });
+      return { session, notebookId, documentId, versionId: latestVersion.id };
+    }
+
+    it("answers 404 for the Document detail, the Version detail, the content and the download", async () => {
+      const { session, notebookId, documentId, versionId } =
+        await deletedNotebookWithDocument("deleted-notebook-reads@example.com");
+
+      for (const url of [
+        `/notebooks/${notebookId}/documents/${documentId}`,
+        `/notebooks/${notebookId}/documents/${documentId}/versions/${versionId}`,
+        `/notebooks/${notebookId}/documents/${documentId}/versions/${versionId}/content`,
+        `/notebooks/${notebookId}/documents/${documentId}/versions/${versionId}/download`,
+      ]) {
+        const response = await app.inject({ method: "GET", url, cookies: { session } });
+        expect(response.statusCode, url).toBe(404);
+      }
+    });
+
+    it("serves them again once the Notebook is restored", async () => {
+      const { session, notebookId, documentId, versionId } =
+        await deletedNotebookWithDocument("restored-notebook-reads@example.com");
+
+      await app.inject({
+        method: "POST",
+        url: `/notebooks/${notebookId}/restore`,
+        cookies: { session },
+      });
+
+      // Soft-delete, not loss: the same reads work again, so the 404s above
+      // are about the Notebook's state and not about rows having gone.
+      for (const url of [
+        `/notebooks/${notebookId}/documents/${documentId}`,
+        `/notebooks/${notebookId}/documents/${documentId}/versions/${versionId}`,
+        `/notebooks/${notebookId}/documents/${documentId}/versions/${versionId}/content`,
+      ]) {
+        const response = await app.inject({ method: "GET", url, cookies: { session } });
+        expect(response.statusCode, url).toBe(200);
       }
     });
   });

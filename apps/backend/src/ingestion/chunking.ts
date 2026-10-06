@@ -189,7 +189,7 @@ function mergePieces(pieces: string[], chunkSize: number, chunkOverlap: number):
  *
  * Chunk text is a verbatim, contiguous slice of the Converted Markdown; the
  * heading path travels beside it rather than being prepended to it, so a
- * Citation can find the passage in the document the reader is shown.
+ * Citation can find the Chunk in the document the reader is shown.
  */
 export function chunkMarkdown(markdown: string, options: ChunkingOptions = {}): DocumentChunk[] {
   const chunkSize = Math.max(1, options.chunkSize ?? CHUNK_SIZE);

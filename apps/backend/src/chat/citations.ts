@@ -41,13 +41,20 @@ export interface CitationResolution {
  * `resolveCitationMarkers` stops finding anything. The notation is
  * deliberately the most conventional one a model will have seen — bracketed
  * integers after the sentence they support.
+ *
+ * It calls the evidence **Chunks**, GLOSSARY.md's word, which explicitly
+ * lists "passage" among the terms to avoid. That matters more here than in
+ * ordinary prose: the model reads this text and echoes its vocabulary back
+ * into answers a user reads, so a prompt that says "passage" is how a
+ * banned synonym gets into the product. The label in `formatSources` uses
+ * the same word for the same reason.
  */
 export const CITATION_INSTRUCTIONS = [
-  "- Cite your sources. Every passage you were given is labelled with a number, like [2].",
-  "  End each sentence that makes a factual claim with the marker(s) of the passage(s) it came",
+  "- Cite your sources. Every Chunk you were given is labelled with a number, like [2].",
+  "  End each sentence that makes a factual claim with the marker(s) of the Chunk(s) it came",
   "  from, e.g. \"Revenue was 12.4M [2].\" Use several markers when a claim draws on several",
-  "  passages, each in its own brackets: \"[1][3]\".",
-  "- Only ever use a marker that appears in the passages above. Never invent one, never cite a",
+  "  Chunks, each in its own brackets: \"[1][3]\".",
+  "- Only ever use a marker that appears in the Chunks above. Never invent one, never cite a",
   "  source you were not given, and never cite a marker for a claim it does not support.",
 ].join("\n");
 
@@ -72,7 +79,7 @@ export const CITATION_INSTRUCTIONS = [
  * obligation to obey. An answer with no resolvable markers is therefore an
  * answer with no Citations, which is at least honest about its provenance.
  *
- * Each marker yields at most one Citation: a passage cited by three separate
+ * Each marker yields at most one Citation: a Chunk cited by three separate
  * sentences is one source, referred to three times.
  */
 export function resolveCitationMarkers(
@@ -127,7 +134,7 @@ interface ChunkTextRow {
  *
  * The search walks a Version's chunks in `chunk_index` order with a cursor
  * that only ever moves forward, which is what makes it exact rather than
- * approximate: a document that repeats a passage verbatim (a boilerplate
+ * approximate: a document that repeats a block of text verbatim (a boilerplate
  * disclaimer under two headings, a table header repeated per page) would send
  * a naive "first occurrence of this text" search to the wrong copy, while a
  * forward scan in document order lands on the copy the chunk actually is.

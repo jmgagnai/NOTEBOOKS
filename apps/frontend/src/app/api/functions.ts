@@ -39,6 +39,8 @@ export type { GetDocument$Params as GetDocument$Params } from './fn/documents/ge
 export { getDocument as getDocument } from './fn/documents/get-document';
 export type { DeleteDocument$Params as DeleteDocument$Params } from './fn/documents/delete-document';
 export { deleteDocument as deleteDocument } from './fn/documents/delete-document';
+export type { GetDocumentVersion$Params as GetDocumentVersion$Params } from './fn/documents/get-document-version';
+export { getDocumentVersion as getDocumentVersion } from './fn/documents/get-document-version';
 export type { GetDocumentVersionContent$Params as GetDocumentVersionContent$Params } from './fn/documents/get-document-version-content';
 export { getDocumentVersionContent as getDocumentVersionContent } from './fn/documents/get-document-version-content';
 export type { RestoreDocument$Params as RestoreDocument$Params } from './fn/documents/restore-document';

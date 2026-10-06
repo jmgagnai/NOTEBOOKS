@@ -3,7 +3,7 @@ import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import type { Pool } from "pg";
 import { createAuthGuard } from "../auth/guard.js";
 import { errorResponseSchema } from "../auth/schema.js";
-import { notebookExists } from "../documents/repository.js";
+import { notebookExists } from "../notebooks/repository.js";
 import { streamAnswer, type ChatDeps, type GroundedAnswer } from "./answer-question.js";
 import {
   appendQuestionAndAnswer,
@@ -30,7 +30,7 @@ export interface RegisterChatRoutesOptions {
   pool: Pool;
   /**
    * The OpenRouter-backed answer path. Omitted — the shape a deployment with
-   * no `OPENROUTER_API_KEY` has — Thread CRUD and reading a conversation
+   * no `OPENROUTER_API_KEY` has — Thread CRUD and reading a Thread's messages
    * still work, and asking a question reports 503 rather than recording a
    * question nothing will ever answer.
    */
@@ -142,7 +142,7 @@ export function registerChatRoutes(app: FastifyInstance, { pool, chat }: Registe
       schema: {
         operationId: "listChatMessages",
         tags: ["chat"],
-        summary: "Read a Chat Thread's conversation",
+        summary: "Read every message in a Chat Thread, in the order they were asked",
         params: chatThreadIdParamsSchema,
         response: {
           200: listChatMessagesResponseSchema,
@@ -203,7 +203,7 @@ export function registerChatRoutes(app: FastifyInstance, { pool, chat }: Registe
       }
 
       // Read before writing: the question being asked must not appear in its
-      // own "conversation so far".
+      // own "Chat Thread so far".
       const history = await listChatMessages(pool, thread.id);
 
       // The answer is streamed onto the generic app-event channel as it is

@@ -765,6 +765,76 @@ describe("Chat routes", () => {
     });
   });
 
+  /**
+   * A soft-deleted Notebook takes its Chat Threads with it.
+   *
+   * The same rule as its Documents, and for the same reason: NBK-4 makes a
+   * deleted Notebook recoverable, so the rows survive — but holding a Thread
+   * id must not keep a deleted Notebook's chat history readable. Listing
+   * already enforced it via `notebookExists`; reading or renaming one Thread
+   * by id did not.
+   */
+  describe("a soft-deleted Notebook hides the Chat Threads it contains", () => {
+    it("answers 404 for reading, renaming and continuing a Thread in it", async () => {
+      const session = await loginAsNewUser("deleted-notebook-thread@example.com");
+      const notebookId = await createNotebook(session, "Doomed Notebook");
+      const created = await app.inject({
+        method: "POST",
+        url: `/notebooks/${notebookId}/threads`,
+        cookies: { session },
+        payload: { title: "Inside a doomed Notebook" },
+      });
+      const threadId = (created.json() as { id: string }).id;
+
+      await app.inject({ method: "DELETE", url: `/notebooks/${notebookId}`, cookies: { session } });
+
+      const reads = await app.inject({
+        method: "GET",
+        url: `/notebooks/${notebookId}/threads/${threadId}/messages`,
+        cookies: { session },
+      });
+      expect(reads.statusCode).toBe(404);
+
+      const rename = await app.inject({
+        method: "PATCH",
+        url: `/notebooks/${notebookId}/threads/${threadId}`,
+        cookies: { session },
+        payload: { title: "Renamed from beyond" },
+      });
+      expect(rename.statusCode).toBe(404);
+
+      const ask = await app.inject({
+        method: "POST",
+        url: `/notebooks/${notebookId}/threads/${threadId}/messages`,
+        cookies: { session },
+        payload: { content: "Anybody there?" },
+      });
+      expect(ask.statusCode).toBe(404);
+
+      // Soft-delete, not loss: restoring the Notebook brings the Thread back.
+      await app.inject({
+        method: "POST",
+        url: `/notebooks/${notebookId}/restore`,
+        cookies: { session },
+      });
+      const afterRestore = await app.inject({
+        method: "GET",
+        url: `/notebooks/${notebookId}/threads/${threadId}/messages`,
+        cookies: { session },
+      });
+      expect(afterRestore.statusCode).toBe(200);
+      // And the rename above really was refused, not merely reported as 404.
+      const listed = await app.inject({
+        method: "GET",
+        url: `/notebooks/${notebookId}/threads`,
+        cookies: { session },
+      });
+      expect((listed.json() as Array<{ title: string }>).map((t) => t.title)).toEqual([
+        "Inside a doomed Notebook",
+      ]);
+    });
+  });
+
   // Per ADR-0001 (shared access despite full attribution): a Chat Thread is
   // "visible to and continuable by every user", and attribution is "not an
   // access restriction". This proves that is implemented, not just intended.

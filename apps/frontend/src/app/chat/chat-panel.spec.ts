@@ -167,9 +167,10 @@ describe('ChatPanel', () => {
     expect(screen.getByRole('heading', { name: 'Supply chain' })).toBeTruthy();
   });
 
-  // NBK-10: "shows the conversation with per-message author attribution".
+  // NBK-10: "shows the conversation with per-message author attribution"
+  // — which GLOSSARY.md names a Chat Thread's messages.
   // GLOSSARY.md: "every message in it records which user asked it".
-  it('opens a Thread and shows the conversation with per-message attribution', async () => {
+  it('opens a Thread and shows its messages with per-message attribution', async () => {
     const listChatThreads = vi.fn().mockResolvedValue([thread()]);
     const listChatMessages = vi.fn().mockResolvedValue([
       message({
@@ -213,7 +214,7 @@ describe('ChatPanel', () => {
     expect(askers).toEqual(['alice@example.com', 'Assistant, for alice@example.com', 'bob@example.com']);
   });
 
-  it('sends a question and appends both it and the answer to the conversation', async () => {
+  it('sends a question and appends both it and the answer to the Chat Thread', async () => {
     const listChatThreads = vi.fn().mockResolvedValue([thread()]);
     const listChatMessages = vi.fn().mockResolvedValue([]);
     const sendChatMessage = vi.fn().mockResolvedValue({
@@ -245,7 +246,7 @@ describe('ChatPanel', () => {
     // so there is no partial state to render here. NBK-11 streams it.
     expect(await screen.findByText('What was revenue in Q3?')).toBeTruthy();
     expect(await screen.findByText('Revenue in Q3 was 12.4M.')).toBeTruthy();
-    // The conversation was not re-fetched: the response carries both
+    // The messages were not re-fetched: the response carries both
     // messages with their server-assigned ids and attribution.
     expect(listChatMessages).toHaveBeenCalledTimes(1);
   });
@@ -272,7 +273,7 @@ describe('ChatPanel', () => {
       threadId: 'thread-1',
       body: { title: 'Q3 revenue' },
     });
-    // The rename lands in both the list entry and the open conversation's
+    // The rename lands in both the list entry and the open Thread's
     // heading, and the old title is gone from both.
     expect(await screen.findByRole('button', { name: 'Open Q3 revenue' })).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Q3 revenue' })).toBeTruthy();
@@ -379,7 +380,7 @@ describe('ChatPanel', () => {
       });
     });
 
-    it('turns each source marker in the prose into a link to the passage it cites', async () => {
+    it('turns each source marker in the prose into a link to the Chunk it cites', async () => {
       await openThreadWithAnswer([
         message({
           id: 'a1',
@@ -408,7 +409,7 @@ describe('ChatPanel', () => {
           id: 'a1',
           role: 'assistant',
           // [4] is a marker the backend could not resolve to a retrieved
-          // passage, so it was dropped rather than written — and must not
+          // Chunk, so it was dropped rather than written — and must not
           // become a link to nowhere.
           content: 'Lead times lengthened [1]. Margins improved [4].',
           citations: [citation()],

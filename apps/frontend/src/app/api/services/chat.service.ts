@@ -237,7 +237,7 @@ export class ChatService extends BaseService {
   static readonly ListChatMessagesPath = '/notebooks/{notebookId}/threads/{threadId}/messages';
 
   /**
-   * Read a Chat Thread's conversation.
+   * Read every message in a Chat Thread, in the order they were asked.
    *
    *
    *
@@ -274,7 +274,7 @@ export class ChatService extends BaseService {
   }
 
   /**
-   * Read a Chat Thread's conversation.
+   * Read every message in a Chat Thread, in the order they were asked.
    *
    *
    *

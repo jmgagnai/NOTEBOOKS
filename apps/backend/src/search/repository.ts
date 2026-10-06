@@ -1,4 +1,5 @@
 import type { Pool } from "pg";
+import { toVectorLiteral } from "../db/vector.js";
 import { toDocument, type DocumentRow } from "../documents/repository.js";
 import { SEARCHABLE_VERSIONS_CTE } from "../documents/searchable-versions.js";
 import type { SearchResult } from "./schema.js";
@@ -20,7 +21,7 @@ import type { SearchResult } from "./schema.js";
  *
  * 2. `scored` ranks Chunks and **rolls them up to their Version** with
  *    `MIN(distance)`: a Document's score is its single best Chunk, not an
- *    average, because one strongly matching passage is exactly what makes a
+ *    average, because one strongly matching Chunk is exactly what makes a
  *    long document worth opening. Grouping is what makes a Document appear
  *    once however many of its Chunks matched.
  *
@@ -75,11 +76,6 @@ const SEARCH_NOTEBOOK_SQL = `
   ORDER BY scored.distance ASC, s.document_created_at ASC, s.document_id ASC
   LIMIT $3
 `;
-
-/** pgvector's text input format. `[1,2,3]` — not a Postgres array literal. */
-function toVectorLiteral(vector: number[]): string {
-  return `[${vector.join(",")}]`;
-}
 
 /**
  * Searches one Notebook's Documents by the query's embedding, best match

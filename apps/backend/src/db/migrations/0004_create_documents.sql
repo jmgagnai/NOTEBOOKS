@@ -29,6 +29,22 @@ CREATE TABLE IF NOT EXISTS document_versions (
   size_bytes BIGINT NOT NULL,
   storage_key TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  -- Required by NBK-5, whose acceptance criteria name `documents` and
+  -- `document_versions` as "both soft-deletable". **Currently dormant**: no
+  -- application code sets it, because the product deletes Notebooks and
+  -- Documents, never an individual Version.
+  --
+  -- It is not dead weight, and it is not speculative generality. Every read
+  -- path honours it today — `searchable-versions.ts`, `findDocumentContent`,
+  -- `findDownloadableVersion`, `findDocumentVersionDetail`, and the three
+  -- ingestion Stages — so the behaviour a "delete this Version" feature needs
+  -- already exists and is already tested
+  -- (`test/searchable-versions.test.ts` covers the "deleted latest Version
+  -- falls back to the newest surviving one" branch at the SQL level, which is
+  -- the only level it can be driven from). Removing the column would mean
+  -- removing that filter from eight queries and putting it back later, which
+  -- is the expensive direction. See `docs/versioning.md`, "Not reachable
+  -- today".
   deleted_at TIMESTAMPTZ,
   UNIQUE (document_id, version_number)
 );

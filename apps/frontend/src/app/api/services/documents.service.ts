@@ -15,6 +15,8 @@ import { downloadDocumentVersion } from '../fn/documents/download-document-versi
 import { DownloadDocumentVersion$Params } from '../fn/documents/download-document-version';
 import { getDocument } from '../fn/documents/get-document';
 import { GetDocument$Params } from '../fn/documents/get-document';
+import { getDocumentVersion } from '../fn/documents/get-document-version';
+import { GetDocumentVersion$Params } from '../fn/documents/get-document-version';
 import { getDocumentVersionContent } from '../fn/documents/get-document-version-content';
 import { GetDocumentVersionContent$Params } from '../fn/documents/get-document-version-content';
 import { listDocuments } from '../fn/documents/list-documents';
@@ -348,6 +350,123 @@ export class DocumentsService extends BaseService {
   deleteDocument(params: DeleteDocument$Params, context?: HttpContext): Promise<'null'> {
     const resp = this.deleteDocument$Response(params, context);
     return resp.then((r: StrictHttpResponse<'null'>): 'null' => r.body);
+  }
+
+  /** Path part for operation `getDocumentVersion()` */
+  static readonly GetDocumentVersionPath = '/notebooks/{notebookId}/documents/{documentId}/versions/{versionId}';
+
+  /**
+   * Get one Document Version with its own extracted metadata and generated summaries (Abstract, Executive Summary, Chat Snippet).
+   *
+   * Every field describes the Version named in the path, not the Document's latest Version — this is what following a Citation reads, so an answer recorded against a superseded Version stays checkable against what that Version actually said. `isLatestVersion` and `latestVersionNumber` say where that Version stands. Succeeds for a Version whose Document has since been soft-deleted, and 404s once its Notebook is.
+   *
+   * This method provides access to the full `HttpResponse`, allowing access to response headers.
+   * To access only the response body, use `getDocumentVersion()` instead.
+   *
+   * This method doesn't expect any request body.
+   */
+  getDocumentVersion$Response(params: GetDocumentVersion$Params, context?: HttpContext): Promise<StrictHttpResponse<{
+'documentId': string;
+'notebookId': string;
+'filename': string;
+'documentCreatedAt': string;
+'version': {
+'id': string;
+'versionNumber': number;
+'mimeType': string;
+'sizeBytes': number;
+'createdAt': string;
+};
+'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'indexing' | 'ready' | 'failed';
+'abstract': string | null;
+'chatSnippet': string | null;
+'executiveSummary': string | null;
+'metadata': ({
+[key: string]: any;
+}) | null;
+'isLatestVersion': boolean;
+'latestVersionNumber': number;
+}>> {
+    const obs = getDocumentVersion(this.http, this.rootUrl, params, context);
+    return firstValueFrom(obs);
+  }
+
+  /**
+   * Get one Document Version with its own extracted metadata and generated summaries (Abstract, Executive Summary, Chat Snippet).
+   *
+   * Every field describes the Version named in the path, not the Document's latest Version — this is what following a Citation reads, so an answer recorded against a superseded Version stays checkable against what that Version actually said. `isLatestVersion` and `latestVersionNumber` say where that Version stands. Succeeds for a Version whose Document has since been soft-deleted, and 404s once its Notebook is.
+   *
+   * This method provides access only to the response body.
+   * To access the full response (for headers, for example), `getDocumentVersion$Response()` instead.
+   *
+   * This method doesn't expect any request body.
+   */
+  getDocumentVersion(params: GetDocumentVersion$Params, context?: HttpContext): Promise<{
+'documentId': string;
+'notebookId': string;
+'filename': string;
+'documentCreatedAt': string;
+'version': {
+'id': string;
+'versionNumber': number;
+'mimeType': string;
+'sizeBytes': number;
+'createdAt': string;
+};
+'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'indexing' | 'ready' | 'failed';
+'abstract': string | null;
+'chatSnippet': string | null;
+'executiveSummary': string | null;
+'metadata': ({
+[key: string]: any;
+}) | null;
+'isLatestVersion': boolean;
+'latestVersionNumber': number;
+}> {
+    const resp = this.getDocumentVersion$Response(params, context);
+    return resp.then((r: StrictHttpResponse<{
+'documentId': string;
+'notebookId': string;
+'filename': string;
+'documentCreatedAt': string;
+'version': {
+'id': string;
+'versionNumber': number;
+'mimeType': string;
+'sizeBytes': number;
+'createdAt': string;
+};
+'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'indexing' | 'ready' | 'failed';
+'abstract': string | null;
+'chatSnippet': string | null;
+'executiveSummary': string | null;
+'metadata': ({
+[key: string]: any;
+}) | null;
+'isLatestVersion': boolean;
+'latestVersionNumber': number;
+}>): {
+'documentId': string;
+'notebookId': string;
+'filename': string;
+'documentCreatedAt': string;
+'version': {
+'id': string;
+'versionNumber': number;
+'mimeType': string;
+'sizeBytes': number;
+'createdAt': string;
+};
+'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'indexing' | 'ready' | 'failed';
+'abstract': string | null;
+'chatSnippet': string | null;
+'executiveSummary': string | null;
+'metadata': ({
+[key: string]: any;
+}) | null;
+'isLatestVersion': boolean;
+'latestVersionNumber': number;
+} => r.body);
   }
 
   /** Path part for operation `getDocumentVersionContent()` */

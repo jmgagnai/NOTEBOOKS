@@ -24,13 +24,23 @@ import { MarkdownView } from './markdown-view';
  *
  * It is also where a Citation lands (NBK-12). Following one arrives with
  * `?version=&chunk=&from=&to=` — the Document Version the answer was grounded
- * in, the chunk it cited, and that chunk's character range in the Version's
+ * in, the Chunk it cited, and that Chunk's character range in the Version's
  * Converted Markdown. The page then opens *that* Version rather than the
- * latest, expanded straight to the content and marked at the cited passage,
+ * latest, expanded straight to the content and marked at the cited Chunk,
  * because GLOSSARY.md requires that following a Citation open "that exact
  * Version at that location, even after newer Versions exist". The Version id
  * is read off the link rather than resolved here precisely so a newer upload
  * cannot move it.
+ *
+ * And "that exact Version" means the whole page, not only the Markdown. A
+ * Version-scoped read (`loadDocumentVersion`) supplies the pinned Version's
+ * own Executive Summary, extracted metadata and version number, so everything
+ * a reader sees describes the same Version. Loading the latest Version's
+ * detail and swapping in the pinned Version's content — which is what this
+ * page used to do — presents two Versions as one document: the summary says
+ * one thing, the text says another, and the badge sides with the wrong one.
+ * No notice can repair that, because the reader still cannot tell which half
+ * belongs to the answer they followed.
  */
 @Component({
   selector: 'app-document-detail-page',
@@ -67,29 +77,28 @@ export class DocumentDetailPage implements OnInit, OnDestroy {
    * store.
    *
    * Starts expanded when a Citation was followed: that reader asked for a
-   * specific passage, and making them click "Show full content" to reach it
+   * specific Chunk, and making them click "Show full content" to reach it
    * would be asking them to find it themselves.
    */
   protected readonly expanded = signal(this.citedVersionId !== null);
 
   /**
-   * True when the Citation points at a Version that is no longer the
-   * Document's latest. Worth saying out loud: the page's own badge shows the
-   * latest Version's number, so a reader comparing the two needs to be told
-   * that the difference is deliberate.
+   * True when this page is showing a Version the Document has since moved
+   * past.
+   *
+   * Read off the Version-scoped payload rather than compared here, because
+   * only the server knows which Version is currently latest. Worth saying out
+   * loud even now that every field on the page agrees with every other: a
+   * reader who followed an old answer needs to know they are reading history,
+   * and how far back — which is why the notice names both version numbers.
    */
-  protected readonly viewingSupersededVersion = computed(() => {
-    const document = this.store.openDocument();
-    return (
-      this.citedVersionId !== null &&
-      document !== null &&
-      document.latestVersion.id !== this.citedVersionId
-    );
-  });
+  protected readonly viewingSupersededVersion = computed(
+    () => this.store.openDocument()?.isLatestVersion === false,
+  );
 
   /** Which Version's Converted Markdown this page shows. */
   private targetVersionId(): string | null {
-    return this.citedVersionId ?? this.store.openDocument()?.latestVersion.id ?? null;
+    return this.citedVersionId ?? this.store.openDocument()?.version.id ?? null;
   }
 
   protected readonly metadataEntries = computed(() => {
@@ -112,11 +121,19 @@ export class DocumentDetailPage implements OnInit, OnDestroy {
   }
 
   private async load(): Promise<void> {
-    await this.store.loadDocument(this.notebookId, this.documentId);
-    // A followed Citation names its Version, so the content can be fetched
-    // without waiting for the reader to ask — and fetched for the pinned
-    // Version, not the Document's current one.
-    if (this.citedVersionId !== null && this.store.openDocument()) {
+    if (this.citedVersionId === null) {
+      await this.store.loadDocument(this.notebookId, this.documentId);
+      return;
+    }
+
+    // A followed Citation names its Version, so the whole page is read for
+    // that Version — not the Document's current one with the old content
+    // slotted in. The latest-Version detail is not fetched at all: there is
+    // nothing on this page it could correctly fill in.
+    await this.store.loadDocumentVersion(this.notebookId, this.documentId, this.citedVersionId);
+    // And the content follows without waiting for the reader to ask, since
+    // they already asked by clicking a Citation.
+    if (this.store.openDocument()) {
       await this.store.loadDocumentContent(this.notebookId, this.documentId, this.citedVersionId);
     }
   }

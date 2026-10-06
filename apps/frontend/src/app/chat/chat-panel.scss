@@ -1,5 +1,5 @@
 // The chat panel of a Notebook (NBK-10). Two columns — the Notebook's Chat
-// Threads and the open conversation — collapsing to one on a narrow viewport
+// Threads and the open Thread — collapsing to one on a narrow viewport
 // (NBK-1 scopes the frontend to "standard Material responsive layout only").
 .chat-panel {
   display: grid;
@@ -63,7 +63,7 @@
     border: 1px solid var(--mat-sys-outline-variant, #ddd);
     border-radius: 0.5rem;
 
-    // The open Thread, so a reader can tell which conversation they are in
+    // The open Thread, so a reader can tell which Thread they are in
     // when several are listed.
     &--active {
       border-color: var(--mat-sys-primary, #3f51b5);
@@ -95,7 +95,7 @@
     opacity: 0.7;
   }
 
-  &__conversation-head {
+  &__thread-view-head {
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
@@ -119,7 +119,7 @@
     border-radius: 0.5rem;
     background: var(--mat-sys-surface-container-low, #f4f4f4);
 
-    // Questions and answers are visually distinct, so a long conversation
+    // Questions and answers are visually distinct, so a long Chat Thread
     // can be skimmed for where each exchange starts.
     &--user {
       background: var(--mat-sys-surface-container-high, #e7e7e7);

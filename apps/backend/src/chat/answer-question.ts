@@ -95,7 +95,7 @@ export const CHAT_SYSTEM_PROMPT = [
   "- Refer to sources by their filename when it helps the reader check you.",
   // The marker notation is the machine-readable half of the same discipline:
   // "answer only from the sources" is checkable by a reader only if each
-  // claim says which passage it came from (NBK-12).
+  // claim says which Chunk it came from (NBK-12).
   CITATION_INSTRUCTIONS,
   "- Write prose in Markdown, organised into short paragraphs with headings when the answer has parts.",
   "- Be direct. No preamble about being an AI and no restating of the question.",
@@ -113,31 +113,37 @@ export const HISTORY_MESSAGE_LIMIT = 10;
  * - The **Chat Snippet** (150-300 words per Document, from ingestion stage 2)
  *   is "written to be injected into the LLM's chat context as grounding about
  *   that source" — so each source is introduced by its own, once, telling the
- *   model what kind of document the passages below it came from.
+ *   model what kind of document the Chunks below it came from.
  * - The **Chunks** are "verbatim, contiguous slice[s] of the Converted
  *   Markdown" — the actual evidence, quoted exactly, under the source they
  *   belong to, with their heading path so the model can say where in the
- *   document a passage sits.
+ *   document a Chunk sits.
  *
- * Grouping by source rather than listing chunks flat keeps a multi-document
+ * Grouping by source rather than listing Chunks flat keeps a multi-document
  * answer attributable: the model can tell which document said what instead
  * of blending two sources into one claim.
  *
- * Each passage is additionally labelled with its **source marker** — its
+ * Each Chunk is additionally labelled with its **source marker** — its
  * 1-based position in retrieval order — which is what the model is asked to
  * cite with and what `resolveCitationMarkers` reads back. Numbering per
- * passage rather than per document is what makes a Citation able to name "one
+ * Chunk rather than per document is what makes a Citation able to name "one
  * specific chunk" (GLOSSARY.md) instead of just naming a file.
+ *
+ * The label is literally `Chunk [n]`, GLOSSARY.md's term — which lists
+ * "passage" among the words to avoid. The wording is load-bearing here in a
+ * way it is not in a comment: the model reads this and writes its answer in
+ * the vocabulary it was given, so labelling the evidence "Passage" is how a
+ * banned synonym ends up in prose a user reads.
  */
 function formatSources(chunks: RetrievedChunk[]): string {
-  // A passage's marker is its position in retrieval order, assigned before
+  // A Chunk's marker is its position in retrieval order, assigned before
   // the grouping rearranges them — so the numbering matches the chunk list
   // `resolveCitationMarkers` later indexes into, whatever order the prompt
   // happens to present them in.
   const markers = new Map(chunks.map((chunk, index) => [chunk.chunkId, index + 1]));
 
   // Insertion order follows retrieval order, so the document holding the
-  // closest passage is presented first.
+  // closest Chunk is presented first.
   const bySource = new Map<string, { filename: string; chatSnippet: string | null; chunks: RetrievedChunk[] }>();
   for (const chunk of chunks) {
     const existing = bySource.get(chunk.documentVersionId);
@@ -158,14 +164,14 @@ function formatSources(chunks: RetrievedChunk[]): string {
       if (source.chatSnippet) parts.push(`About this source: ${source.chatSnippet}`);
       for (const chunk of source.chunks) {
         const location = chunk.headingPath.length > 0 ? ` (under ${chunk.headingPath.join(" > ")})` : "";
-        parts.push(`Passage [${markers.get(chunk.chunkId)}]${location}:\n${chunk.text}`);
+        parts.push(`Chunk [${markers.get(chunk.chunkId)}]${location}:\n${chunk.text}`);
       }
       return parts.join("\n\n");
     })
     .join("\n\n");
 }
 
-/** Renders the Thread so far, so a follow-up question's "it" refers to something. */
+/** Renders the Chat Thread so far, so a follow-up question's "it" refers to something. */
 function formatHistory(history: ChatMessage[]): string {
   return history
     .slice(-HISTORY_MESSAGE_LIMIT)
@@ -212,7 +218,10 @@ async function groundQuestion(
 
   const sections = ["## Sources", formatSources(chunks)];
   const history = formatHistory(input.history);
-  if (history) sections.push("## The conversation so far", history);
+  // "Chat Thread", not "conversation": GLOSSARY.md lists "conversation" among
+  // the synonyms to avoid, and a heading the model reads is exactly where its
+  // own vocabulary comes from.
+  if (history) sections.push("## The Chat Thread so far", history);
   sections.push("## The question to answer now", input.question);
 
   return {
@@ -233,9 +242,9 @@ async function groundQuestion(
  * Turns generated prose into a {@link GroundedAnswer}.
  *
  * The markers the model wrote are resolved only against the Chunks that were
- * just retrieved, so a Citation cannot name a passage this answer was not
+ * just retrieved, so a Citation cannot name a Chunk this answer was not
  * grounded in (NBK-12), and are then located once in their Versions'
- * Converted Markdown so following one can scroll to the passage.
+ * Converted Markdown so following one can scroll to the Chunk.
  *
  * Runs on the *complete* text, which is why a streamed answer's Citations
  * arrive at the end rather than alongside the chunk that mentions them: a

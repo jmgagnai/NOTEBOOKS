@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 // Who did something, as surfaced over the API. A Chat Thread's author and
-// every message's asker are rendered next to prose in a shared conversation,
+// every message's asker are rendered next to prose in a shared Chat Thread,
 // so the id alone is useless — the email is what a reader recognises.
 //
 // Deliberately not the full `userSchema`: `createdAt` (when that person

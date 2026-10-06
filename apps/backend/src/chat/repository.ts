@@ -1,4 +1,6 @@
 import type { Pool, PoolClient } from "pg";
+import { inTransaction } from "../db/transaction.js";
+import { notebookIsActive } from "../notebooks/active-notebooks.js";
 import type { ResolvedCitation } from "./citations.js";
 import type { ChatMessage, ChatMessageRole, ChatThread, Citation } from "./schema.js";
 
@@ -169,6 +171,12 @@ export async function createChatThread(
  * One Chat Thread, scoped to its Notebook. Per ADR-0001 there is no author
  * check: any authenticated user may open any Thread. Returns `null` if no
  * match (caller maps this to 404).
+ *
+ * Scoped to a *live* Notebook, which is the one access rule that does apply
+ * here — see `notebooks/active-notebooks.ts`. Holding a Thread id must not
+ * keep a soft-deleted Notebook's chat history readable, and because every
+ * Thread route resolves through this function, that is enforced once for
+ * reading, renaming and asking rather than three times over.
  */
 export async function findChatThread(
   pool: Pool,
@@ -176,7 +184,8 @@ export async function findChatThread(
   threadId: string,
 ): Promise<ChatThread | null> {
   const { rows } = await pool.query<ChatThreadRow>(
-    `${SELECT_THREAD} WHERE t.id = $1 AND t.notebook_id = $2`,
+    `${SELECT_THREAD}
+     WHERE t.id = $1 AND t.notebook_id = $2 AND ${notebookIsActive("t.notebook_id")}`,
     [threadId, notebookId],
   );
   return rows[0] ? toChatThread(rows[0]) : null;
@@ -186,6 +195,11 @@ export async function findChatThread(
  * Renames a Chat Thread. Per ADR-0001 there is no author check — a Thread
  * someone else started is renameable, the same way any user may rename any
  * Notebook. Returns `null` if no match (caller maps this to 404).
+ *
+ * The live-Notebook rule is on the `UPDATE` itself, not only on the read-back
+ * below: a Thread in a soft-deleted Notebook must be left untouched, and a
+ * statement that writes first and 404s afterwards would already have renamed
+ * it.
  */
 export async function renameChatThread(
   pool: Pool,
@@ -194,7 +208,8 @@ export async function renameChatThread(
   title: string,
 ): Promise<ChatThread | null> {
   const { rowCount } = await pool.query(
-    "UPDATE chat_threads SET title = $3 WHERE id = $1 AND notebook_id = $2",
+    `UPDATE chat_threads SET title = $3
+     WHERE id = $1 AND notebook_id = $2 AND ${notebookIsActive("notebook_id")}`,
     [threadId, notebookId, title],
   );
   if (rowCount !== 1) return null;
@@ -202,7 +217,7 @@ export async function renameChatThread(
 }
 
 /**
- * Every message in a Thread, in conversation order.
+ * Every message in a Chat Thread, in the order they were asked.
  *
  * Ordered by `seq`, not `created_at`: a question and its answer are written
  * in one transaction and so share a timestamp (see migration 0009).
@@ -248,7 +263,7 @@ const INSERT_MESSAGE = `
  * answer it is whose question produced it (see migration 0009).
  *
  * Two statements rather than one two-row `VALUES`, so the `seq` the question
- * gets is unambiguously lower than the answer's — a conversation's order is
+ * gets is unambiguously lower than the answer's — a Chat Thread's order is
  * read back from that column, not from a timestamp the two rows share.
  */
 export async function appendQuestionAndAnswer(
@@ -259,9 +274,7 @@ export async function appendQuestionAndAnswer(
   answer: string,
   citations: ResolvedCitation[] = [],
 ): Promise<{ question: ChatMessage; answer: ChatMessage }> {
-  const client: PoolClient = await pool.connect();
-  try {
-    await client.query("BEGIN");
+  return inTransaction(pool, async (client) => {
     const questionRows = await client.query<ChatMessageRow>(INSERT_MESSAGE, [
       threadId,
       askerId,
@@ -300,16 +313,10 @@ export async function appendQuestionAndAnswer(
     // a later reload fetches are the same object rather than two shapes
     // assembled in two places.
     const written = await citationsByMessage(client, [answerId]);
-    await client.query("COMMIT");
 
     return {
       question: toChatMessage(questionRows.rows[0]),
       answer: toChatMessage(answerRows.rows[0], written.get(answerId) ?? []),
     };
-  } catch (err) {
-    await client.query("ROLLBACK");
-    throw err;
-  } finally {
-    client.release();
-  }
+  });
 }

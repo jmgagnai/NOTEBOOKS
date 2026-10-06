@@ -3,7 +3,7 @@ import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import type { Pool } from "pg";
 import { createAuthGuard } from "../auth/guard.js";
 import { errorResponseSchema } from "../auth/schema.js";
-import { notebookExists } from "../documents/repository.js";
+import { notebookExists } from "../notebooks/repository.js";
 import type { Embedder } from "../llm/embeddings.js";
 import { searchNotebook } from "./repository.js";
 import {

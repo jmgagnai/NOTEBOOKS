@@ -85,6 +85,42 @@ export const documentDetailSchema = documentSchema.extend({
 });
 export type DocumentDetail = z.infer<typeof documentDetailSchema>;
 
+// One *named* Document Version, opened on its own — what following a Citation
+// reads. Deliberately a different shape from `documentDetailSchema` rather
+// than the same one with a different Version in it, because the two answer
+// different questions and a reader of either has to know which they have:
+// `DocumentDetail` is "this Document as it stands now" and always carries its
+// `latestVersion`, while this is "this Version, as it was", and per
+// GLOSSARY.md a Citation "opens that exact Version ... even after newer
+// Versions exist". So the Version here is `version`, not `latestVersion`, and
+// every artifact beside it — metadata, Abstract, Chat Snippet, Executive
+// Summary — belongs to that Version and not to the Document's current one.
+// `status` likewise is this Version's own ingestion status: a superseded
+// Version that reached `ready` stays `ready` while its successor converts.
+//
+// `isLatestVersion` and `latestVersionNumber` are the only facts here about
+// any other Version, and they are what lets a UI say "you are reading v1 of
+// 3" without a second request. A number rather than a Version object, so
+// nothing in this payload can be mistaken for the pinned Version's own data.
+//
+// `markdown` is absent for the same reason it is absent from every other
+// list-or-detail payload: it can run past 200 pages and has its own endpoint.
+export const documentVersionDetailSchema = z.object({
+  documentId: z.string().uuid(),
+  notebookId: z.string().uuid(),
+  filename: z.string(),
+  documentCreatedAt: z.string().datetime({ offset: true }),
+  version: documentVersionSchema,
+  status: documentStatusSchema,
+  abstract: z.string().nullable(),
+  chatSnippet: z.string().nullable(),
+  executiveSummary: z.string().nullable(),
+  metadata: documentMetadataResponseSchema,
+  isLatestVersion: z.boolean(),
+  latestVersionNumber: z.number().int().positive(),
+});
+export type DocumentVersionDetail = z.infer<typeof documentVersionDetailSchema>;
+
 // The Converted Markdown of one Version. Markdown, not rendered HTML: per
 // NBK-1 the client renders "the full Document content ... with its original
 // structure (headings, tables, etc.)", so the structure has to reach it
@@ -113,7 +149,10 @@ export const documentVersionDownloadParamsSchema = z.object({
 });
 export type DocumentVersionDownloadParams = z.infer<typeof documentVersionDownloadParamsSchema>;
 
-// Same shape as the download params; named separately so the two operations
-// read independently in the generated OpenAPI document and client.
+// Same shape as the download params; named separately so the operations read
+// independently in the generated OpenAPI document and client.
 export const documentVersionContentParamsSchema = documentVersionDownloadParamsSchema;
 export type DocumentVersionContentParams = z.infer<typeof documentVersionContentParamsSchema>;
+
+export const documentVersionParamsSchema = documentVersionDownloadParamsSchema;
+export type DocumentVersionParams = z.infer<typeof documentVersionParamsSchema>;

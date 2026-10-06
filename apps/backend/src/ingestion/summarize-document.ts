@@ -1,12 +1,23 @@
+import { createHash } from "node:crypto";
 import type { Pool } from "pg";
-import { z } from "zod";
+import { inTransaction } from "../db/transaction.js";
 import { publishAppEvent } from "../events/bus.js";
-import { notebookTopic } from "../events/schema.js";
 import type { DocumentStatus } from "../documents/schema.js";
 import { resolveTaskModels, type TaskModels } from "../llm/models.js";
 import type { ChatCompleter } from "../llm/openrouter.js";
-import { DOCUMENT_VERSION_STATUS_CHANGED } from "./convert-to-markdown.js";
-import { generateArtifacts, type DocumentMetadata, type GeneratedArtifacts } from "./generated-artifacts.js";
+import {
+  generateArtifacts,
+  type ArtifactWarning,
+  type DocumentMetadata,
+  type GeneratedArtifacts,
+  type SectionSummaryStore,
+} from "./generated-artifacts.js";
+import {
+  documentVersionRefSchema,
+  versionStatusChanged,
+  type DocumentVersionRef,
+  type IngestionVersion,
+} from "./stage.js";
 
 /**
  * The pg_boss queue name for ingestion stage 2 — metadata extraction and the
@@ -17,11 +28,8 @@ import { generateArtifacts, type DocumentMetadata, type GeneratedArtifacts } fro
 export const SUMMARIZE_DOCUMENT_QUEUE = "summarize-document";
 
 /** Ids only, same as stage 1: the job re-reads current truth on every retry. */
-export const summarizeDocumentPayloadSchema = z.object({
-  documentId: z.string().uuid(),
-  versionId: z.string().uuid(),
-});
-export type SummarizeDocumentPayload = z.infer<typeof summarizeDocumentPayloadSchema>;
+export const summarizeDocumentPayloadSchema = documentVersionRefSchema;
+export type SummarizeDocumentPayload = DocumentVersionRef;
 
 export interface SummarizeDocumentDeps {
   pool: Pool;
@@ -56,34 +64,126 @@ export interface SummarizeDocumentInvocation {
   willRetry: boolean;
 }
 
+/** Stage 2's own input: the Converted Markdown, and any resumable progress. */
 interface VersionRow {
-  notebook_id: string;
-  filename: string;
   markdown: string | null;
+  section_summaries: CachedSectionSummaries | null;
 }
 
 interface TransitionFields {
   metadata?: DocumentMetadata;
   artifacts?: GeneratedArtifacts;
   error?: string | null;
+  /**
+   * Artifacts that shipped outside their required size. `undefined` leaves
+   * the column alone; an empty array clears it. See migration 0011.
+   */
+  warnings?: ArtifactWarning[];
+  /** Given, clears the resumable section-summary cache (see below). */
+  clearSectionSummaries?: boolean;
+}
+
+/**
+ * What `document_versions.section_summaries` holds between attempts: the
+ * fingerprint of the Converted Markdown the summaries were derived from, and
+ * the summaries themselves keyed by section index.
+ *
+ * Keyed by index, in an object rather than an array, because the map pass
+ * writes four summaries concurrently and each write is a `jsonb_set` of its
+ * own key — two concurrent read-modify-writes of one array would lose one.
+ */
+interface CachedSectionSummaries {
+  fingerprint: string;
+  summaries: Record<string, string>;
+}
+
+/**
+ * Identifies the exact Converted Markdown a cache of section summaries was
+ * built from.
+ *
+ * Section indexes only mean anything against the text they were derived from,
+ * and stage 1 can legitimately re-run against the same Version id and leave
+ * different Markdown behind. Without this, a retry after such a re-conversion
+ * would reduce last attempt's summaries of text that is no longer in the
+ * document — the worst kind of wrong, because every status says `summarized`
+ * and only the content is a lie.
+ */
+function fingerprintOf(markdown: string): string {
+  return createHash("sha256").update(markdown).digest("hex");
+}
+
+/**
+ * The resumable half of stage 2 (NBK-1's operator story; see ADR-0006 and
+ * migration 0011), backed by one JSONB column.
+ *
+ * Reads the cache once up front and writes each new summary as it completes.
+ * A cache whose fingerprint does not match the Markdown in hand is treated as
+ * absent, so the only way to reuse a summary is for it to describe the text
+ * actually being summarized.
+ */
+function sectionSummaryStore(
+  pool: Pool,
+  versionId: string,
+  markdown: string,
+  cached: CachedSectionSummaries | null,
+): SectionSummaryStore {
+  const fingerprint = fingerprintOf(markdown);
+  const completed = new Map<number, string>();
+  if (cached?.fingerprint === fingerprint) {
+    for (const [index, summary] of Object.entries(cached.summaries ?? {})) {
+      completed.set(Number(index), summary);
+    }
+  }
+
+  return {
+    completed,
+    async record(index, summary) {
+      // One statement per summary, and `jsonb_set` rather than a read-modify-
+      // write, so concurrent map-pass runners cannot overwrite each other's
+      // keys. Dozens of tiny UPDATEs over several minutes is nothing next to
+      // the OpenRouter calls they are protecting.
+      //
+      // The whole value is replaced when the stored fingerprint is stale (or
+      // absent), which is what makes the first write of an attempt against
+      // changed Markdown discard the previous attempt's summaries wholesale.
+      await pool.query(
+        `UPDATE document_versions
+         SET section_summaries = jsonb_set(
+               CASE
+                 WHEN section_summaries ->> 'fingerprint' = $2
+                   THEN section_summaries
+                 ELSE jsonb_build_object('fingerprint', $2::text, 'summaries', '{}'::jsonb)
+               END,
+               ARRAY['summaries', $3::text],
+               to_jsonb($4::text),
+               true
+             )
+         WHERE id = $1`,
+        [versionId, fingerprint, String(index), summary],
+      );
+    },
+  };
 }
 
 /**
  * Updates a Document Version's ingestion status (and, on success, its
  * metadata and three artifacts) and announces the change, in one
  * transaction. `pg_notify` is transactional, so a status nobody committed is
- * never announced. Mirrors stage 1's `transitionTo` deliberately — the
- * lifecycle contract is the same one, extended.
+ * never announced.
+ *
+ * Stage 2's own `UPDATE`: the extracted metadata, the three Generated
+ * document artifacts, `summarized_at`, and the two operational columns of
+ * migration 0011 are all columns no other Stage writes. The transaction
+ * wrapper and the event envelope are shared (`db/transaction.ts`,
+ * `stage.ts`); which *status* to move to is decided by the caller below.
  */
 async function transitionTo(
   pool: Pool,
-  version: VersionRow & { documentId: string; versionId: string },
+  version: IngestionVersion,
   status: DocumentStatus,
   fields: TransitionFields = {},
 ): Promise<void> {
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
+  await inTransaction(pool, async (client) => {
     await client.query(
       `UPDATE document_versions
        SET ingestion_status = $2,
@@ -92,6 +192,14 @@ async function transitionTo(
            executive_summary = COALESCE($5, executive_summary),
            abstract = COALESCE($6, abstract),
            ingestion_error = $7,
+           -- NULL for "nothing to report", so an operator querying this
+           -- column never has to tell NULL and [] apart. $8 is NULL both
+           -- when no artifacts were generated on this transition and when
+           -- all three fitted.
+           artifact_warnings = CASE WHEN $9 THEN $8::jsonb ELSE artifact_warnings END,
+           -- The resumable cache is scratch space, dropped once its
+           -- summaries have been reduced into the three artifacts.
+           section_summaries = CASE WHEN $10 THEN NULL ELSE section_summaries END,
            summarized_at = CASE WHEN $2 = 'summarized' THEN now() ELSE summarized_at END
        WHERE id = $1`,
       [
@@ -102,27 +210,13 @@ async function transitionTo(
         fields.artifacts?.executiveSummary ?? null,
         fields.artifacts?.abstract ?? null,
         fields.error ?? null,
+        fields.warnings && fields.warnings.length > 0 ? JSON.stringify(fields.warnings) : null,
+        fields.warnings !== undefined,
+        fields.clearSectionSummaries === true,
       ],
     );
-    await publishAppEvent(client, {
-      type: DOCUMENT_VERSION_STATUS_CHANGED,
-      topic: notebookTopic(version.notebook_id),
-      data: {
-        notebookId: version.notebook_id,
-        documentId: version.documentId,
-        versionId: version.versionId,
-        filename: version.filename,
-        status,
-        ...(fields.error ? { error: fields.error } : {}),
-      },
-    });
-    await client.query("COMMIT");
-  } catch (err) {
-    await client.query("ROLLBACK");
-    throw err;
-  } finally {
-    client.release();
-  }
+    await publishAppEvent(client, versionStatusChanged(version, status, fields.error));
+  });
 }
 
 /**
@@ -149,8 +243,8 @@ export async function runSummarizeDocumentJob(
 ): Promise<void> {
   const { pool } = deps;
 
-  const { rows } = await pool.query<VersionRow>(
-    `SELECT d.notebook_id, d.filename, v.markdown
+  const { rows } = await pool.query<VersionRow & { notebook_id: string; filename: string }>(
+    `SELECT d.notebook_id, d.filename, v.markdown, v.section_summaries
      FROM document_versions v
      JOIN documents d ON d.id = v.document_id
      WHERE v.id = $1 AND v.document_id = $2 AND v.deleted_at IS NULL`,
@@ -163,7 +257,12 @@ export async function runSummarizeDocumentJob(
     return;
   }
 
-  const version = { ...row, documentId: payload.documentId, versionId: payload.versionId };
+  const version: IngestionVersion = {
+    notebookId: row.notebook_id,
+    filename: row.filename,
+    documentId: payload.documentId,
+    versionId: payload.versionId,
+  };
 
   if (row.markdown === null || row.markdown.trim() === "") {
     // Stage 2's input is missing, which means stage 1 either hasn't run or
@@ -182,6 +281,9 @@ export async function runSummarizeDocumentJob(
         complete: deps.complete,
         models: deps.models ?? resolveTaskModels(),
         ...(deps.mapConcurrency === undefined ? {} : { mapConcurrency: deps.mapConcurrency }),
+        // What makes a retry cost three calls instead of forty, for a stage
+        // whose map pass is essentially its whole bill. See ADR-0006.
+        sectionSummaries: sectionSummaryStore(pool, version.versionId, row.markdown, row.section_summaries),
       },
       { filename: row.filename, markdown: row.markdown },
     );
@@ -189,6 +291,8 @@ export async function runSummarizeDocumentJob(
       metadata: result.metadata,
       artifacts: result.artifacts,
       error: null,
+      warnings: result.warnings,
+      clearSectionSummaries: true,
     });
 
     // Enqueued only after the summaries are committed, and thrown rather than

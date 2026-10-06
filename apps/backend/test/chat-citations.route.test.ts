@@ -452,7 +452,7 @@ describe("Chat citations", () => {
   // number a source it was never given, and that must resolve to nothing
   // rather than to whatever chunk happens to sit at that index in the
   // Notebook.
-  it("drops source markers that match no retrieved passage, and records the answer regardless", async () => {
+  it("drops source markers that match no retrieved Chunk, and records the answer regardless", async () => {
     const answerText =
       "Lead times lengthened to 14 weeks [1]. Margins improved [4]. See also [0] and [1].";
     const chatApp = await appWithChat(openRouterStub(answerText).stubFetch);
@@ -555,7 +555,7 @@ describe("Chat citations", () => {
   // occurrence, and following the second Citation would scroll to the wrong
   // part of the document. The locations have to come from a scan in document
   // order.
-  it("locates a repeated passage at the occurrence the cited chunk actually is", async () => {
+  it("locates repeated text at the occurrence the cited Chunk actually is", async () => {
     const chatApp = await appWithChat(
       openRouterStub("Lead times were re-stated [1][2][3].").stubFetch,
     );
@@ -621,10 +621,18 @@ describe("Chat citations", () => {
       // to cite with bracketed markers...
       expect(completion.system).toContain("[2]");
       expect(completion.system.toLowerCase()).toContain("cite");
-      // ...and every passage it is shown carries the marker it would use,
+      // ...and every Chunk it is shown carries the marker it would use,
       // numbered in retrieval order, so "[1]" means something specific.
-      expect(completion.user).toContain("Passage [1] (under Lead times):");
-      expect(completion.user).toContain("Passage [2] (under Revenue):");
+      //
+      // The label is GLOSSARY.md's "Chunk", not "passage" — which the
+      // glossary lists as a term to avoid. Asserted on the literal prompt
+      // text because the model echoes the word it was given back into the
+      // answer a user reads, which is what makes it part of the product
+      // rather than a comment.
+      expect(completion.user).toContain("Chunk [1] (under Lead times):");
+      expect(completion.user).toContain("Chunk [2] (under Revenue):");
+      expect(completion.user).not.toMatch(/Passage \[/);
+      expect(completion.system).not.toMatch(/passage/i);
     } finally {
       await chatApp.close();
     }

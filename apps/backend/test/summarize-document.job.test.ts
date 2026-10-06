@@ -102,9 +102,11 @@ describe("summarize-document job", () => {
       abstract: string | null;
       ingestion_error: string | null;
       summarized_at: Date | null;
+      artifact_warnings: unknown;
+      section_summaries: unknown;
     }>(
       `SELECT ingestion_status, markdown, metadata, chat_snippet, executive_summary, abstract,
-              ingestion_error, summarized_at
+              ingestion_error, summarized_at, artifact_warnings, section_summaries
        FROM document_versions WHERE id = $1`,
       [versionId],
     );
@@ -661,10 +663,177 @@ describe("summarize-document job", () => {
     expect(abstract).toContain(sentence(1));
     expect(abstract).not.toContain(sentence(12));
 
-    // The Executive Summary is structured Markdown — dropping its trailing
-    // sentences would strand a heading — so it is never trimmed, only
-    // re-asked for.
+    // The Executive Summary is in range here, so nothing trims it — the
+    // structured-Markdown backstop is exercised by its own tests below.
     expect((version.executive_summary ?? "").trim().split(/\s+/)).toHaveLength(700);
+  });
+
+  /**
+   * The Executive Summary needs a backstop too, and it needs a different one.
+   *
+   * Its size is part of what it *is* — GLOSSARY.md calls it "a 1-2 page
+   * human-facing summary", enforced as 500-1000 words — but it is the one
+   * artifact whose brief asks for "short Markdown sections with headings and
+   * bullet points", so the Abstract's cut-whole-trailing-sentences trim is
+   * wrong for it: it would end a document mid-table, mid-bullet, or on a
+   * heading with nothing underneath. Leaving it with *no* enforcement, which
+   * is where it started, means a model that overshoots twice simply ships a
+   * four-page "1-2 page" summary.
+   *
+   * So the backstop cuts at a **section boundary** instead: whole
+   * heading-delimited sections are dropped from the end, never part of one.
+   * That respects the structure the artifact is defined by, and it is
+   * deterministic in a way "ask the model again" is not.
+   */
+  describe("the Executive Summary's size backstop", () => {
+    /** `## heading` plus a body of `wordCount` words, as its own section. */
+    function section(heading: string, wordCount: number): string {
+      return `## ${heading}\n\n${words(wordCount)}`;
+    }
+
+    it("drops whole trailing sections from an over-long Executive Summary", async () => {
+      const seeded = await seedConvertedVersion("sprawling-summary.md", `# Sprawl\n\n${body("sprawl")}\n`);
+
+      // 1400 words over seven 200-word sections, well past the 1000-word
+      // ceiling. Dropping the last two lands on 1000; dropping more would be
+      // unnecessary. A table and a bullet list sit in sections that must
+      // survive intact — the whole point of cutting at a section boundary.
+      const overlongSummary = [
+        section("Purpose", 200),
+        "## Findings\n\n- Revenue grew to 12.4M.\n- Supply-chain risk remains.\n- Headcount is flat.",
+        "## Figures\n\n| Quarter | Total |\n| --- | --- |\n| Q1 | 12.4M |\n| Q2 | 18.9M |",
+        section("Obligations", 200),
+        section("Risks", 200),
+        section("Appendix A", 200),
+        section("Appendix B", 200),
+      ].join("\n\n");
+
+      const { calls, fetchStub } = stubOpenRouter((call) => {
+        switch (call.task) {
+          case "metadata":
+            return '{"title":"Sprawl","authors":[],"documentType":"report","language":"en","publishedOn":null,"keywords":[]}';
+          case "sectionSummary":
+            return "A section summary.";
+          case "chatSnippet":
+            return words(200);
+          case "abstract":
+            return words(80);
+          case "executiveSummary":
+            // Both the first answer and the corrective rewrite overshoot,
+            // which is what actually happens.
+            return overlongSummary;
+          default:
+            throw new Error(`Unexpected task ${call.task}`);
+        }
+      });
+
+      await runSummarizeDocumentJob(depsWith(fetchStub), {
+        payload: { documentId: seeded.documentId, versionId: seeded.versionId },
+        willRetry: false,
+      });
+
+      // The model got its corrective chance first; the trim is the last
+      // resort, exactly as for the Abstract.
+      expect(calls.filter((c) => c.task === "executiveSummary")).toHaveLength(2);
+
+      const version = await readVersion(seeded.versionId);
+      const summary = (version.executive_summary ?? "").trim();
+      const count = summary.split(/\s+/).length;
+      expect(count).toBeLessThanOrEqual(1000);
+      expect(count).toBeGreaterThanOrEqual(500);
+
+      // Cut between sections. The earliest sections survive whole — table
+      // rows and bullets included — and the trailing ones are gone outright
+      // rather than half-present.
+      expect(summary).toContain("## Purpose");
+      expect(summary).toContain("| Q2 | 18.9M |");
+      expect(summary).toContain("- Headcount is flat.");
+      expect(summary).not.toContain("Appendix B");
+
+      // And nothing ends on a heading introducing content that was dropped.
+      const lines = summary.split("\n").filter((line) => line.trim() !== "");
+      expect(lines[lines.length - 1].startsWith("#")).toBe(false);
+    });
+
+    it("stores an un-trimmable Executive Summary but records that it is out of range", async () => {
+      const seeded = await seedConvertedVersion("unbroken-summary.md", `# Unbroken\n\n${body("unbroken")}\n`);
+
+      // 1500 words in one unbroken block: no heading, no list, no table, so
+      // there is no boundary to cut at that would not land mid-prose. The
+      // artifact is still worth far more to a reader than a Document stuck
+      // in `failed`, so it ships — but silently shipping a 1500-word "1-2
+      // page" summary is how a size guarantee quietly stops being one, so
+      // the out-of-range result is written down where an operator can find
+      // it.
+      const unbrokenSummary = words(1500);
+
+      const { fetchStub } = stubOpenRouter((call) => {
+        switch (call.task) {
+          case "metadata":
+            return '{"title":"Unbroken","authors":[],"documentType":"report","language":"en","publishedOn":null,"keywords":[]}';
+          case "sectionSummary":
+            return "A section summary.";
+          case "chatSnippet":
+            return words(200);
+          case "abstract":
+            return words(80);
+          case "executiveSummary":
+            return unbrokenSummary;
+          default:
+            throw new Error(`Unexpected task ${call.task}`);
+        }
+      });
+
+      await runSummarizeDocumentJob(depsWith(fetchStub), {
+        payload: { documentId: seeded.documentId, versionId: seeded.versionId },
+        willRetry: false,
+      });
+
+      const version = await readVersion(seeded.versionId);
+      // The stage succeeded and the artifact was kept whole.
+      expect(version.ingestion_status).toBe("summarized");
+      expect((version.executive_summary ?? "").trim().split(/\s+/)).toHaveLength(1500);
+      expect(version.ingestion_error).toBeNull();
+
+      // But it is on the record, naming the artifact, what it measured and
+      // what was required.
+      const warnings = version.artifact_warnings as
+        | Array<{ artifact: string; words: number; minWords: number; maxWords: number }>
+        | null;
+      expect(warnings).not.toBeNull();
+      expect(warnings).toEqual([
+        { artifact: "executiveSummary", words: 1500, minWords: 500, maxWords: 1000 },
+      ]);
+    });
+
+    it("records no warning when every artifact landed in range", async () => {
+      const seeded = await seedConvertedVersion("tidy-summary.md", `# Tidy\n\n${body("tidy")}\n`);
+
+      const { fetchStub } = stubOpenRouter((call) => {
+        switch (call.task) {
+          case "metadata":
+            return '{"title":"Tidy","authors":[],"documentType":"report","language":"en","publishedOn":null,"keywords":[]}';
+          case "sectionSummary":
+            return "A section summary.";
+          case "chatSnippet":
+            return words(200);
+          case "abstract":
+            return words(80);
+          case "executiveSummary":
+            return words(700);
+          default:
+            throw new Error(`Unexpected task ${call.task}`);
+        }
+      });
+
+      await runSummarizeDocumentJob(depsWith(fetchStub), {
+        payload: { documentId: seeded.documentId, versionId: seeded.versionId },
+        willRetry: false,
+      });
+
+      const version = await readVersion(seeded.versionId);
+      expect(version.artifact_warnings).toBeNull();
+    });
   });
 
   // Per ADR-0004 and GLOSSARY.md, Ingestion is "a chain of independently
@@ -777,6 +946,161 @@ describe("summarize-document job", () => {
     // claim a retry isn't coming).
     expect(version.ingestion_status).toBe("converted");
     expect(version.ingestion_error).toContain("socket hang up");
+  });
+
+  /**
+   * NBK-1's operator story, applied where it actually costs money: "a
+   * transient failure in one stage (e.g. a rate-limited OpenRouter call)
+   * doesn't force the whole pipeline to restart".
+   *
+   * Stage 2 is one job that makes 1 metadata call, one call *per section*,
+   * and 3 reduction calls. On a 200-page document the map pass is dozens of
+   * calls and essentially the whole bill (measured: ~$0.05 and 5-8 minutes,
+   * see docs/ingestion-summaries.md), so a rate-limited *reduction* — the
+   * last three calls — re-paying for every section summary is the expensive
+   * shape of exactly the problem that story describes.
+   *
+   * The fix is not more queues (see ADR-0006) but making the map pass
+   * resumable: each section summary is persisted as it completes, and a
+   * retry reuses the ones already done.
+   */
+  describe("a retry does not re-pay for section summaries already done", () => {
+    /** A document with `count` sections, each long enough to be summarized. */
+    function multiSectionMarkdown(count: number): string {
+      return [
+        "# Annual Report",
+        ...Array.from({ length: count }, (_, i) => `## Section ${i + 1}\n\n${body(`section-${i + 1}`)}`),
+      ].join("\n\n");
+    }
+
+    it("re-uses persisted section summaries and only re-runs the reduce pass", async () => {
+      const seeded = await seedConvertedVersion("expensive.md", multiSectionMarkdown(6));
+
+      // Attempt 1: every section summary succeeds, then the first reduction
+      // (the Chat Snippet) fails — the rate-limit shape the story names.
+      let failReductions = true;
+      const first = stubOpenRouter((call) => {
+        if (call.task === "metadata") {
+          return '{"title":"Annual Report","authors":[],"documentType":"report","language":"en","publishedOn":null,"keywords":[]}';
+        }
+        if (call.task === "sectionSummary") return `Summary of ${call.user.slice(0, 40)}`;
+        if (failReductions) throw new Error("429 rate limited");
+        throw new Error(`Unexpected task ${call.task}`);
+      });
+
+      await expect(
+        runSummarizeDocumentJob(depsWith(first.fetchStub), {
+          payload: { documentId: seeded.documentId, versionId: seeded.versionId },
+          willRetry: true,
+        }),
+      ).rejects.toThrow();
+
+      expect(first.calls.filter((c) => c.task === "sectionSummary")).toHaveLength(6);
+      // The work that succeeded is on the record, not thrown away with the
+      // attempt that failed.
+      const afterFailure = await readVersion(seeded.versionId);
+      expect(afterFailure.ingestion_status).toBe("converted");
+      expect(afterFailure.section_summaries).not.toBeNull();
+
+      // Attempt 2: the retry, with nothing failing this time.
+      failReductions = false;
+      const second = stubOpenRouter((call) => {
+        switch (call.task) {
+          case "metadata":
+            return '{"title":"Annual Report","authors":[],"documentType":"report","language":"en","publishedOn":null,"keywords":[]}';
+          case "sectionSummary":
+            return "A section summary nobody should have had to pay for twice.";
+          case "chatSnippet":
+            return words(200);
+          case "executiveSummary":
+            return words(700);
+          case "abstract":
+            return words(80);
+          default:
+            throw new Error(`Unexpected task ${call.task}`);
+        }
+      });
+
+      await runSummarizeDocumentJob(depsWith(second.fetchStub), {
+        payload: { documentId: seeded.documentId, versionId: seeded.versionId },
+        willRetry: true,
+      });
+
+      // The point of the whole exercise: the six map calls are not re-made.
+      expect(second.calls.filter((c) => c.task === "sectionSummary")).toHaveLength(0);
+      // And the reductions, which is what actually failed, do run again —
+      // against the summaries attempt 1 produced.
+      expect(second.calls.filter((c) => c.task === "chatSnippet")).toHaveLength(1);
+      const reduce = second.calls.find((c) => c.task === "executiveSummary")!;
+      expect(reduce.user).toContain("Summary of");
+      expect(reduce.user).not.toContain("nobody should have had to pay for twice");
+
+      const version = await readVersion(seeded.versionId);
+      expect(version.ingestion_status).toBe("summarized");
+      // The scratch area is cleared once its summaries have been reduced
+      // into the three artifacts: it is work-in-progress, not an artifact,
+      // and a 200-page document's worth of it should not sit on every
+      // finished Version forever.
+      expect(version.section_summaries).toBeNull();
+    });
+
+    it("re-summarizes from scratch when the Converted Markdown has changed under it", async () => {
+      const seeded = await seedConvertedVersion("rewritten.md", multiSectionMarkdown(3));
+
+      let failReductions = true;
+      const first = stubOpenRouter((call) => {
+        if (call.task === "metadata") {
+          return '{"title":"Annual Report","authors":[],"documentType":"report","language":"en","publishedOn":null,"keywords":[]}';
+        }
+        if (call.task === "sectionSummary") return "A summary of the old text.";
+        if (failReductions) throw new Error("429 rate limited");
+        throw new Error(`Unexpected task ${call.task}`);
+      });
+
+      await expect(
+        runSummarizeDocumentJob(depsWith(first.fetchStub), {
+          payload: { documentId: seeded.documentId, versionId: seeded.versionId },
+          willRetry: true,
+        }),
+      ).rejects.toThrow();
+      expect(first.calls.filter((c) => c.task === "sectionSummary")).toHaveLength(3);
+
+      // Stage 1 re-ran against the same Version and produced different
+      // Markdown. The cached summaries describe text that is no longer
+      // there, so reusing them would reduce a document nobody uploaded.
+      await pool.query("UPDATE document_versions SET markdown = $2 WHERE id = $1", [
+        seeded.versionId,
+        multiSectionMarkdown(4),
+      ]);
+
+      failReductions = false;
+      const second = stubOpenRouter((call) => {
+        switch (call.task) {
+          case "metadata":
+            return '{"title":"Annual Report","authors":[],"documentType":"report","language":"en","publishedOn":null,"keywords":[]}';
+          case "sectionSummary":
+            return "A summary of the new text.";
+          case "chatSnippet":
+            return words(200);
+          case "executiveSummary":
+            return words(700);
+          case "abstract":
+            return words(80);
+          default:
+            throw new Error(`Unexpected task ${call.task}`);
+        }
+      });
+
+      await runSummarizeDocumentJob(depsWith(second.fetchStub), {
+        payload: { documentId: seeded.documentId, versionId: seeded.versionId },
+        willRetry: true,
+      });
+
+      expect(second.calls.filter((c) => c.task === "sectionSummary")).toHaveLength(4);
+      const reduce = second.calls.find((c) => c.task === "executiveSummary")!;
+      expect(reduce.user).toContain("A summary of the new text.");
+      expect(reduce.user).not.toContain("A summary of the old text.");
+    });
   });
 
   it("does nothing for a Document Version that no longer exists", async () => {

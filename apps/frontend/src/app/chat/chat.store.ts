@@ -3,9 +3,10 @@ import { patchState, signalStore, withMethods, withState } from '@ngrx/signals';
 import { Subscription } from 'rxjs';
 import { ChatService } from '../api/services/chat.service';
 import { AppEvent, AppEventsService } from '../events/app-events.service';
+import { errorMessage } from '../shared/error-message';
 
 // Who did something. Mirrors the backend's `chatParticipantSchema`: the email
-// is what a reader recognises in a shared conversation, which is the whole
+// is what a reader recognises in a shared Chat Thread, which is the whole
 // reason attribution is recorded (ADR-0001).
 export interface ChatParticipant {
   id: string;
@@ -128,16 +129,6 @@ const initialState: ChatState = {
   error: null,
 };
 
-function errorMessage(err: unknown, fallback: string): string {
-  if (err && typeof err === 'object' && 'error' in err) {
-    const body = (err as { error?: unknown }).error;
-    if (body && typeof body === 'object' && 'message' in body && typeof body.message === 'string') {
-      return body.message;
-    }
-  }
-  return err instanceof Error ? err.message : fallback;
-}
-
 /** What every event about one streamed answer carries, if it is one. */
 function streamFields(event: AppEvent): { threadId: string; streamId: string } | null {
   const threadId = event.data['threadId'];
@@ -155,7 +146,7 @@ function eventCitations(event: AppEvent): Citation[] {
 }
 
 /**
- * Holds one Notebook's Chat Threads and the open conversation, fetched
+ * Holds one Notebook's Chat Threads and the open Thread's messages, fetched
  * through the generated ng-openapi-gen client (NBK-10).
  *
  * Per ADR-0001 nothing here filters or gates by author: the Thread list is
@@ -178,7 +169,7 @@ export const ChatStore = signalStore(
       }
 
       /**
-       * Re-reads the open conversation over the normal REST route and drops
+       * Re-reads the open Thread's messages over the normal REST route and drops
        * the preview it replaces.
        *
        * This is GLOSSARY.md's rule about an App Event, applied: the events
@@ -188,7 +179,7 @@ export const ChatStore = signalStore(
        * the stream late — because there is no response in flight that would
        * otherwise deliver the recorded messages.
        */
-      async function refreshConversation(notebookId: string, threadId: string, streamId: string): Promise<void> {
+      async function refreshThreadMessages(notebookId: string, threadId: string, streamId: string): Promise<void> {
         try {
           const messages = (await chatService.listChatMessages({ notebookId, threadId })) as ChatMessage[];
           if (store.activeThreadId() !== threadId) return;
@@ -255,11 +246,11 @@ export const ChatStore = signalStore(
       }
     },
 
-    /** Opens a Thread and loads its conversation. */
+    /** Opens a Chat Thread and loads its messages. */
     async openThread(notebookId: string, threadId: string): Promise<void> {
       patchState(store, {
         activeThreadId: threadId,
-        // The previous Thread's messages belong to a different conversation,
+        // The previous Thread's messages belong to a different Chat Thread,
         // and so does anything that was streaming into it.
         messages: [],
         streamingAnswer: null,
@@ -272,7 +263,7 @@ export const ChatStore = signalStore(
       } catch (err) {
         patchState(store, {
           messagesLoading: false,
-          error: errorMessage(err, 'Failed to load the conversation.'),
+          error: errorMessage(err, 'Failed to load the Chat Thread.'),
         });
       }
     },
@@ -392,7 +383,7 @@ export const ChatStore = signalStore(
           // client joined late — has no response in flight, and the event is
           // only a hint: the truth comes from the REST route.
           if (!store.sending()) {
-            void refreshConversation(notebookId, fields.threadId, fields.streamId);
+            void refreshThreadMessages(notebookId, fields.threadId, fields.streamId);
           }
           return;
         }
@@ -407,7 +398,7 @@ export const ChatStore = signalStore(
       });
     },
 
-    /** Drops the open conversation, so navigating away doesn't leak it. */
+    /** Drops the open Chat Thread, so navigating away doesn't leak it. */
     reset(): void {
       stopWatching();
       patchState(store, initialState);

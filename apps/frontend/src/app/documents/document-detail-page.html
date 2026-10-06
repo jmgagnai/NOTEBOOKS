@@ -8,11 +8,17 @@
       <p class="document-detail-page__error">{{ error }}</p>
     } @else if (store.openDocument(); as document) {
       <h1 class="document-detail-page__filename">{{ document.filename }}</h1>
+      <!--
+        The status and the version number of the Version this page is about —
+        which is the pinned one when a Citation was followed, not the
+        Document's latest. Everything below describes the same Version, so a
+        reader never has to work out which half of the page they are reading.
+      -->
       <p class="document-detail-page__meta-line">
         <span [class]="'document-detail-page__badge document-detail-page__badge--' + document.status">{{
           document.status
         }}</span>
-        <span>v{{ document.latestVersion.versionNumber }}</span>
+        <span>v{{ document.version.versionNumber }}</span>
       </p>
 
       @if (metadataEntries().length > 0) {
@@ -28,13 +34,17 @@
         <!--
           Arrived from a Citation pointing at an older Version. Per
           GLOSSARY.md that is exactly what a Citation is for — "even after
-          newer Versions exist" — so this says so rather than quietly showing
-          content that contradicts the v{{ document.latestVersion.versionNumber }}
-          badge above.
+          newer Versions exist" — so this places the reader in the Document's
+          history rather than apologising for a contradiction: the page above
+          and below is coherently this Version, and both numbers are named so
+          "how far behind am I" is answerable without leaving the page.
         -->
         <p class="document-detail-page__cited-notice" data-testid="cited-version-notice">
-          Opened from a Citation: this is the Document Version the answer cited, which is no longer
-          the latest.
+          You are reading v{{ document.version.versionNumber }} of this Document, the Version the
+          Citation you followed was grounded in. It is no longer the latest — v{{
+            document.latestVersionNumber
+          }}
+          is.
         </p>
       }
 

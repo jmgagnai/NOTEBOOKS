@@ -1,0 +1,108 @@
+import { z } from "zod";
+import type { AppEventDraft } from "../events/bus.js";
+import { notebookTopic } from "../events/schema.js";
+import type { DocumentStatus } from "../documents/schema.js";
+
+/**
+ * What the three ingestion Stages have genuinely in common, and nothing else.
+ *
+ * Per GLOSSARY.md, Ingestion "runs as a chain of independently retryable
+ * Stages" — and the emphasis is on *independently*. Their handlers look alike
+ * at a glance, and most of that resemblance is real duplication worth
+ * removing; but the part that differs is the part that matters, so it is worth
+ * being explicit about which is which.
+ *
+ * **Shared, and here:**
+ *
+ * - the job payload, `{documentId, versionId}`, which all three carry and
+ *   nothing else. Three identical Zod schemas is three places for a fourth
+ *   stage to get subtly wrong.
+ * - the App Event a status change is announced as. That envelope is a
+ *   *published contract* — `documents.store.ts` parses it — so three copies of
+ *   it is three ways for one of them to drift out of what the frontend reads.
+ *
+ * **Not shared, deliberately:**
+ *
+ * - **Which status each Stage moves a Version to**, on success and on
+ *   failure. Stage 1 returns a retryable failure to `queued`, stage 2 to
+ *   `converted`, stage 3 to `summarized` — each to the status it *consumes*,
+ *   so a retry finds exactly the state it expects. That is three different
+ *   answers to the same question, each one correct only for its own Stage,
+ *   and getting one wrong is silent: the pipeline stalls or re-runs an
+ *   expensive earlier Stage. It stays spelled out at each call site, where a
+ *   reader of that handler can see it, rather than being passed as a
+ *   parameter to something shared.
+ * - **Each Stage's `UPDATE`**, which writes that Stage's own output columns
+ *   and stamps its own completion timestamp (`converted_at`,
+ *   `summarized_at`, `embedded_at`). Sharing it would mean passing SQL
+ *   fragments and hand-counted placeholder offsets between modules — trading
+ *   three honest statements for one that has to be read twice.
+ * - **Each Stage's `SELECT`**, for the same reason: they differ in exactly
+ *   the columns that Stage consumes (`storage_key` for stage 1, `markdown`
+ *   for stages 2 and 3, plus the resumable summary cache for stage 2), which
+ *   is the most useful thing those queries tell a reader.
+ */
+
+/**
+ * The payload every ingestion job carries: ids only, never the file or its
+ * bytes.
+ *
+ * The job table is not a place to park a 200-page document, and ids re-read
+ * the current truth on every retry — which is what makes a retry safe after
+ * an earlier attempt partly changed the row.
+ */
+export const documentVersionRefSchema = z.object({
+  documentId: z.string().uuid(),
+  versionId: z.string().uuid(),
+});
+
+/** One Document Version, named by id. The unit of work of every Stage. */
+export type DocumentVersionRef = z.infer<typeof documentVersionRefSchema>;
+
+/** The app-event type every Document Version lifecycle change is published as. */
+export const DOCUMENT_VERSION_STATUS_CHANGED = "document-version-status-changed";
+
+/**
+ * The context a Stage needs in order to announce a transition: the Version it
+ * is working on, plus the two things a client needs to recognise it.
+ *
+ * `notebookId` is the event's topic — a client watches one Notebook — and
+ * `filename` is there because an event saying only "version 3f2a… is now
+ * failed" is unusable in a notification.
+ */
+export interface IngestionVersion extends DocumentVersionRef {
+  notebookId: string;
+  filename: string;
+}
+
+/**
+ * The App Event announcing that a Document Version reached `status`.
+ *
+ * Published inside the same transaction as the `UPDATE` it describes:
+ * `pg_notify` is transactional, so a status nobody committed is never
+ * announced, and an announcement is never lost after a commit.
+ *
+ * `error` is included only when there is one, so a client can treat its
+ * presence as meaningful rather than having to test for null. Per ADR-0004 an
+ * event carries *what changed* and never bulk data — a NOTIFY payload has to
+ * stay well inside Postgres's 8000-byte cap — which is why nothing here
+ * carries Markdown, a summary, or metadata.
+ */
+export function versionStatusChanged(
+  version: IngestionVersion,
+  status: DocumentStatus,
+  error?: string | null,
+): AppEventDraft {
+  return {
+    type: DOCUMENT_VERSION_STATUS_CHANGED,
+    topic: notebookTopic(version.notebookId),
+    data: {
+      notebookId: version.notebookId,
+      documentId: version.documentId,
+      versionId: version.versionId,
+      filename: version.filename,
+      status,
+      ...(error ? { error } : {}),
+    },
+  };
+}

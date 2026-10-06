@@ -14,7 +14,7 @@ import { SearchStore } from './search.store';
  * document cards", written "to be skimmed in a list". That is the whole
  * purpose of the page: NBK-1's story is to "judge which result is relevant
  * before opening it", so the Abstract is what the reader gets, not a raw
- * matching passage.
+ * matching Chunk.
  *
  * Searching is explicit (a button, or Enter) rather than as-you-type: every
  * search embeds the query through OpenRouter, so a keystroke-per-request

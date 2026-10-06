@@ -8,14 +8,15 @@ import { createAuthGuard } from "../auth/guard.js";
 import type { JobQueue } from "../jobs/queue.js";
 import { errorResponseSchema } from "../auth/schema.js";
 import { getObject, putObject } from "../storage/s3-client.js";
-import { ACCEPTED_TYPES_DESCRIPTION, resolveAcceptedMimeType } from "./file-types.js";
+import { notebookExists } from "../notebooks/repository.js";
+import { describeRejectedFileType, resolveAcceptedMimeType } from "./file-types.js";
 import {
   createDocumentVersion,
   findDocumentContent,
   findDocumentDetail,
+  findDocumentVersionDetail,
   findDownloadableVersion,
   listDocuments,
-  notebookExists,
   restoreDocument,
   softDeleteDocument,
 } from "./repository.js";
@@ -25,7 +26,9 @@ import {
   documentIdParamsSchema,
   documentSchema,
   documentVersionContentParamsSchema,
+  documentVersionDetailSchema,
   documentVersionDownloadParamsSchema,
+  documentVersionParamsSchema,
   listDocumentsResponseSchema,
   notebookIdParamsSchema,
 } from "./schema.js";
@@ -108,6 +111,49 @@ export function registerDocumentRoutes(
     },
   );
 
+  // Opening one specific Document Version (NBK-12). The route a Citation
+  // reads, because the route above cannot serve it: that one is always about
+  // the Document's *latest* Version, and per GLOSSARY.md following a Citation
+  // must open "that exact Version ... even after newer Versions exist" — with
+  // that Version's own Executive Summary, metadata and version number, not
+  // the current Version's wrapped around the old one's content.
+  app.withTypeProvider<ZodTypeProvider>().get(
+    "/notebooks/:notebookId/documents/:documentId/versions/:versionId",
+    {
+      preHandler: authGuard,
+      schema: {
+        operationId: "getDocumentVersion",
+        tags: ["documents"],
+        summary:
+          "Get one Document Version with its own extracted metadata and generated summaries (Abstract, Executive Summary, Chat Snippet)",
+        description:
+          "Every field describes the Version named in the path, not the Document's latest Version — this is " +
+          "what following a Citation reads, so an answer recorded against a superseded Version stays " +
+          "checkable against what that Version actually said. `isLatestVersion` and `latestVersionNumber` " +
+          "say where that Version stands. Succeeds for a Version whose Document has since been " +
+          "soft-deleted, and 404s once its Notebook is.",
+        params: documentVersionParamsSchema,
+        response: {
+          200: documentVersionDetailSchema,
+          404: errorResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const version = await findDocumentVersionDetail(
+        pool,
+        request.params.notebookId,
+        request.params.documentId,
+        request.params.versionId,
+      );
+      if (!version) {
+        await reply.status(404).send({ message: "Document Version not found." });
+        return;
+      }
+      await reply.status(200).send(version);
+    },
+  );
+
   // Expanding past the Executive Summary (NBK-7). Markdown, not rendered
   // HTML: the client renders the structure (headings, tables) itself, so the
   // structure has to reach it intact.
@@ -173,9 +219,10 @@ export function registerDocumentRoutes(
 
       const mimeType = resolveAcceptedMimeType(file.filename);
       if (!mimeType) {
-        await reply.status(400).send({
-          message: `Unsupported file type for "${file.filename}". Accepted types: ${ACCEPTED_TYPES_DESCRIPTION}.`,
-        });
+        // Some extensions get a reason rather than the bare accepted-types
+        // list — notably legacy `.xls`, which the spec's unqualified "Excel"
+        // invites and the converter cannot read. See file-types.ts.
+        await reply.status(400).send({ message: describeRejectedFileType(file.filename) });
         return;
       }
 
