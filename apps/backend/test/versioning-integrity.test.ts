@@ -52,6 +52,13 @@ const DOCUMENTS_BUCKET = "rag-notebook-versioning-test";
  * OpenRouter at its `fetch`, so the real request building and response
  * parsing in `src/llm/*` stay under test, and Docling at the
  * `MarkdownConverter` boundary.
+ *
+ * Questions are asked down the synchronous answer path rather than the
+ * streamed one (NBK-11), because both run the same `groundQuestion` — so
+ * retrieval and the prompt are literally the same code, and
+ * `test/chat-streaming.route.test.ts` is what proves the two paths persist
+ * the same row. A versioning rule cannot differ between them without that
+ * test failing first.
  */
 describe("Versioning integrity, end to end", () => {
   let pgContainer: StartedPostgreSqlContainer;

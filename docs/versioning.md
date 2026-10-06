@@ -82,6 +82,13 @@ that refusal, and it is left loud on purpose.
   exactly 0. Every "the new Version is included" assertion is positive — its
   own content in the prompt, its own Abstract in the search result — so the
   test cannot pass merely because retrieval returned nothing.
+
+  It asks its questions down the synchronous answer path, not the streamed one
+  (NBK-11). That is enough for *this* guarantee: both paths run the same
+  `groundQuestion`, so retrieval and the prompt are literally the same code,
+  and NBK-11's `test/chat-streaming.route.test.ts` is what proves the two
+  paths persist the same row. A versioning rule cannot differ between them
+  without that test failing first.
 - `apps/backend/test/searchable-versions.test.ts` — the shared rule on its
   own, including the ordering of its two steps for every non-`ready` status.
 - `apps/backend/test/search.route.test.ts`, `test/chat-citations.route.test.ts`
