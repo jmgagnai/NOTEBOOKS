@@ -41,7 +41,7 @@ One embeddable slice of a Document Version's Converted Markdown, produced by sta
 _Avoid_: passage, segment, fragment, span.
 
 **App Event**:
-One thing that happened on the backend and that connected clients are told about immediately — an Ingestion stage transition, and later chat answer chunks and other background-task progress. App Events are notifications, not state: they carry what changed, and a client that missed one re-reads the truth over the normal API.
+One thing that happened on the backend and that connected clients are told about immediately — an Ingestion stage transition, a chunk of a chat answer being generated, and later other background-task progress. App Events are notifications, not state: they carry what changed, and a client that missed one re-reads the truth over the normal API.
 _Avoid_: message, notification (reserve "notification" for something addressed to a user), update.
 
 ### Generated document artifacts

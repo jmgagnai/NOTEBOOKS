@@ -237,8 +237,14 @@ describe('NotebookDetailPage', () => {
 
     await screen.findByText('thesis.pdf');
     expect(screen.getByText('queued')).toBeTruthy();
-    // Only this Notebook's events are asked for.
-    expect(appEvents.topics).toEqual([[`notebook:${NOTEBOOK_ID}`]]);
+    // Only this Notebook's events are asked for — by every store on the page
+    // that follows the stream (Document statuses, and since NBK-11 the chat
+    // panel's streamed answers). How *many* ask is not the point, and the
+    // real AppEventsService shares one connection per topic set anyway.
+    expect(appEvents.topics.length).toBeGreaterThan(0);
+    for (const requested of appEvents.topics) {
+      expect(requested).toEqual([`notebook:${NOTEBOOK_ID}`]);
+    }
 
     appEvents.events.next({
       id: 'event-1',

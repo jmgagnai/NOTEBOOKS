@@ -4,6 +4,13 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { RouterLink } from '@angular/router';
 import { Citation, ChatMessage, ChatStore, ChatThread } from './chat.store';
 
+/** One rendered block of a streamed answer: a chunk, split on its markers. */
+interface AnswerBlock {
+  /** Stable across re-renders, so appending a chunk doesn't re-create earlier ones. */
+  index: number;
+  segments: AnswerSegment[];
+}
+
 /**
  * One piece of an answer's prose: either plain text, or a source marker that
  * resolved to a Citation.
@@ -31,9 +38,12 @@ const MARKER = /\[(\d{1,3})\]/g;
  * asked it. That attribution is the only thing author identity is used for
  * here: nothing is hidden or disabled because someone else started it.
  *
- * The answer arrives as one complete message (NBK-10 is deliberately not
- * streamed). NBK-11 upgrades the delivery to SSE paragraph/heading chunks,
- * which changes how `messages` grows, not what this renders.
+ * An answer arrives twice over (NBK-11): first as paragraph/heading-sized
+ * chunks on the live app-event stream, rendered as a preview the moment each
+ * one lands, and then as the recorded `ChatMessage` the ask returns, which
+ * replaces it. The preview is never a message — it has no id, no author and
+ * no `createdAt`, because the backend writes the row only once the answer is
+ * complete — which is why it renders beside `messages` rather than inside it.
  *
  * Every answer also carries its Citations (NBK-12), rendered twice over: as a
  * link on each source marker in the prose, and as a named source list under
@@ -65,13 +75,36 @@ export class ChatPanel implements OnInit, OnDestroy {
     () => this.store.threads().find((t) => t.id === this.store.activeThreadId()) ?? null,
   );
 
+  /**
+   * The streaming answer as blocks to render, one per chunk received.
+   *
+   * One element per chunk rather than one joined string, because a chunk *is*
+   * a block of Markdown — a heading or a paragraph — and rendering them as
+   * separate elements is both what a reader expects and what keeps appending
+   * the next one from re-rendering the ones already on screen.
+   */
+  protected readonly streamingBlocks = computed<AnswerBlock[]>(() => {
+    const streaming = this.store.streamingAnswer();
+    if (!streaming) return [];
+    return streaming.chunks.map((text, index) => ({
+      index,
+      segments: this.segments(text, streaming.citations),
+    }));
+  });
+
   ngOnInit(): void {
     void this.store.loadThreads(this.notebookId());
+    // The same stream the Document status badges follow (NBK-6): an answer's
+    // chunks are App Events like any other, so no second connection is
+    // opened for them.
+    this.store.watchNotebook(this.notebookId());
   }
 
   ngOnDestroy(): void {
     // The store is root-provided and outlives this panel, so a stale
     // conversation would otherwise show up on the next Notebook opened.
+    // `reset` also closes the live connection, so a panel that is gone stops
+    // costing one.
     this.store.reset();
   }
 
@@ -83,29 +116,37 @@ export class ChatPanel implements OnInit, OnDestroy {
   }
 
   /**
-   * Splits a message's prose on its source markers, pairing each marker with
-   * the Citation it refers to.
+   * Splits prose on its source markers, pairing each marker with the
+   * Citation it refers to.
    *
    * A marker with no Citation stays a plain-text segment: the backend only
    * records Citations for markers that named a passage the answer was
    * actually grounded in, so an unmatched marker is one it deliberately
    * dropped and must not be made clickable.
+   *
+   * Takes the text and the Citations rather than a `ChatMessage` so a
+   * streaming answer's chunks go through the same code (NBK-11). That is
+   * worth the extra parameter: a chunk whose markers rendered differently
+   * from the recorded message's would make the preview visibly swap for
+   * something else at the end. It also means a marker in a chunk is plain
+   * text until the completion event brings the Citations, which is correct —
+   * they cannot be resolved from a half-written answer.
    */
-  protected segments(message: ChatMessage): AnswerSegment[] {
-    const byMarker = new Map(message.citations.map((c) => [c.marker, c]));
+  protected segments(content: string, citations: Citation[]): AnswerSegment[] {
+    const byMarker = new Map(citations.map((c) => [c.marker, c]));
     const segments: AnswerSegment[] = [];
     let from = 0;
 
-    for (const match of message.content.matchAll(MARKER)) {
+    for (const match of content.matchAll(MARKER)) {
       const citation = byMarker.get(Number(match[1]));
       if (!citation) continue;
       const at = match.index!;
-      if (at > from) segments.push({ text: message.content.slice(from, at), citation: null });
+      if (at > from) segments.push({ text: content.slice(from, at), citation: null });
       segments.push({ text: match[0], citation });
       from = at + match[0].length;
     }
-    if (from < message.content.length) {
-      segments.push({ text: message.content.slice(from), citation: null });
+    if (from < content.length) {
+      segments.push({ text: content.slice(from), citation: null });
     }
     return segments;
   }

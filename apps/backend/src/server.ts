@@ -6,7 +6,7 @@ import { createDoclingConverter } from "./ingestion/docling.js";
 import { startJobQueue } from "./jobs/queue.js";
 import { resolveEmbeddingModel, resolveTaskModels } from "./llm/models.js";
 import { createOpenRouterEmbedder } from "./llm/embeddings.js";
-import { createOpenRouterCompleter } from "./llm/openrouter.js";
+import { createOpenRouterCompleter, createOpenRouterStreamer } from "./llm/openrouter.js";
 import { createS3Client, ensureBucket } from "./storage/s3-client.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
@@ -70,11 +70,15 @@ async function main(): Promise<void> {
     ? createOpenRouterEmbedder({ apiKey: OPENROUTER_API_KEY, model: resolveEmbeddingModel() })
     : undefined;
 
-  // The chat answer path (NBK-10).
+  // The chat answer path (NBK-10), streamed (NBK-11). Both clients: `stream`
+  // generates the answer progressively and `complete` stays the fallback for
+  // a deployment that has to turn streaming off, so the recorded result is
+  // identical either way.
   const chat =
     OPENROUTER_API_KEY && embed
       ? {
           complete: createOpenRouterCompleter({ apiKey: OPENROUTER_API_KEY }),
+          stream: createOpenRouterStreamer({ apiKey: OPENROUTER_API_KEY }),
           embed,
           model: resolveTaskModels().chatAnswer,
         }
