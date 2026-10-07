@@ -65,8 +65,25 @@ commit past it with `git -c core.hooksPath=/dev/null commit ...`. CI runs the
 full set regardless, so nothing is skipped for the branch, only for the local
 commit.
 
+## A local Postgres on 5432 shadows the Docker one
+
+`pnpm infra:up` publishes the compose Postgres on `*:5432`. A Homebrew or
+MacPorts Postgres service binds `127.0.0.1:5432`, and for `localhost` the
+specific binding wins, so the backend connects to the local server and fails
+with `role "rag_notebook" does not exist` — an error that names neither
+server. `lsof -nP -iTCP:5432 -sTCP:LISTEN` shows both.
+
+The backend logs which server it reached at startup (`Connected to PostgreSQL
+16.x` is compose; 14 or 15 is a local install) and, on a failed connection,
+says where it tried. Fix either by stopping the local service for the session
+(`brew services stop postgresql@14`) or by moving the compose port to 5433 and
+setting `DATABASE_URL` in `.env` to match.
+
 ## Reaching `.env` from a git worktree
 
-`.env` is gitignored, so a fresh worktree does not have it, and anything calling
-Jira or OpenRouter needs it. Copy it in rather than re-deriving credentials, and
-do not commit it — `.gitignore` already covers it at any depth.
+`.env` is gitignored, so a fresh worktree does not have it. `scripts/jira.mjs`
+finds the main checkout's copy on its own (through `git rev-parse
+--git-common-dir`), so Jira works from any worktree. The backend reads the
+`.env` beside its own package, so running it from a worktree needs a copy
+there — copy rather than re-derive credentials, and do not commit it;
+`.gitignore` already covers it at any depth. Tests need neither.

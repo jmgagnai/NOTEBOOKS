@@ -1,4 +1,5 @@
 import './env.js';
+import type { Pool } from 'pg';
 import { buildApp } from './app.js';
 import { runMigrations } from './db/migrate.js';
 import { createPool } from './db/pool.js';
@@ -28,8 +29,33 @@ const DOCUMENTS_BUCKET = process.env.DOCUMENTS_BUCKET ?? 'rag-notebook-documents
 // per NBK-1.
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 
+/**
+ * Says which Postgres answered, or which one didn't. A Homebrew or MacPorts
+ * server on 127.0.0.1:5432 shadows the docker-compose one for `localhost`,
+ * and its `role "rag_notebook" does not exist` names neither server — see
+ * docs/environment-gotchas.md. Compose runs 16.x; anything else is a local
+ * install.
+ */
+async function reportDatabase(pool: Pool, url: string): Promise<void> {
+  const target = new URL(url);
+  try {
+    const { rows } = await pool.query<{ version: string }>('select version()');
+    // eslint-disable-next-line no-console
+    console.log(`Connected to ${rows[0].version.split(' on ')[0]} at ${target.host}`);
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error(
+      `Could not connect to Postgres at ${target.host} as "${target.username}". If another ` +
+        'Postgres is listening on that port it shadows the docker-compose one; see ' +
+        'docs/environment-gotchas.md.',
+    );
+    throw err;
+  }
+}
+
 async function main(): Promise<void> {
   const pool = createPool(DATABASE_URL);
+  await reportDatabase(pool, DATABASE_URL);
   await runMigrations(pool);
 
   const s3 = createS3Client({
