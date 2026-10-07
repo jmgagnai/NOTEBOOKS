@@ -2,6 +2,7 @@ import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
 import multipart from '@fastify/multipart';
 import swagger from '@fastify/swagger';
+import swaggerUi from '@fastify/swagger-ui';
 import type { S3Client } from '@aws-sdk/client-s3';
 import Fastify, { type FastifyInstance } from 'fastify';
 import {
@@ -99,6 +100,12 @@ export async function buildApp({
     },
     transform: jsonSchemaTransform,
   });
+  // The same document `openapi:generate` writes to openapi.json, served
+  // live with an interactive page (NBK-23): `/documentation` for the UI,
+  // `/documentation/json` for the contract. The UI's own routes are hidden
+  // from the document, so the published contract — and the glossary check
+  // that runs on it — are unchanged by this.
+  await app.register(swaggerUi, { routePrefix: '/documentation' });
 
   registerAuthRoutes(app, pool);
   registerNotebookRoutes(app, pool);

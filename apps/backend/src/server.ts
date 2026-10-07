@@ -139,7 +139,7 @@ async function main(): Promise<void> {
   });
   await app.listen({ port: PORT, host: '0.0.0.0' });
   // eslint-disable-next-line no-console
-  console.log(`Backend listening on :${PORT}`);
+  console.log(`Backend listening on :${PORT} — API docs at http://localhost:${PORT}/documentation`);
 
   // Jobs in flight get a chance to finish, and the LISTEN connection is
   // closed, instead of both being severed with the process.
