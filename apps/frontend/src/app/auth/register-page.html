@@ -1,48 +1,50 @@
-<mat-card class="register-page">
-  <mat-card-header>
-    <mat-card-title>Register</mat-card-title>
-  </mat-card-header>
+<div class="register-page">
+  <p class="register-page__brand">{{ appName }}</p>
+  <h1 class="register-page__title">Create account</h1>
 
-  <mat-card-content>
-    <form (submit)="submit($event)">
-      <mat-form-field appearance="outline">
-        <mat-label>Email</mat-label>
-        <input
-          matInput
-          type="email"
-          [value]="email()"
-          (input)="onEmailInput($event)"
-          required
-          autocomplete="email"
-        />
-      </mat-form-field>
+  <form (submit)="submit($event)">
+    <mat-form-field appearance="outline">
+      <mat-label>Email</mat-label>
+      <input
+        matInput
+        type="email"
+        [value]="email()"
+        (input)="onEmailInput($event)"
+        required
+        autocomplete="email"
+      />
+    </mat-form-field>
 
-      <mat-form-field appearance="outline">
-        <mat-label>Password</mat-label>
-        <input
-          matInput
-          type="password"
-          [value]="password()"
-          (input)="onPasswordInput($event)"
-          required
-          minlength="8"
-          autocomplete="new-password"
-        />
-      </mat-form-field>
+    <mat-form-field appearance="outline">
+      <mat-label>Password</mat-label>
+      <input
+        matInput
+        type="password"
+        [value]="password()"
+        (input)="onPasswordInput($event)"
+        required
+        minlength="8"
+        autocomplete="new-password"
+      />
+    </mat-form-field>
 
-      @if (store.error(); as error) {
-        <p class="register-page__error">{{ error }}</p>
+    @if (store.error(); as error) {
+      <p class="register-page__error">{{ error }}</p>
+    }
+
+    <button
+      mat-flat-button
+      type="submit"
+      class="register-page__submit"
+      [disabled]="store.loading()"
+    >
+      @if (store.loading()) {
+        <mat-progress-spinner mode="indeterminate" diameter="20" />
+      } @else {
+        Create account
       }
+    </button>
+  </form>
 
-      <button mat-flat-button color="primary" type="submit" [disabled]="store.loading()">
-        @if (store.loading()) {
-          <mat-progress-spinner mode="indeterminate" diameter="20" />
-        } @else {
-          Register
-        }
-      </button>
-    </form>
-
-    <p class="register-page__switch">Already have an account? <a routerLink="/login">Log in</a></p>
-  </mat-card-content>
-</mat-card>
+  <p class="register-page__switch">Already have an account? <a routerLink="/login">Sign in</a></p>
+</div>

@@ -8,7 +8,7 @@ import { provideAppIcons } from './shared/fluent-icons';
 // App-level seam-3 test (NBK-3): renders the real shell through the real
 // app routes and auth guard, mocking only the generated ng-openapi-gen
 // AuthService/NotebooksService clients — proves "a logged-in user sees an
-// authenticated shell, a logged-out user is redirected to login".
+// authenticated shell, a logged-out user is redirected to sign-in".
 
 /** Renders the shell with a live session for `email`, settled on the Notebooks page. */
 async function renderSignedIn(email: string) {
@@ -73,7 +73,7 @@ describe('App', () => {
     fireEvent.click(avatarFor('ada@example.com'));
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Sign out' }));
 
-    expect(await screen.findByText('Log in')).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: /Account menu/ })).toBeNull();
   });
 
@@ -83,7 +83,7 @@ describe('App', () => {
     expect(avatarFor('jane.doe@example.com').textContent?.trim()).toBe('JD');
   });
 
-  it('redirects to the login page when no session exists', async () => {
+  it('redirects to the sign-in page when no session exists', async () => {
     const getCurrentUser = vi.fn().mockRejectedValue({ status: 401 });
 
     await render(App, {
@@ -91,7 +91,7 @@ describe('App', () => {
       routes,
     });
 
-    expect(await screen.findByText('Log in')).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeTruthy();
     expect(screen.queryByText('Notebooks')).toBeNull();
   });
 });
