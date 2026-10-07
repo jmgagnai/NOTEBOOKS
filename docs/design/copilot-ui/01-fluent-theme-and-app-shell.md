@@ -29,7 +29,7 @@ theme tokens and a small set of global overrides.
 7. As a user, I want to click the avatar to see my e-mail address and a "Sign out" action, so that signing out is still one click away.
 8. As a user, I want headings sized for a dense productivity app (20 px section titles, 14 px body, 12 px metadata), so that lists and panes hold more without scrolling.
 9. As a user, I want icons drawn in the Fluent style, so that the iconography matches Copilot.
-10. As a user, I want keyboard focus rings that are visible on every control, so that the re-theme does not regress accessibility.
+10. As a user, I want keyboard focus rings that are visible on every control, so that the re-theme does not regress accessibility — with one exception, the chat composer, which shows focus by darkening its border instead of drawing a ring (spec 04).
 11. As a user, I want the same look on every page (sign-in, Notebooks, Notebook, Document, search), so that the app feels like one product.
 12. As a user on a narrow window, I want the title bar to keep the avatar reachable, so that I can still sign out on a small screen.
 13. As a developer, I want all colours, radii and type sizes defined once as design tokens, so that later specs reuse them instead of hard-coding values.
@@ -45,9 +45,9 @@ then overridden at the root so every component picks them up:
 |---|---|
 | Primary / accent | `#0F6CBD`, hover `#115EA3`, pressed `#0C3B5E` |
 | Accent tint (selected rows, chips) | `#EBF3FC` |
-| Page background | `#FAFAFA` |
+| Page background (the workspace canvas) | `#F5F5F5` |
 | Pane / card surface | `#FFFFFF` |
-| Subtle surface (user bubble, hover) | `#F5F5F5` / `#F0F0F0` |
+| Subtle surface (user bubble, hover) | `#F0F0F0` / `#EBEBEB` |
 | Border | `#E0E0E0`; strong border `#D1D1D1` |
 | Text | `#242424`; secondary `#616161`; disabled `#BDBDBD` |
 | Error | `#C50F1F` on `#FDE7E9` |
@@ -75,6 +75,12 @@ border: the brand cluster on the left (mark + name, defined in spec 06 — until
 part). The avatar opens a Material menu showing the full e-mail (disabled
 item) and "Sign out". The pages below the bar are given the page background
 and a full-height layout (`100vh - 48px`) so later specs can build panes.
+
+**Focus.** A 2 px focus ring in the text colour on every focusable
+control, 1 px offset. The one exception is the chat composer box (spec 04):
+it draws no ring, and its border darkens from `#D1D1D1` to `#8A8A8A`
+while the textarea has focus, so keyboard focus is still visible without
+an outline around the box the user is typing in.
 
 **Buttons.** Three variants are used across the app and later specs refer to
 them by name: *primary* (filled accent, white text), *secondary* (white,
@@ -115,6 +121,9 @@ presentation moves.
 - Localisation of UI copy.
 
 ## Further Notes
+
+- Why Material is re-themed rather than replaced by Fluent UI Web
+  Components is ADR-0008.
 
 - The serif-font symptom in the screenshots comes from the theme's
   typography pointing at Roboto with no loaded webfont and no fallback in
