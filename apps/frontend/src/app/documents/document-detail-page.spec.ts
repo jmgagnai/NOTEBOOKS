@@ -9,7 +9,7 @@ const VERSION_ID = '33333333-3333-3333-3333-333333333333';
 
 // A Citation opens this page with the Document Version it pinned, the chunk
 // it points at and that chunk's character range in the Converted Markdown —
-// see `ChatPanel.citationParams`.
+// see `ThreadView.citationParams`.
 function activatedRoute(queryParams: Record<string, string> = {}) {
   return {
     provide: ActivatedRoute,
@@ -331,8 +331,8 @@ describe('DocumentDetailPage', () => {
       expect(metaLine?.textContent).toContain('v1');
       expect(metaLine?.textContent).not.toContain('v2');
       // The badge shows v1's own ingestion status, not the latest Version's
-      // ('summarized' on SUMMARIZED_DETAIL).
-      expect(metaLine?.textContent).toContain('ready');
+      // ('summarized' on SUMMARIZED_DETAIL), in the badge's sentence case (NBK-32).
+      expect(metaLine?.textContent).toContain('Ready');
     });
 
     it('says the Version it opened is a superseded one', async () => {

@@ -1,14 +1,167 @@
-.notebook-detail-page {
-  max-width: 640px;
-  margin: 2rem auto;
-  position: relative;
+@use '../workspace-card';
 
-  // The drop target is the whole page (NBK-18), so the whole card shows it:
-  // a dashed outline while files are dragged over it, plus a hint pinned
-  // over the content saying what a drop will do.
-  &--drag-over {
-    outline: 2px dashed var(--mat-sys-primary, #1b5e20);
-    outline-offset: 4px;
+// The Notebook workspace (NBK-35): a column of header and card grid filling
+// the viewport under the title bar, so the cards scroll and the page never
+// does. `100vh` minus the bar rather than `height: 100%`: the routed element
+// is a flex child of an `app-root` with only a min-height, so a percentage
+// would have nothing definite to resolve against.
+.notebook-detail-page {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  height: calc(100vh - var(--app-title-bar-height));
+
+  // The page header: as high as the title bar, so the two read as one chrome.
+  &__header {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: var(--app-title-bar-height);
+    padding: 0 12px 0 8px;
+  }
+
+  &__crumb {
+    color: var(--mat-sys-on-surface-variant);
+    white-space: nowrap;
+  }
+
+  &__spacer {
+    flex: 1 1 auto;
+  }
+
+  // The title as a button that reads as text: the section type step, no
+  // border, a subtle hover so it is discoverable as a control.
+  &__title {
+    min-width: 0;
+    height: var(--app-control-height);
+    padding: 0 6px;
+    border: 0;
+    border-radius: var(--mat-sys-corner-extra-small);
+    background: transparent;
+    font: var(--mat-sys-title-medium);
+    color: var(--mat-sys-on-surface);
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: text;
+
+    &:hover {
+      background: var(--mat-sys-surface-container-high);
+    }
+  }
+
+  // ...and the box it swaps to, same size and type so nothing jumps.
+  &__title-input {
+    box-sizing: border-box;
+    min-width: 320px;
+    height: var(--app-control-height);
+    padding: 0 6px;
+    border: 1px solid var(--mat-sys-primary);
+    border-radius: var(--mat-sys-corner-extra-small);
+    background: var(--mat-sys-surface);
+    font: var(--mat-sys-title-medium);
+    color: var(--mat-sys-on-surface);
+  }
+
+  // The file input behind "Add Documents": off screen rather than
+  // `display: none`, so it keeps working for everything that reaches it by
+  // its accessible name.
+  &__file-input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  // The three cards: navigator 240 px, Thread view the rest, Documents
+  // 300 px (200/260 under 1100 px); one column under 900 px, the navigator at
+  // its natural height, the Thread view taking the rest, Documents a strip
+  // of about a third (spec 02 "Page structure").
+  &__workspace {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 240px 1fr 300px;
+    gap: 8px;
+    padding: 0 8px 8px;
+
+    @media (max-width: 1100px) {
+      grid-template-columns: 200px 1fr 260px;
+    }
+
+    @media (max-width: 900px) {
+      grid-template-columns: 1fr;
+      grid-template-rows: auto minmax(240px, 1fr) minmax(160px, 32%);
+    }
+
+    @media (prefers-reduced-motion: no-preference) {
+      transition:
+        grid-template-columns 200ms ease,
+        grid-template-rows 200ms ease,
+        gap 200ms ease;
+    }
+
+    // Documents hidden (NBK-37): its column shrinks to nothing and the gap
+    // with it, so the Thread view takes the width; under 900 px it is the
+    // strip's row that goes. The card itself slides out below.
+    &--documents-hidden {
+      grid-template-columns: 240px 1fr 0;
+      gap: 8px 0;
+
+      @media (max-width: 1100px) {
+        grid-template-columns: 200px 1fr 0;
+      }
+
+      @media (max-width: 900px) {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto minmax(240px, 1fr) 0;
+      }
+    }
+  }
+
+  &__panel {
+    @include workspace-card.card;
+
+    // The Documents panel is the drop target (NBK-36): tinted and outlined
+    // while files are dragged anywhere over the page, with the hint laid
+    // over its content. The card is already `position: relative`, and the
+    // outline is drawn inside its border so the rounded corners hold.
+    &--drag-over {
+      background: var(--mat-sys-primary-container);
+      outline: 2px dashed var(--mat-sys-primary);
+      outline-offset: -3px;
+    }
+
+    // Sliding out (NBK-37): a short translate and fade, then `visibility`
+    // takes it out of hit-testing once the fade is over — on the way back
+    // it is visible at once, so the slide in can be seen.
+    &--documents {
+      @media (prefers-reduced-motion: no-preference) {
+        transition:
+          transform 200ms ease,
+          opacity 200ms ease;
+      }
+    }
+
+    .notebook-detail-page__workspace--documents-hidden &--documents {
+      transform: translateX(16px);
+      opacity: 0;
+      visibility: hidden;
+      border-width: 0;
+      pointer-events: none;
+
+      @media (prefers-reduced-motion: no-preference) {
+        transition:
+          transform 200ms ease,
+          opacity 200ms ease,
+          visibility 0s 200ms;
+      }
+    }
   }
 
   &__drop-hint {
@@ -19,30 +172,42 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    padding: 16px;
+    text-align: center;
     font-weight: 600;
-    background: var(--mat-sys-primary-container, #d7f0d7);
-    color: var(--mat-sys-on-primary-container, #1b4d1b);
-    opacity: 0.92;
-    border-radius: inherit;
-    // The hint sits over the content, but the drop must still reach the
-    // page beneath it, not get swallowed by the hint.
+    // Not quite opaque, so the Document list still shows through where the
+    // files are about to land.
+    background: color-mix(in srgb, var(--mat-sys-primary-container) 92%, transparent);
+    color: var(--mat-sys-on-primary-container);
+    // The hint sits over the panel, but the drop must still reach the page
+    // beneath it, not get swallowed by the hint.
     pointer-events: none;
   }
 
-  &__back {
-    display: inline-block;
-    margin-bottom: 1rem;
+  // The count on "Show Documents" (NBK-37): a small tinted badge at the
+  // caption step, so the number reads as a count and not as part of the label.
+  &__count {
+    padding: 0 6px;
+    border-radius: var(--mat-sys-corner-full);
+    background: var(--mat-sys-primary-container);
+    color: var(--mat-sys-primary);
+    font: var(--mat-sys-label-medium);
+  }
+
+  &__panel-head {
+    @include workspace-card.head;
+  }
+
+  &__panel-title {
+    @include workspace-card.title;
+  }
+
+  &__panel-body {
+    @include workspace-card.body;
   }
 
   &__error {
     color: var(--mat-sys-error);
-  }
-
-  &__upload {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-    margin-bottom: 1rem;
   }
 
   // The upload batch panel (NBK-16): one row per file, then the summary.
@@ -68,8 +233,8 @@
 
   &__batch-reason {
     flex-basis: 100%;
-    font-size: 0.85rem;
-    color: var(--mat-sys-on-surface-variant, #666);
+    font: var(--mat-sys-body-small);
+    color: var(--mat-sys-on-surface-variant);
   }
 
   &__batch-summary {
@@ -89,14 +254,14 @@
   &__conflict {
     margin-top: 0.75rem;
     padding: 0.75rem 1rem;
-    border: 1px solid var(--mat-sys-outline, #999);
-    border-radius: 0.5rem;
-    background: var(--mat-sys-surface-container, #f5f5f5);
+    border: 1px solid var(--mat-sys-outline);
+    border-radius: var(--mat-sys-corner-medium);
+    background: var(--mat-sys-surface-container);
   }
 
   &__conflict-title {
     margin: 0 0 0.5rem;
-    font-size: 1rem;
+    font: var(--mat-sys-title-medium);
   }
 
   &__conflict-actions {
@@ -104,12 +269,6 @@
     justify-content: flex-end;
     gap: 0.5rem;
     margin-top: 0.5rem;
-  }
-
-  &__undo {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
   }
 
   // Document cards (NBK-7): each entry has to hold an Abstract, so it is a
@@ -124,8 +283,8 @@
   }
 
   &__card {
-    border: 1px solid var(--mat-sys-outline-variant, #ddd);
-    border-radius: 0.5rem;
+    border: 1px solid var(--mat-sys-outline-variant);
+    border-radius: var(--mat-sys-corner-medium);
     padding: 0.75rem 1rem;
   }
 
@@ -138,67 +297,28 @@
   &__card-actions {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 0.25rem;
   }
 
   &__abstract {
     margin: 0.5rem 0;
-    font-size: 0.9rem;
-    line-height: 1.4;
+    font: var(--mat-sys-body-medium);
 
     &--pending {
-      color: var(--mat-sys-on-surface-variant, #666);
+      color: var(--mat-sys-on-surface-variant);
       font-style: italic;
     }
   }
 
   &__filename {
     flex: 1;
-  }
-
-  &__badge {
-    font-size: 0.75rem;
-    text-transform: uppercase;
-    letter-spacing: 0.02em;
-    padding: 0.125rem 0.5rem;
-    border-radius: 1rem;
-    background: var(--mat-sys-secondary-container, #e0e0e0);
-    color: var(--mat-sys-on-secondary-container, #333);
-
-    // Ingestion outcomes (NBK-6, NBK-7, NBK-8) need to be distinguishable at
-    // a glance — a failed conversion must not look like a finished one. The
-    // in-progress statuses (queued, converting, summarizing, indexing) keep
-    // the neutral default. "converted" and "summarized" are *stage*
-    // boundaries, not the end of ingestion, so they share a finished-a-step
-    // look.
-    // The upload panel (NBK-16) reuses the badge: a landed file (uploaded,
-    // or as a new Version) reads as a finished step, a failed request as a
-    // failure, and waiting/uploading/skipped keep the neutral default.
-    &--converted,
-    &--summarized,
-    &--uploaded,
-    &--new-version {
-      background: var(--mat-sys-tertiary-container, #d7f0d7);
-      color: var(--mat-sys-on-tertiary-container, #1b4d1b);
-    }
-
-    // "ready" is the end of the pipeline, and the only status that means the
-    // Document is safe to rely on for chat (NBK-8). It gets its own, stronger
-    // treatment so it can't be read as "another stage done".
-    &--ready {
-      background: var(--mat-sys-primary, #1b5e20);
-      color: var(--mat-sys-on-primary, #ffffff);
-      font-weight: 600;
-    }
-
-    &--failed {
-      background: var(--mat-sys-error-container, #f8d7d7);
-      color: var(--mat-sys-on-error-container, #6b1b1b);
-    }
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
 
   &__version {
-    color: var(--mat-sys-on-surface-variant, #666);
-    font-size: 0.85rem;
+    color: var(--mat-sys-on-surface-variant);
+    font: var(--mat-sys-body-small);
   }
 }

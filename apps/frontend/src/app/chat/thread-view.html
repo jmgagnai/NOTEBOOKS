@@ -1,0 +1,188 @@
+<div class="thread-view">
+  @if (activeThread(); as thread) {
+    <div class="thread-view__head">
+      <h3>{{ thread.title }}</h3>
+      <!--
+        Renaming is open to anyone (ADR-0001), so this is not gated on
+        being the author — the author line stays as the record of who
+        started it.
+      -->
+      <div class="thread-view__rename">
+        <label class="thread-view__field">
+          <span class="thread-view__field-label">Rename Chat Thread</span>
+          <input
+            type="text"
+            aria-label="Rename Chat Thread"
+            [value]="renameTitle()"
+            (input)="renameTitle.set($any($event.target).value)"
+          />
+        </label>
+        <button mat-button type="button" (click)="rename()">Rename</button>
+      </div>
+    </div>
+
+    @if (store.messagesLoading()) {
+      <mat-progress-spinner mode="indeterminate" diameter="32" />
+    } @else if (store.messages().length === 0 && streamingBlocks().length === 0) {
+      <p class="thread-view__empty">No messages yet.</p>
+    } @else {
+      <ol class="thread-view__messages">
+        @for (message of store.messages(); track message.id) {
+          <li [class]="'thread-view__message thread-view__message--' + message.role">
+            <!--
+              Per-message attribution: GLOSSARY.md requires every message
+              to record which user asked it, and a shared Thread is
+              unreadable without it.
+            -->
+            <span class="thread-view__message-author" data-testid="chat-message-author">{{
+              author(message)
+            }}</span>
+            <!--
+              The prose, with each source marker turned into a link to the
+              exact Document Version and chunk it cites (NBK-12). A marker
+              the backend recorded no Citation for stays plain text — it
+              named a Chunk the answer was not grounded in.
+            -->
+            <p class="thread-view__message-content">
+              @for (segment of segments(message.content, message.citations); track $index) {
+                @if (segment.citation; as citation) {
+                  <a
+                    class="thread-view__marker"
+                    [attr.aria-label]="'Citation ' + citation.marker"
+                    [title]="citationName(citation) + ' (v' + citation.versionNumber + ')'"
+                    [routerLink]="citationLink(citation)"
+                    [queryParams]="citationParams(citation)"
+                    >{{ segment.text }}</a
+                  >
+                } @else {
+                  <span>{{ segment.text }}</span>
+                }
+              }
+            </p>
+
+            @if (message.citations.length > 0) {
+              <!--
+                And the same Citations as a named list, so the sources are
+                readable without hunting through the prose for brackets.
+              -->
+              <ul class="thread-view__citations">
+                @for (citation of message.citations; track citation.id) {
+                  <li class="thread-view__citation" data-testid="chat-citation">
+                    <a
+                      [routerLink]="citationLink(citation)"
+                      [queryParams]="citationParams(citation)"
+                    >
+                      <span class="thread-view__citation-marker">[{{ citation.marker }}]</span>
+                      <span class="thread-view__citation-name">{{ citationName(citation) }}</span>
+                      <!--
+                        The Version is named, because a Citation may well
+                        point at a superseded one — and a reader who follows
+                        it needs to know that is deliberate.
+                      -->
+                      <span class="thread-view__citation-version"
+                        >v{{ citation.versionNumber }}</span
+                      >
+                    </a>
+                  </li>
+                }
+              </ul>
+            }
+          </li>
+        }
+
+        @if (streamingBlocks().length > 0) {
+          <!--
+            The answer being written (NBK-11). One element per chunk, each
+            one a whole heading or paragraph the backend has finished — so
+            the prose grows a block at a time and never a word at a time,
+            which is the product decision NBK-1 records ("without a jarring
+            word-by-word flicker").
+
+            Outside `store.messages()` on purpose: this is not a message.
+            It has no id, no author and no `createdAt` until the backend
+            has written its single `chat_messages` row, and it is replaced
+            by that row rather than promoted into it.
+          -->
+          <li
+            class="thread-view__message thread-view__message--assistant thread-view__message--streaming"
+            data-testid="chat-streaming-answer"
+          >
+            <span class="thread-view__message-author">Assistant, answering…</span>
+            @for (block of streamingBlocks(); track block.index) {
+              <p class="thread-view__message-content">
+                @for (segment of block.segments; track $index) {
+                  @if (segment.citation; as citation) {
+                    <a
+                      class="thread-view__marker"
+                      [attr.aria-label]="'Citation ' + citation.marker"
+                      [title]="citationName(citation) + ' (v' + citation.versionNumber + ')'"
+                      [routerLink]="citationLink(citation)"
+                      [queryParams]="citationParams(citation)"
+                      >{{ segment.text }}</a
+                    >
+                  } @else {
+                    <span>{{ segment.text }}</span>
+                  }
+                }
+              </p>
+            }
+
+            @if (store.streamingAnswer(); as streaming) {
+              @if (streaming.citations.length > 0) {
+                <!--
+                  The Citations arrive with the completion event, never with
+                  a chunk: they resolve from the markers in the *complete*
+                  text, so there was no earlier event they could have
+                  travelled on.
+                -->
+                <ul class="thread-view__citations">
+                  @for (citation of streaming.citations; track citation.id) {
+                    <li class="thread-view__citation" data-testid="chat-citation">
+                      <a
+                        [routerLink]="citationLink(citation)"
+                        [queryParams]="citationParams(citation)"
+                      >
+                        <span class="thread-view__citation-marker">[{{ citation.marker }}]</span>
+                        <span class="thread-view__citation-name">{{ citationName(citation) }}</span>
+                        <span class="thread-view__citation-version"
+                          >v{{ citation.versionNumber }}</span
+                        >
+                      </a>
+                    </li>
+                  }
+                </ul>
+              }
+            }
+          </li>
+        }
+      </ol>
+    }
+
+    <div class="thread-view__composer">
+      <label class="thread-view__field">
+        <span class="thread-view__field-label">Ask a question</span>
+        <textarea
+          aria-label="Ask a question"
+          rows="3"
+          [value]="draft()"
+          (input)="draft.set($any($event.target).value)"
+        ></textarea>
+      </label>
+      <button mat-button type="button" [disabled]="store.sending()" (click)="send()">Send</button>
+      @if (store.sending() && streamingBlocks().length === 0) {
+        <!--
+          Only until the first chunk lands: once the answer is visibly
+          arriving, the answer itself is the progress indicator, and a
+          spinner next to it would say nothing.
+        -->
+        <mat-progress-spinner mode="indeterminate" diameter="24" />
+      }
+    </div>
+  } @else {
+    <p class="thread-view__empty">Open a Chat Thread, or start one, to ask a question.</p>
+  }
+
+  @if (store.error(); as error) {
+    <p class="thread-view__error">{{ error }}</p>
+  }
+</div>

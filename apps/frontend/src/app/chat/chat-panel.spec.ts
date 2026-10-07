@@ -1,7 +1,9 @@
+import { Component, input } from '@angular/core';
 import { provideRouter } from '@angular/router';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/angular';
 import { Subject } from 'rxjs';
-import { ChatPanel } from './chat-panel';
+import { ThreadNavigator } from './thread-navigator';
+import { ThreadView } from './thread-view';
 import { ChatService } from '../api/services/chat.service';
 import { AppEvent, AppEventsService } from '../events/app-events.service';
 
@@ -59,11 +61,32 @@ function citation(overrides: Partial<Record<string, unknown>> = {}) {
   };
 }
 
+/**
+ * The chat panel as the Notebook page composes it: the Thread navigator and
+ * the Thread view side by side, sharing the root-provided ChatStore.
+ *
+ * NBK-34 split the one panel component in two so the workspace frame
+ * (NBK-35) can place them in different cards; the behaviour under test is
+ * the pair's, so this host stands in for the page and every test below is
+ * the one that ran against the single component.
+ */
+@Component({
+  selector: 'app-chat-panel-host',
+  imports: [ThreadNavigator, ThreadView],
+  template: `
+    <app-thread-navigator [notebookId]="notebookId()" />
+    <app-thread-view [notebookId]="notebookId()" />
+  `,
+})
+class ChatPanelHost {
+  readonly notebookId = input.required<string>();
+}
+
 // Seam-3 test (per NBK-1's testing decisions, and explicitly called for by
-// NBK-10's acceptance criteria): render the real panel + SignalStore, mocking
-// only the generated ng-openapi-gen client interface (ChatService) — never
-// the store or any Angular service internals.
-describe('ChatPanel', () => {
+// NBK-10's acceptance criteria): render the real components + SignalStore,
+// mocking only the generated ng-openapi-gen client interface (ChatService) —
+// never the store or any Angular service internals.
+describe('Chat panel (ThreadNavigator + ThreadView)', () => {
   /**
    * Stands in for the live SSE connection a streamed answer arrives on
    * (NBK-11). `AppEventsService` is the seam, not `EventSource`: jsdom has no
@@ -98,7 +121,7 @@ describe('ChatPanel', () => {
   });
 
   async function renderPanel(chatService: Partial<ChatService>) {
-    return render(ChatPanel, {
+    return render(ChatPanelHost, {
       inputs: { notebookId: NOTEBOOK_ID },
       // A real router, not a mocked one: a Citation's whole job is to link
       // somewhere, so the link has to be built by the thing that will
@@ -404,7 +427,7 @@ describe('ChatPanel', () => {
 
       // The marker a reader sees mid-sentence is itself the way into the
       // source, so it is a link to the same pinned location.
-      const marker = await screen.findByRole('link', { name: 'Source 1' });
+      const marker = await screen.findByRole('link', { name: 'Citation 1' });
       expect(marker.textContent).toContain('[1]');
       expect(target(marker)).toEqual({
         pathname: `/notebooks/${NOTEBOOK_ID}/documents/${DOCUMENT_ID}`,
@@ -428,8 +451,8 @@ describe('ChatPanel', () => {
         }),
       ]);
 
-      expect(await screen.findByRole('link', { name: 'Source 1' })).toBeTruthy();
-      expect(screen.queryByRole('link', { name: 'Source 4' })).toBeNull();
+      expect(await screen.findByRole('link', { name: 'Citation 1' })).toBeTruthy();
+      expect(screen.queryByRole('link', { name: 'Citation 4' })).toBeNull();
       // Still shown, because it is what the answer says.
       expect(screen.getByText(/Margins improved \[4\]/)).toBeTruthy();
     });
@@ -569,12 +592,12 @@ describe('ChatPanel', () => {
       appEvents.events.next(chunk(0, 'Lead times lengthened to 14 weeks [1].'));
       expect(await screen.findByText(/Lead times lengthened to 14 weeks/)).toBeTruthy();
       // Nothing to link to yet, so the marker stays plain text.
-      expect(screen.queryByRole('link', { name: 'Source 1' })).toBeNull();
+      expect(screen.queryByRole('link', { name: 'Citation 1' })).toBeNull();
 
       appEvents.events.next(completed({ citations: [citation()] }));
 
       const preview = await screen.findByTestId('chat-streaming-answer');
-      expect(within(preview).getByRole('link', { name: 'Source 1' })).toBeTruthy();
+      expect(within(preview).getByRole('link', { name: 'Citation 1' })).toBeTruthy();
       expect(within(preview).getByTestId('chat-citation')).toBeTruthy();
     });
 

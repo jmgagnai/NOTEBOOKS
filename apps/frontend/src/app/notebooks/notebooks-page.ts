@@ -6,6 +6,7 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatListModule } from '@angular/material/list';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { UndoSnackBar } from '../shared/undo-snack-bar';
 import { Notebook, NotebooksStore } from './notebooks.store';
 
 /**
@@ -31,6 +32,7 @@ import { Notebook, NotebooksStore } from './notebooks.store';
 })
 export class NotebooksPage implements OnInit {
   protected readonly store = inject(NotebooksStore);
+  private readonly undoSnackBar = inject(UndoSnackBar);
 
   protected readonly newTitle = signal('');
 
@@ -73,8 +75,13 @@ export class NotebooksPage implements OnInit {
     void this.store.renameNotebook(id, title);
   }
 
-  protected delete(id: string): void {
-    void this.store.deleteNotebook(id);
+  protected async delete(id: string): Promise<void> {
+    await this.store.deleteNotebook(id);
+    // `lastDeleted` holding this Notebook is the store's own signal that the
+    // delete went through; a failure leaves it as it was and sets `error`.
+    const deleted = this.store.lastDeleted();
+    if (deleted?.id !== id) return;
+    this.undoSnackBar.open(deleted.title, () => this.restore(deleted.id));
   }
 
   protected restore(id: string): void {

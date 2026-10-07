@@ -1,0 +1,100 @@
+@use './controls';
+@use '../workspace-card';
+
+// The Chat Threads navigator of a Notebook (NBK-10, split out of the chat
+// panel in NBK-34). The card it sits in is the page's (NBK-35); this fills
+// it as a column — the header row fixed, the Thread list scrolling — so the
+// host stretches to the card's height.
+:host {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.thread-navigator {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+
+  // The workspace card's header row, wrapping because at 240 px the title
+  // and the start-a-Thread box do not share a line.
+  &__head {
+    @include workspace-card.head;
+    flex-wrap: wrap;
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+
+  &__title {
+    @include workspace-card.title;
+  }
+
+  &__body {
+    @include workspace-card.body;
+  }
+
+  &__field {
+    @include controls.field;
+  }
+
+  &__field-label {
+    @include controls.field-label;
+  }
+
+  &__new-thread {
+    @include controls.field-row;
+    flex: 1 1 100%;
+    margin-bottom: 0;
+  }
+
+  &__empty {
+    @include controls.empty;
+  }
+
+  &__thread-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  &__thread {
+    border: 1px solid var(--mat-sys-outline-variant);
+    border-radius: var(--mat-sys-corner-medium);
+
+    // The open Thread, so a reader can tell which Thread they are in
+    // when several are listed.
+    &--active {
+      border-color: var(--mat-sys-primary);
+    }
+  }
+
+  &__thread-open {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    width: 100%;
+    padding: 0.6rem 0.75rem;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  &__thread-title {
+    font-weight: 600;
+  }
+
+  // Attribution, not a heading: whose Thread this is matters, but it must not
+  // compete with the title it belongs to.
+  &__thread-author {
+    font-size: var(--mat-sys-body-small-size);
+    color: var(--mat-sys-on-surface-variant);
+  }
+}

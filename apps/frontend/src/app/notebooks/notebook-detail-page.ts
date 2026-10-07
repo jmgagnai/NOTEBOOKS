@@ -1,17 +1,30 @@
-import { Component, computed, inject, OnDestroy, OnInit, signal } from '@angular/core';
+import {
+  afterNextRender,
+  Component,
+  computed,
+  effect,
+  ElementRef,
+  inject,
+  Injector,
+  OnDestroy,
+  OnInit,
+  signal,
+  viewChild,
+} from '@angular/core';
+import { Title } from '@angular/platform-browser';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
-import { MatCardModule } from '@angular/material/card';
 import { MatCheckboxModule } from '@angular/material/checkbox';
+import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
-import { ChatPanel } from '../chat/chat-panel';
-import {
-  ConflictChoice,
-  Document,
-  DocumentsStore,
-  UploadItemStatus,
-} from '../documents/documents.store';
+import { MatTooltipModule } from '@angular/material/tooltip';
+import { ThreadNavigator } from '../chat/thread-navigator';
+import { ThreadView } from '../chat/thread-view';
+import { ConflictChoice, Document, DocumentsStore } from '../documents/documents.store';
 import { UPLOAD_ACCEPT } from '../documents/upload-rules';
+import { APP_NAME } from '../shared/app-name';
+import { StatusBadge } from '../shared/status-badge';
+import { UndoSnackBar } from '../shared/undo-snack-bar';
 import { NotebooksStore } from './notebooks.store';
 
 /**
@@ -55,12 +68,13 @@ function droppedEntries(dataTransfer: DataTransfer | null): {
 }
 
 /**
- * A Notebook's detail view (NBK-5): shows its Documents as cards, with
- * upload, open, delete, restore, and download actions. Notebooks have no
- * dedicated `GET /notebooks/:id` endpoint, so the Notebook itself (just its
- * title, for the page heading) is looked up from `NotebooksStore`'s
- * already-loaded list by route id, the same list the top-level Notebooks page
- * uses.
+ * A Notebook's workspace (NBK-5, framed in NBK-35): a slim header, then
+ * three cards side by side — the Chat Threads navigator, the open Thread and
+ * the Documents panel with its cards and their upload, open, delete, restore
+ * and download actions. Notebooks have no dedicated `GET /notebooks/:id`
+ * endpoint, so the Notebook itself (its title, for the header and the browser
+ * tab) is looked up from `NotebooksStore`'s already-loaded list by route id,
+ * the same list the top-level Notebooks page uses.
  *
  * Each card carries that Document's Abstract (NBK-7) — the summary
  * GLOSSARY.md writes "to be skimmed in a list" — and links to the Document
@@ -69,26 +83,31 @@ function droppedEntries(dataTransfer: DataTransfer | null): {
  * While open, it also follows this Notebook's live app events (NBK-6) so a
  * Document's status badge tracks the background pipeline without a refresh.
  *
- * Below the Documents sits the chat panel (NBK-10) — the Notebook's Chat
- * Threads and the open Thread. Per NBK-1 a Notebook's detail page is
- * "composed of a sources panel ... [and] a chat panel", so the two live on
- * one page; the chat panel owns its own store and data loading.
+ * The chat cards (NBK-10, split in NBK-34) are the Notebook's Chat Threads
+ * and the open Thread. Per NBK-1 a Notebook's detail page is "composed of a
+ * sources panel ... [and] a chat panel", so the two live on one page; the
+ * Thread navigator owns the chat store's loading and live stream.
  */
 @Component({
   selector: 'app-notebook-detail-page',
   standalone: true,
   imports: [
-    ChatPanel,
     MatButtonModule,
-    MatCardModule,
     MatCheckboxModule,
+    MatIconModule,
     MatProgressSpinnerModule,
+    MatTooltipModule,
     RouterLink,
+    StatusBadge,
+    ThreadNavigator,
+    ThreadView,
   ],
   templateUrl: './notebook-detail-page.html',
   styleUrl: './notebook-detail-page.scss',
-  // The whole page is the drop target (NBK-18), so the drag events are
-  // listened for on the host rather than on one box inside it.
+  // Files dropped anywhere on the page land in this Notebook (NBK-18), so
+  // the drag events are listened for on the host rather than on one box
+  // inside it; what lights up is the Documents panel (NBK-36), driven by
+  // `dragOver`.
   host: {
     '(dragenter)': 'onDragEnter($event)',
     '(dragover)': 'onDragOver($event)',
@@ -98,14 +117,30 @@ function droppedEntries(dataTransfer: DataTransfer | null): {
 })
 export class NotebookDetailPage implements OnInit, OnDestroy {
   private readonly route = inject(ActivatedRoute);
+  private readonly title = inject(Title);
 
   protected readonly notebooksStore = inject(NotebooksStore);
   protected readonly store = inject(DocumentsStore);
+  private readonly undoSnackBar = inject(UndoSnackBar);
 
   protected readonly notebookId = this.route.snapshot.paramMap.get('notebookId')!;
   protected readonly notebook = computed(
     () => this.notebooksStore.notebooks().find((n) => n.id === this.notebookId) ?? null,
   );
+
+  /**
+   * The browser tab reads "<Notebook title> – <app name>" while the page is
+   * open (NBK-35), so several open Notebooks are distinguishable; the title
+   * found on arrival is what leaving restores. The Notebook arrives after the
+   * list loads and changes on a rename, hence an effect rather than a
+   * one-off in `ngOnInit`.
+   */
+  private readonly titleOnArrival = this.title.getTitle();
+
+  private readonly tabTitle = effect(() => {
+    const notebook = this.notebook();
+    if (notebook) this.title.setTitle(`${notebook.title} – ${APP_NAME}`);
+  });
 
   ngOnInit(): void {
     void this.notebooksStore.loadNotebooks();
@@ -118,6 +153,75 @@ export class NotebookDetailPage implements OnInit, OnDestroy {
     // connection has to be closed explicitly or it would leak across
     // navigations.
     this.store.stopWatching();
+    this.title.setTitle(this.titleOnArrival);
+  }
+
+  /**
+   * Renaming in place (NBK-35): the header title is a button that swaps to a
+   * text box holding `titleDraft`. Page state, like the Notebooks page's own
+   * rename form: nothing is sent until the draft is committed.
+   */
+  protected readonly renaming = signal(false);
+  protected readonly titleDraft = signal('');
+  private readonly titleInput = viewChild<ElementRef<HTMLInputElement>>('titleInput');
+
+  // The box appears on demand, so it is focused when it does — otherwise a
+  // click on the title would leave the keyboard nowhere.
+  private readonly focusTitleInput = effect(() => {
+    this.titleInput()?.nativeElement.select();
+  });
+
+  protected startRename(): void {
+    this.titleDraft.set(this.notebook()?.title ?? '');
+    this.renaming.set(true);
+  }
+
+  /**
+   * Enter and leaving the box both commit. Commit is a no-op once the box is
+   * gone: Enter closes it, and some browsers then fire the blur of the
+   * removed element, which must not rename a second time.
+   */
+  protected commitRename(): void {
+    if (!this.renaming()) return;
+    this.renaming.set(false);
+    const title = this.titleDraft().trim();
+    const notebook = this.notebook();
+    if (!notebook || !title || title === notebook.title) return;
+    void this.notebooksStore.renameNotebook(notebook.id, title);
+  }
+
+  protected cancelRename(): void {
+    this.renaming.set(false);
+  }
+
+  /**
+   * Whether the Documents panel is hidden (NBK-37), so the Thread takes its
+   * width while the user reads answers. Component state on purpose: the spec
+   * wants a reload to show the panel again, so nothing is persisted. The
+   * panel stays in the DOM — hidden by the grid collapsing its column, and
+   * made unreachable with `inert` and `aria-hidden` — so showing it again is
+   * a slide back in rather than a re-render of the Document list.
+   */
+  protected readonly documentsHidden = signal(false);
+
+  private readonly injector = inject(Injector);
+  private readonly hideDocumentsButton = viewChild('hideDocumentsButton', { read: ElementRef });
+
+  protected hideDocuments(): void {
+    this.documentsHidden.set(true);
+  }
+
+  /**
+   * Restores the panel and hands focus to its hide control: "Show Documents"
+   * is gone from the header the moment the panel is back, so the keyboard
+   * would otherwise land on the body. The focus waits for the render that
+   * removes `inert` — a focus call on an inert element is silently ignored.
+   */
+  protected showDocuments(): void {
+    this.documentsHidden.set(false);
+    afterNextRender(() => this.hideDocumentsButton()?.nativeElement.focus(), {
+      injector: this.injector,
+    });
   }
 
   /** The picker only offers the accepted document types (NBK-16). */
@@ -185,7 +289,7 @@ export class NotebookDetailPage implements OnInit, OnDestroy {
    */
   private dragDepth = 0;
 
-  /** True while files are being dragged over the page. */
+  /** True while files are being dragged over the page; the Documents panel shows it (NBK-36). */
   protected readonly dragOver = signal(false);
 
   /** Whether a drag carries files at all — text or links dragged over the page are not a drop. */
@@ -207,7 +311,11 @@ export class NotebookDetailPage implements OnInit, OnDestroy {
   }
 
   protected onDragEnter(event: DragEvent): void {
-    if (!this.carriesFiles(event) || this.refuseDrag(event)) return;
+    if (!this.carriesFiles(event)) return;
+    // The drop target must never be missing (NBK-37): files dragged in while
+    // the panel is hidden bring it back, whether or not the drop is welcome.
+    this.documentsHidden.set(false);
+    if (this.refuseDrag(event)) return;
     event.preventDefault();
     this.dragDepth += 1;
     this.dragOver.set(true);
@@ -243,13 +351,13 @@ export class NotebookDetailPage implements OnInit, OnDestroy {
     void this.store.uploadDocuments(this.notebookId, files, { folders });
   }
 
-  /** How an item's status reads in the progress panel. */
-  protected statusLabel(status: UploadItemStatus): string {
-    return status === 'new-version' ? 'new version' : status;
-  }
-
-  protected delete(document: Document): void {
-    void this.store.deleteDocument(this.notebookId, document.id);
+  protected async delete(document: Document): Promise<void> {
+    await this.store.deleteDocument(this.notebookId, document.id);
+    // `lastDeleted` holding this Document is the store's own signal that the
+    // delete went through; a failure leaves it as it was and sets `error`.
+    const deleted = this.store.lastDeleted();
+    if (deleted?.id !== document.id) return;
+    this.undoSnackBar.open(deleted.filename, () => this.restore(deleted));
   }
 
   protected restore(document: Document): void {

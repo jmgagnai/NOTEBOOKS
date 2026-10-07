@@ -5,6 +5,7 @@ import { provideRouter } from '@angular/router';
 import { provideApiConfiguration } from './api/api-configuration';
 import { routes } from './app.routes';
 import { withCredentialsInterceptor } from './auth/with-credentials.interceptor';
+import { provideAppIcons } from './shared/fluent-icons';
 import { environment } from '../environments/environment';
 
 export const appConfig: ApplicationConfig = {
@@ -18,5 +19,6 @@ export const appConfig: ApplicationConfig = {
     // defaults to same-origin credentials.
     provideHttpClient(withInterceptors([withCredentialsInterceptor])),
     provideApiConfiguration(environment.apiBaseUrl),
+    provideAppIcons(),
   ],
 };

@@ -8,6 +8,7 @@ import { ChatService } from '../api/services/chat.service';
 import { DocumentsService } from '../api/services/documents.service';
 import { DocumentTransferService } from '../documents/document-transfer.service';
 import { AppEvent, AppEventsService } from '../events/app-events.service';
+import { provideAppIcons } from '../shared/fluent-icons';
 
 const NOTEBOOK_ID = '11111111-1111-1111-1111-111111111111';
 
@@ -73,6 +74,36 @@ function appEventsStub() {
   };
 }
 
+/**
+ * The page's providers, one set for every render: the route, the icon
+ * registry (NBK-31) and the four clients the page reaches, each stubbed to
+ * what the test hands over. A render through `RouterShell` says so: its real
+ * router supplies the route the stub otherwise stands in for.
+ */
+function pageProviders({
+  notebooks = { listNotebooks: vi.fn().mockResolvedValue([]) },
+  documents,
+  transfer = {},
+  appEvents = appEventsStub(),
+  inRouterShell = false,
+}: {
+  notebooks?: Record<string, unknown>;
+  documents: Record<string, unknown>;
+  transfer?: Record<string, unknown>;
+  appEvents?: ReturnType<typeof appEventsStub>;
+  inRouterShell?: boolean;
+}) {
+  return [
+    ...(inRouterShell ? [] : [activatedRouteFor(NOTEBOOK_ID)]),
+    provideAppIcons(),
+    { provide: NotebooksService, useValue: notebooks },
+    { provide: DocumentsService, useValue: documents },
+    chatServiceStub(),
+    { provide: DocumentTransferService, useValue: transfer },
+    appEvents.provider,
+  ];
+}
+
 // Shared by the upload blocks (NBK-16..19): a Document as the API returns
 // it, a request the test settles by hand, the page rendered with an upload
 // client, and the picker and the progress panel as a user reaches them.
@@ -118,36 +149,54 @@ function heldUploads() {
     inFlight.push({ file, request });
     return request.promise;
   });
-  const sentNames = () => inFlight.map(({ file }) => file.name);
   const land = (filename: string) =>
     inFlight.find(({ file }) => file.name === filename)!.request.resolve(documentFor(filename));
   const fail = (filename: string) =>
     inFlight
       .find(({ file }) => file.name === filename)!
       .request.reject({ error: { message: 'Storage is unavailable.' } });
-  return { uploadDocument, inFlight, sentNames, land, fail };
+  return { uploadDocument, inFlight, sentNames: () => sentNames(uploadDocument), land, fail };
 }
 
-/** The page on its Notebook, listing `existing`, with `uploadDocument` as the upload client. */
+/** The Notebook the header tests open (NBK-35), under its own title. */
+const RESEARCH = { id: NOTEBOOK_ID, title: 'Research', createdAt: '2026-01-01T00:00:00.000Z' };
+
+/**
+ * The page on its Notebook, listing `existing`, with `uploadDocument` as the
+ * upload client. The header tests (NBK-35) name the `notebook` so the title
+ * shows, and hand over `renameNotebook` as the rename client; both are
+ * waited for, since the title lands after the Document list.
+ */
 async function renderWithUpload(
   uploadDocument: ReturnType<typeof vi.fn>,
   existing: Record<string, unknown>[] = [],
+  {
+    notebook,
+    renameNotebook,
+  }: { notebook?: typeof RESEARCH; renameNotebook?: ReturnType<typeof vi.fn> } = {},
 ) {
-  const listNotebooks = vi.fn().mockResolvedValue([]);
+  const listNotebooks = vi.fn().mockResolvedValue(notebook ? [notebook] : []);
   const listDocuments = vi.fn().mockResolvedValue(existing);
   const result = await render(NotebookDetailPage, {
-    providers: [
-      activatedRouteFor(NOTEBOOK_ID),
-      { provide: NotebooksService, useValue: { listNotebooks } },
-      { provide: DocumentsService, useValue: { listDocuments } },
-      chatServiceStub(),
-      { provide: DocumentTransferService, useValue: { uploadDocument } },
-      appEventsStub().provider,
-    ],
+    providers: pageProviders({
+      notebooks: { listNotebooks, renameNotebook },
+      documents: { listDocuments },
+      transfer: { uploadDocument },
+    }),
   });
   if (existing.length === 0) await screen.findByText('No Documents yet.');
   else await screen.findByText(String(existing[0]['filename']));
+  if (notebook) await screen.findByRole('button', { name: notebook.title });
   return result;
+}
+
+/** Opens the "Research" title for editing and types `title` into it. */
+async function typeTitle(title: string) {
+  fireEvent.click(await screen.findByRole('button', { name: RESEARCH.title }));
+  const input = screen.getByLabelText('Notebook title') as HTMLInputElement;
+  expect(input.value).toBe(RESEARCH.title);
+  fireEvent.input(input, { target: { value: title } });
+  return input;
 }
 
 /** A one-byte file, when only its name matters. */
@@ -162,12 +211,78 @@ function pick(files: File[]) {
   return input;
 }
 
+/** The filenames `uploadDocument` was asked to send, in order. */
+function sentNames(uploadDocument: ReturnType<typeof vi.fn>) {
+  return uploadDocument.mock.calls.map(([, file]) => (file as File).name);
+}
+
 /** The progress panel's row for `filename`. */
 function panelRow(filename: string) {
   const panel = screen.getByRole('list', { name: 'Upload progress' });
   return within(panel)
     .getAllByRole('listitem')
     .find((row) => within(row).queryByText(filename) !== null)!;
+}
+
+// Drag-and-drop helpers (NBK-18, NBK-36), at module scope because NBK-37's
+// hidden panel has to come back for a drag too.
+/** A dropped folder: what a file manager hands over for a directory. */
+interface Folder {
+  folder: string;
+}
+
+/**
+ * A DataTransfer as a drop of `entries` would carry it. A folder arrives
+ * as an item whose entry `isDirectory`, backed by a size-0 File named
+ * after it — which is what Chromium and Firefox actually put in `files`.
+ */
+function dataTransferOf(entries: (File | Folder)[]) {
+  const files = entries.map((entry) =>
+    entry instanceof File ? entry : new File([], entry.folder),
+  );
+  return {
+    types: ['Files'],
+    files,
+    items: entries.map((entry, index) => ({
+      kind: 'file',
+      type: files[index].type,
+      getAsFile: () => files[index],
+      webkitGetAsEntry: () => ({
+        name: files[index].name,
+        isFile: entry instanceof File,
+        isDirectory: !(entry instanceof File),
+      }),
+    })),
+    dropEffect: 'none',
+    effectAllowed: 'all',
+  };
+}
+
+/**
+ * The Documents panel: the drop target since NBK-36. Drag events bubble up
+ * to the page, so it also serves as "somewhere on the page" for a drag.
+ */
+function documentsPanel() {
+  return screen.getByRole('complementary', { name: 'Documents' });
+}
+
+/** Somewhere else on the page, for a drag moving between its elements. */
+function elsewhereOnThePage() {
+  return screen.getByRole('region', { name: 'Chat' });
+}
+
+const DROP_HINT = 'Drop files to upload them into this Notebook';
+const DRAG_OVER = 'notebook-detail-page__panel--drag-over';
+
+/** Whether files dragged over the page light up the Documents panel, and only it. */
+function highlightsDocumentsPanel() {
+  const litUp = document.querySelectorAll(`.${DRAG_OVER}`);
+  const hintInPanel = within(documentsPanel()).queryByText(DROP_HINT) !== null;
+  expect(litUp.length).toBe(hintInPanel ? 1 : 0);
+  if (hintInPanel) expect(litUp[0]).toBe(documentsPanel());
+  // Nothing outside the panel lights up or carries the hint.
+  expect(screen.queryAllByText(DROP_HINT).length).toBe(hintInPanel ? 1 : 0);
+  return hintInPanel;
 }
 
 // Seam-3 test (per NBK-1's testing decisions, and explicitly called for by
@@ -201,42 +316,31 @@ describe('NotebookDetailPage', () => {
     ]);
 
     await render(NotebookDetailPage, {
-      providers: [
-        activatedRouteFor(NOTEBOOK_ID),
-        { provide: NotebooksService, useValue: { listNotebooks } },
-        { provide: DocumentsService, useValue: { listDocuments } },
-        chatServiceStub(),
-        { provide: DocumentTransferService, useValue: {} },
-        appEventsStub().provider,
-      ],
+      providers: pageProviders({
+        notebooks: { listNotebooks },
+        documents: { listDocuments },
+      }),
     });
 
     expect(await screen.findByText('Research')).toBeTruthy();
     expect(await screen.findByText('report.txt')).toBeTruthy();
-    expect(screen.getByText('queued')).toBeTruthy();
+    expect(screen.getByText('Queued')).toBeTruthy();
     expect(screen.getByText('v1')).toBeTruthy();
   });
 
   it('shows an empty state when there are no Documents', async () => {
-    const listNotebooks = vi.fn().mockResolvedValue([]);
     const listDocuments = vi.fn().mockResolvedValue([]);
 
     await render(NotebookDetailPage, {
-      providers: [
-        activatedRouteFor(NOTEBOOK_ID),
-        { provide: NotebooksService, useValue: { listNotebooks } },
-        { provide: DocumentsService, useValue: { listDocuments } },
-        chatServiceStub(),
-        { provide: DocumentTransferService, useValue: {} },
-        appEventsStub().provider,
-      ],
+      providers: pageProviders({
+        documents: { listDocuments },
+      }),
     });
 
     expect(await screen.findByText('No Documents yet.')).toBeTruthy();
   });
 
   it('uploads a file through the file input', async () => {
-    const listNotebooks = vi.fn().mockResolvedValue([]);
     const listDocuments = vi.fn().mockResolvedValue([]);
     const uploadedDocument = {
       id: 'doc-2',
@@ -255,14 +359,10 @@ describe('NotebookDetailPage', () => {
     const uploadDocument = vi.fn().mockResolvedValue(uploadedDocument);
 
     await render(NotebookDetailPage, {
-      providers: [
-        activatedRouteFor(NOTEBOOK_ID),
-        { provide: NotebooksService, useValue: { listNotebooks } },
-        { provide: DocumentsService, useValue: { listDocuments } },
-        chatServiceStub(),
-        { provide: DocumentTransferService, useValue: { uploadDocument } },
-        appEventsStub().provider,
-      ],
+      providers: pageProviders({
+        documents: { listDocuments },
+        transfer: { uploadDocument },
+      }),
     });
 
     await screen.findByText('No Documents yet.');
@@ -304,10 +404,7 @@ describe('NotebookDetailPage', () => {
       expect(await within(cards).findByText('a.txt')).toBeTruthy();
       expect(await within(cards).findByText('b.md')).toBeTruthy();
       expect(uploadDocument).toHaveBeenCalledTimes(2);
-      expect(uploadDocument.mock.calls.map(([, file]) => (file as File).name)).toEqual([
-        'a.txt',
-        'b.md',
-      ]);
+      expect(sentNames(uploadDocument)).toEqual(['a.txt', 'b.md']);
     });
 
     it('keeps at most 3 requests in flight, taking files in selection order', async () => {
@@ -321,9 +418,8 @@ describe('NotebookDetailPage', () => {
 
       pick(['1.txt', '2.txt', '3.txt', '4.txt', '5.txt'].map(fileNamed));
 
-      const sentNames = () => uploadDocument.mock.calls.map(([, file]) => (file as File).name);
       await waitFor(() => expect(uploadDocument).toHaveBeenCalledTimes(3));
-      expect(sentNames()).toEqual(['1.txt', '2.txt', '3.txt']);
+      expect(sentNames(uploadDocument)).toEqual(['1.txt', '2.txt', '3.txt']);
 
       // Nothing more goes out until a slot frees up...
       await screen.findByText('5.txt');
@@ -332,11 +428,11 @@ describe('NotebookDetailPage', () => {
       // ...and when one does, the next file in selection order takes it.
       inFlight[1].resolve(documentFor('2.txt'));
       await waitFor(() => expect(uploadDocument).toHaveBeenCalledTimes(4));
-      expect(sentNames()[3]).toBe('4.txt');
+      expect(sentNames(uploadDocument)[3]).toBe('4.txt');
 
       inFlight[0].resolve(documentFor('1.txt'));
       await waitFor(() => expect(uploadDocument).toHaveBeenCalledTimes(5));
-      expect(sentNames()[4]).toBe('5.txt');
+      expect(sentNames(uploadDocument)[4]).toBe('5.txt');
 
       for (const [index, request] of inFlight.slice(2).entries()) {
         request.resolve(documentFor(`${index + 3}.txt`));
@@ -357,14 +453,14 @@ describe('NotebookDetailPage', () => {
       pick(['1.txt', '2.txt', '3.txt', '4.txt'].map(fileNamed));
 
       await screen.findByText('4.txt');
-      expect(within(panelRow('1.txt')).getByText('uploading')).toBeTruthy();
-      expect(within(panelRow('4.txt')).getByText('waiting')).toBeTruthy();
+      expect(within(panelRow('1.txt')).getByText('Uploading')).toBeTruthy();
+      expect(within(panelRow('4.txt')).getByText('Waiting')).toBeTruthy();
       // No summary while files are still moving.
       expect(screen.queryByText(/uploaded, .* skipped, .* failed/)).toBeNull();
 
       inFlight[0].resolve(documentFor('1.txt'));
-      expect(await within(panelRow('1.txt')).findByText('uploaded')).toBeTruthy();
-      expect(await within(panelRow('4.txt')).findByText('uploading')).toBeTruthy();
+      expect(await within(panelRow('1.txt')).findByText('Uploaded')).toBeTruthy();
+      expect(await within(panelRow('4.txt')).findByText('Uploading')).toBeTruthy();
     });
 
     // Filtering happens in the browser before anything is sent, so a stray
@@ -385,14 +481,14 @@ describe('NotebookDetailPage', () => {
 
       expect(await screen.findByText('1 uploaded, 2 skipped, 0 failed')).toBeTruthy();
       const photo = panelRow('photo.png');
-      expect(within(photo).getByText('skipped')).toBeTruthy();
+      expect(within(photo).getByText('Skipped')).toBeTruthy();
       expect(
         within(photo).getByText(
           'Unsupported file type. Accepted types: text, Markdown, DOCX, Excel (.xlsx), CSV, and PDF.',
         ),
       ).toBeTruthy();
       const legacy = panelRow('legacy.xls');
-      expect(within(legacy).getByText('skipped')).toBeTruthy();
+      expect(within(legacy).getByText('Skipped')).toBeTruthy();
       expect(within(legacy).getByText(/Re-save it as \.xlsx/)).toBeTruthy();
       expect(uploadDocument).toHaveBeenCalledTimes(1);
       expect((uploadDocument.mock.calls[0][1] as File).name).toBe('fine.pdf');
@@ -414,7 +510,7 @@ describe('NotebookDetailPage', () => {
 
       expect(await screen.findByText('1 uploaded, 1 skipped, 0 failed')).toBeTruthy();
       expect(within(panelRow('huge.pdf')).getByText(/50 MiB/)).toBeTruthy();
-      expect(within(panelRow('at-limit.pdf')).getByText('uploaded')).toBeTruthy();
+      expect(within(panelRow('at-limit.pdf')).getByText('Uploaded')).toBeTruthy();
       expect(uploadDocument).toHaveBeenCalledTimes(1);
       expect((uploadDocument.mock.calls[0][1] as File).name).toBe('at-limit.pdf');
     });
@@ -435,8 +531,8 @@ describe('NotebookDetailPage', () => {
       const rows = within(screen.getByRole('list', { name: 'Upload progress' })).getAllByRole(
         'listitem',
       );
-      expect(within(rows[0]).getByText('uploaded')).toBeTruthy();
-      expect(within(rows[1]).getByText('skipped')).toBeTruthy();
+      expect(within(rows[0]).getByText('Uploaded')).toBeTruthy();
+      expect(within(rows[1]).getByText('Skipped')).toBeTruthy();
       expect(within(rows[1]).getByText(/duplicate/i)).toBeTruthy();
       // The first one wins.
       expect(uploadDocument).toHaveBeenCalledTimes(1);
@@ -476,7 +572,12 @@ describe('NotebookDetailPage', () => {
 
       expect(await screen.findByText('1 uploaded, 0 skipped, 1 failed')).toBeTruthy();
       const bad = panelRow('bad.txt');
-      expect(within(bad).getByText('failed')).toBeTruthy();
+      // The panel reuses the Document status badge (NBK-32): a request that
+      // did not land reads as a failure, a landed one as finished.
+      expect(within(bad).getByText('Failed').className).toContain('app-badge--error');
+      expect(within(panelRow('good.txt')).getByText('Uploaded').className).toContain(
+        'app-badge--success',
+      );
       expect(within(bad).getByText('Storage is unavailable.')).toBeTruthy();
       // The failure stays in the panel; it does not replace the Document list
       // with an error banner, and the other file still landed.
@@ -509,8 +610,10 @@ describe('NotebookDetailPage', () => {
       expect(
         await screen.findByText('2 uploaded (1 as new Versions), 0 skipped, 0 failed'),
       ).toBeTruthy();
-      expect(within(panelRow('report.txt')).getByText('new version')).toBeTruthy();
-      expect(within(panelRow('fresh.txt')).getByText('uploaded')).toBeTruthy();
+      expect(within(panelRow('report.txt')).getByText('New version').className).toContain(
+        'app-badge--success',
+      );
+      expect(within(panelRow('fresh.txt')).getByText('Uploaded')).toBeTruthy();
 
       const cards = screen.getByRole('list', { name: 'Documents' });
       // One card for report.txt, now at v2 — not a duplicate.
@@ -549,11 +652,11 @@ describe('NotebookDetailPage', () => {
       // in flight, the fourth waiting for a slot.
       await waitFor(() => expect(uploads.uploadDocument).toHaveBeenCalledTimes(8));
       expect(uploads.sentNames().slice(5)).toEqual(['bad1.txt', 'bad2.txt', 'bad3.txt']);
-      expect(within(panelRow('bad4.txt')).getByText('waiting')).toBeTruthy();
+      expect(within(panelRow('bad4.txt')).getByText('Waiting')).toBeTruthy();
       expect(screen.queryByText(/uploaded, .* skipped, .* failed/)).toBeNull();
       // The file that landed and the one that was skipped are untouched.
-      expect(within(panelRow('good.txt')).getByText('uploaded')).toBeTruthy();
-      expect(within(panelRow('photo.png')).getByText('skipped')).toBeTruthy();
+      expect(within(panelRow('good.txt')).getByText('Uploaded')).toBeTruthy();
+      expect(within(panelRow('photo.png')).getByText('Skipped')).toBeTruthy();
 
       uploads.inFlight[5].request.resolve(documentFor('bad1.txt'));
       await waitFor(() => expect(uploads.uploadDocument).toHaveBeenCalledTimes(9));
@@ -584,12 +687,12 @@ describe('NotebookDetailPage', () => {
       // The two that had not gone out are stopped, and say why.
       for (const name of ['4.txt', '5.txt']) {
         const row = panelRow(name);
-        expect(await within(row).findByText('skipped')).toBeTruthy();
+        expect(await within(row).findByText('Skipped')).toBeTruthy();
         expect(within(row).getByText(/cancelled/i)).toBeTruthy();
       }
       // The three in flight are left alone — neither aborted nor re-sent —
       // and still land when they finish.
-      expect(within(panelRow('1.txt')).getByText('uploading')).toBeTruthy();
+      expect(within(panelRow('1.txt')).getByText('Uploading')).toBeTruthy();
       expect(screen.queryByText(/uploaded, .* skipped, .* failed/)).toBeNull();
       for (const name of ['1.txt', '2.txt', '3.txt']) uploads.land(name);
 
@@ -613,7 +716,7 @@ describe('NotebookDetailPage', () => {
 
       uploads.land('1.txt');
       // One file landing does not free the picker; the batch is still running.
-      await within(panelRow('1.txt')).findByText('uploaded');
+      await within(panelRow('1.txt')).findByText('Uploaded');
       expect(input.disabled).toBe(true);
 
       uploads.land('2.txt');
@@ -678,7 +781,7 @@ describe('NotebookDetailPage', () => {
       expect(closingTab()).toEqual({ prevented: true, returnValue: '' });
 
       uploads.land('1.txt');
-      await within(panelRow('1.txt')).findByText('uploaded');
+      await within(panelRow('1.txt')).findByText('Uploaded');
       expect(closingTab()).toEqual({ prevented: true, returnValue: '' });
 
       uploads.land('2.txt');
@@ -691,7 +794,6 @@ describe('NotebookDetailPage', () => {
     // for "navigating away and back" to mean anything.
     it('keeps the batch going, and shows it again, across in-app navigation away and back', async () => {
       const uploads = heldUploads();
-      const listNotebooks = vi.fn().mockResolvedValue([]);
       // The second visit re-reads the list, and by then the first file is
       // stored — as the real backend would report.
       const listDocuments = vi
@@ -703,16 +805,11 @@ describe('NotebookDetailPage', () => {
           { path: 'notebooks/:notebookId', component: NotebookDetailPage },
           { path: 'elsewhere', component: Elsewhere },
         ],
-        providers: [
-          { provide: NotebooksService, useValue: { listNotebooks } },
-          { provide: DocumentsService, useValue: { listDocuments } },
-          chatServiceStub(),
-          {
-            provide: DocumentTransferService,
-            useValue: { uploadDocument: uploads.uploadDocument },
-          },
-          appEventsStub().provider,
-        ],
+        providers: pageProviders({
+          documents: { listDocuments },
+          transfer: { uploadDocument: uploads.uploadDocument },
+          inRouterShell: true,
+        }),
       });
       await navigate(`/notebooks/${NOTEBOOK_ID}`);
       await screen.findByText('No Documents yet.');
@@ -730,8 +827,8 @@ describe('NotebookDetailPage', () => {
       await navigate(`/notebooks/${NOTEBOOK_ID}`);
       // ...the batch is still shown, in progress, with what landed meanwhile...
       const panel = await screen.findByRole('list', { name: 'Upload progress' });
-      expect(within(panelRow('1.txt')).getByText('uploaded')).toBeTruthy();
-      expect(within(panelRow('2.txt')).getByText('uploading')).toBeTruthy();
+      expect(within(panelRow('1.txt')).getByText('Uploaded')).toBeTruthy();
+      expect(within(panelRow('2.txt')).getByText('Uploading')).toBeTruthy();
       expect(within(panel).getAllByRole('listitem')).toHaveLength(2);
       expect(screen.getByRole('button', { name: 'Cancel' })).toBeTruthy();
       expect((screen.getByLabelText('Upload Documents') as HTMLInputElement).disabled).toBe(true);
@@ -752,7 +849,6 @@ describe('NotebookDetailPage', () => {
     it('keeps a file landing while another Notebook is open out of its list, and judges conflicts by its own Notebook', async () => {
       const OTHER_NOTEBOOK_ID = '22222222-2222-2222-2222-222222222222';
       const uploads = heldUploads();
-      const listNotebooks = vi.fn().mockResolvedValue([]);
       // The other Notebook already has a notes.txt; this one does not — and
       // this one's list is what the backend reports at each visit.
       let thisNotebooksDocuments: Record<string, unknown>[] = [];
@@ -770,23 +866,18 @@ describe('NotebookDetailPage', () => {
           { path: 'notebooks/:notebookId', component: NotebookDetailPage },
           { path: 'elsewhere', component: Elsewhere },
         ],
-        providers: [
-          { provide: NotebooksService, useValue: { listNotebooks } },
-          { provide: DocumentsService, useValue: { listDocuments } },
-          chatServiceStub(),
-          {
-            provide: DocumentTransferService,
-            useValue: { uploadDocument: uploads.uploadDocument },
-          },
-          appEventsStub().provider,
-        ],
+        providers: pageProviders({
+          documents: { listDocuments },
+          transfer: { uploadDocument: uploads.uploadDocument },
+          inRouterShell: true,
+        }),
       });
       await navigate(`/notebooks/${NOTEBOOK_ID}`);
       await screen.findByText('No Documents yet.');
 
       pick(['1.txt', '2.txt', '3.txt', 'notes.txt'].map(fileNamed));
       await waitFor(() => expect(uploads.uploadDocument).toHaveBeenCalledTimes(3));
-      expect(within(panelRow('notes.txt')).getByText('waiting')).toBeTruthy();
+      expect(within(panelRow('notes.txt')).getByText('Waiting')).toBeTruthy();
 
       // Through another page, as the app goes through the Notebooks list: the
       // router reuses the page between two Notebooks on the same route.
@@ -815,13 +906,13 @@ describe('NotebookDetailPage', () => {
       expect(
         listDocuments.mock.calls.filter(([args]) => args.notebookId === NOTEBOOK_ID),
       ).toHaveLength(2);
-      expect(within(panelRow('1.txt')).getByText('uploaded')).toBeTruthy();
-      expect(within(panelRow('notes.txt')).getByText('uploading')).toBeTruthy();
+      expect(within(panelRow('1.txt')).getByText('Uploaded')).toBeTruthy();
+      expect(within(panelRow('notes.txt')).getByText('Uploading')).toBeTruthy();
       expect(screen.queryByRole('dialog', { name: 'Document already exists' })).toBeNull();
 
       for (const name of ['2.txt', '3.txt', 'notes.txt']) uploads.land(name);
       expect(await screen.findByText('4 uploaded, 0 skipped, 0 failed')).toBeTruthy();
-      expect(within(panelRow('notes.txt')).getByText('uploaded')).toBeTruthy();
+      expect(within(panelRow('notes.txt')).getByText('Uploaded')).toBeTruthy();
       expect(within(cards).getAllByText('notes.txt')).toHaveLength(1);
       expect(within(cards).getAllByText('1.txt')).toHaveLength(1);
     });
@@ -868,7 +959,7 @@ describe('NotebookDetailPage', () => {
       );
       for (const name of ['report.txt', '4.txt']) {
         const row = panelRow(name);
-        expect(await within(row).findByText('skipped')).toBeTruthy();
+        expect(await within(row).findByText('Skipped')).toBeTruthy();
         expect(within(row).getByText(/cancelled/i)).toBeTruthy();
       }
       // The three in flight still land, and the batch reaches its summary.
@@ -894,64 +985,35 @@ describe('NotebookDetailPage', () => {
   // says whether the entry is a directory — the same thing the page reads
   // from a real drop.
   describe('NBK-18: drag and drop', () => {
-    /** A dropped folder: what a file manager hands over for a directory. */
-    interface Folder {
-      folder: string;
-    }
-
-    /**
-     * A DataTransfer as a drop of `entries` would carry it. A folder arrives
-     * as an item whose entry `isDirectory`, backed by a size-0 File named
-     * after it — which is what Chromium and Firefox actually put in `files`.
-     */
-    function dataTransferOf(entries: (File | Folder)[]) {
-      const files = entries.map((entry) =>
-        entry instanceof File ? entry : new File([], entry.folder),
-      );
-      return {
-        types: ['Files'],
-        files,
-        items: entries.map((entry, index) => ({
-          kind: 'file',
-          type: files[index].type,
-          getAsFile: () => files[index],
-          webkitGetAsEntry: () => ({
-            name: files[index].name,
-            isFile: entry instanceof File,
-            isDirectory: !(entry instanceof File),
-          }),
-        })),
-        dropEffect: 'none',
-        effectAllowed: 'all',
-      };
-    }
-
-    /** Somewhere inside the page; drag events bubble up to the page itself. */
-    function somewhereOnThePage() {
-      return screen.getByRole('heading', { name: 'Documents' });
-    }
-
-    const DROP_HINT = 'Drop files to upload them into this Notebook';
-
-    it('highlights the whole page while files are dragged over it, until they leave', async () => {
+    it('highlights the Documents panel, and only it, while files are dragged over the page', async () => {
       await renderWithUpload(vi.fn());
-      expect(screen.queryByText(DROP_HINT)).toBeNull();
+      expect(highlightsDocumentsPanel()).toBe(false);
 
       const dataTransfer = dataTransferOf([new File(['x'], 'a.txt')]);
-      fireEvent.dragEnter(somewhereOnThePage(), { dataTransfer });
+      // Over the Chat card, not the panel: anywhere on the page points at the Documents panel.
+      fireEvent.dragEnter(elsewhereOnThePage(), { dataTransfer });
       // `dragover` has to be cancelled or the browser refuses the drop.
-      expect(fireEvent.dragOver(somewhereOnThePage(), { dataTransfer })).toBe(false);
-      expect(screen.getByText(DROP_HINT)).toBeTruthy();
+      expect(fireEvent.dragOver(elsewhereOnThePage(), { dataTransfer })).toBe(false);
+      expect(highlightsDocumentsPanel()).toBe(true);
 
       // Moving between elements of the page fires leave/enter pairs that must
       // not flicker the state off...
-      fireEvent.dragEnter(screen.getByRole('heading', { name: 'Chat' }), { dataTransfer });
-      fireEvent.dragLeave(somewhereOnThePage(), { dataTransfer });
-      expect(screen.getByText(DROP_HINT)).toBeTruthy();
+      fireEvent.dragEnter(documentsPanel(), { dataTransfer });
+      fireEvent.dragLeave(elsewhereOnThePage(), { dataTransfer });
+      expect(highlightsDocumentsPanel()).toBe(true);
 
       // ...while leaving the page clears it.
-      fireEvent.dragLeave(screen.getByRole('heading', { name: 'Chat' }), { dataTransfer });
-      expect(screen.queryByText(DROP_HINT)).toBeNull();
+      fireEvent.dragLeave(documentsPanel(), { dataTransfer });
+      expect(highlightsDocumentsPanel()).toBe(false);
+    });
+
+    it('does not light up for a drag that carries no files', async () => {
+      await renderWithUpload(vi.fn());
+
+      const dataTransfer = { ...dataTransferOf([]), types: ['text/plain'] };
+      fireEvent.dragEnter(documentsPanel(), { dataTransfer });
+      fireEvent.dragOver(documentsPanel(), { dataTransfer });
+      expect(highlightsDocumentsPanel()).toBe(false);
     });
 
     it('uploads dropped files as the same batch the picker would start, skipping included', async () => {
@@ -965,10 +1027,10 @@ describe('NotebookDetailPage', () => {
       const a = new File(['a'], 'a.txt');
       const b = new File(['b'], 'b.md');
       const dataTransfer = dataTransferOf([a, b, new File(['x'], 'photo.png')]);
-      fireEvent.dragEnter(somewhereOnThePage(), { dataTransfer });
+      fireEvent.dragEnter(documentsPanel(), { dataTransfer });
       expect(screen.getByText(DROP_HINT)).toBeTruthy();
       // Cancelled, or the browser would open the dropped file instead.
-      expect(fireEvent.drop(somewhereOnThePage(), { dataTransfer })).toBe(false);
+      expect(fireEvent.drop(documentsPanel(), { dataTransfer })).toBe(false);
       expect(screen.queryByText(DROP_HINT)).toBeNull();
 
       expect(await screen.findByText('2 uploaded, 1 skipped, 0 failed')).toBeTruthy();
@@ -991,19 +1053,19 @@ describe('NotebookDetailPage', () => {
       await renderWithUpload(uploadDocument);
 
       const report = new File(['x'], 'report.txt');
-      fireEvent.drop(somewhereOnThePage(), {
+      fireEvent.drop(documentsPanel(), {
         dataTransfer: dataTransferOf([{ folder: 'photos' }, report]),
       });
 
       expect(await screen.findByText('1 uploaded, 1 skipped, 0 failed')).toBeTruthy();
       const folder = panelRow('photos');
-      expect(within(folder).getByText('skipped')).toBeTruthy();
+      expect(within(folder).getByText('Skipped')).toBeTruthy();
       expect(
         within(folder).getByText(
           "Folders can't be uploaded. Open the folder and select its files instead.",
         ),
       ).toBeTruthy();
-      expect(within(panelRow('report.txt')).getByText('uploaded')).toBeTruthy();
+      expect(within(panelRow('report.txt')).getByText('Uploaded')).toBeTruthy();
       expect(uploadDocument.mock.calls).toEqual([[NOTEBOOK_ID, report]]);
     });
 
@@ -1012,26 +1074,26 @@ describe('NotebookDetailPage', () => {
       const uploadDocument = vi.fn().mockReturnValue(request.promise);
       await renderWithUpload(uploadDocument);
 
-      fireEvent.drop(somewhereOnThePage(), {
+      fireEvent.drop(documentsPanel(), {
         dataTransfer: dataTransferOf([new File(['x'], 'first.txt')]),
       });
       await screen.findByText('first.txt');
-      expect(within(panelRow('first.txt')).getByText('uploading')).toBeTruthy();
+      expect(within(panelRow('first.txt')).getByText('Uploading')).toBeTruthy();
 
       // With first.txt still in flight, a second drag gets no welcome...
       const second = dataTransferOf([new File(['x'], 'second.txt')]);
-      fireEvent.dragEnter(somewhereOnThePage(), { dataTransfer: second });
-      fireEvent.dragOver(somewhereOnThePage(), { dataTransfer: second });
+      fireEvent.dragEnter(documentsPanel(), { dataTransfer: second });
+      fireEvent.dragOver(documentsPanel(), { dataTransfer: second });
       expect(screen.queryByText(DROP_HINT)).toBeNull();
       // ...and its drop changes nothing: the running batch is untouched.
-      fireEvent.drop(somewhereOnThePage(), { dataTransfer: second });
+      fireEvent.drop(documentsPanel(), { dataTransfer: second });
       expect(screen.queryByText('second.txt')).toBeNull();
       expect(uploadDocument).toHaveBeenCalledTimes(1);
 
       // Once the batch is done, dropping works again.
       request.resolve(documentFor('first.txt'));
       await screen.findByText('1 uploaded, 0 skipped, 0 failed');
-      fireEvent.drop(somewhereOnThePage(), { dataTransfer: second });
+      fireEvent.drop(documentsPanel(), { dataTransfer: second });
       expect(await screen.findByText('second.txt')).toBeTruthy();
     });
 
@@ -1040,7 +1102,7 @@ describe('NotebookDetailPage', () => {
       await renderWithUpload(uploadDocument);
 
       const files = Array.from({ length: 101 }, (_, i) => new File(['x'], `f${i}.txt`));
-      fireEvent.drop(somewhereOnThePage(), { dataTransfer: dataTransferOf(files) });
+      fireEvent.drop(documentsPanel(), { dataTransfer: dataTransferOf(files) });
 
       expect(await screen.findByText(/Too many files: 101 uploadable files/)).toBeTruthy();
       expect(uploadDocument).not.toHaveBeenCalled();
@@ -1067,8 +1129,6 @@ describe('NotebookDetailPage', () => {
     const dialog = () => screen.queryByRole('dialog', { name: 'Document already exists' });
     const findDialog = () => screen.findByRole('dialog', { name: 'Document already exists' });
     const getDialog = () => screen.getByRole('dialog', { name: 'Document already exists' });
-    const sentNames = (uploadDocument: ReturnType<typeof vi.fn>) =>
-      uploadDocument.mock.calls.map(([, file]) => (file as File).name);
 
     it('asks before sending a file whose name is an existing Document, and sends it on New Version', async () => {
       const existing = documentFor('report.txt');
@@ -1086,7 +1146,7 @@ describe('NotebookDetailPage', () => {
       ).toBeTruthy();
       // Nothing is sent until the user answers.
       expect(uploadDocument).not.toHaveBeenCalled();
-      expect(within(panelRow('report.txt')).getByText('waiting')).toBeTruthy();
+      expect(within(panelRow('report.txt')).getByText('Waiting')).toBeTruthy();
 
       fireEvent.click(within(open).getByRole('button', { name: 'New Version' }));
 
@@ -1095,7 +1155,7 @@ describe('NotebookDetailPage', () => {
       ).toBeTruthy();
       expect(dialog()).toBeNull();
       expect(uploadDocument).toHaveBeenCalledTimes(1);
-      expect(within(panelRow('report.txt')).getByText('new version')).toBeTruthy();
+      expect(within(panelRow('report.txt')).getByText('New version')).toBeTruthy();
       // The card is replaced, not duplicated.
       const cards = screen.getByRole('list', { name: 'Documents' });
       expect(within(cards).getAllByText('report.txt')).toHaveLength(1);
@@ -1119,7 +1179,7 @@ describe('NotebookDetailPage', () => {
       expect(await screen.findByText('1 uploaded, 1 skipped, 0 failed')).toBeTruthy();
       expect(dialog()).toBeNull();
       const row = panelRow('report.txt');
-      expect(within(row).getByText('skipped')).toBeTruthy();
+      expect(within(row).getByText('Skipped')).toBeTruthy();
       expect(within(row).getByText(/name already exists/i)).toBeTruthy();
       expect(sentNames(uploadDocument)).toEqual(['fresh.txt']);
       // The existing Document is untouched: still one card, no v2 anywhere.
@@ -1151,7 +1211,7 @@ describe('NotebookDetailPage', () => {
       expect(await screen.findByText('1 uploaded, 3 skipped, 0 failed')).toBeTruthy();
       expect(dialog()).toBeNull();
       for (const name of ['a.txt', 'b.txt', 'c.txt']) {
-        expect(within(panelRow(name)).getByText('skipped')).toBeTruthy();
+        expect(within(panelRow(name)).getByText('Skipped')).toBeTruthy();
         expect(within(panelRow(name)).getByText(/name already exists/i)).toBeTruthy();
       }
       expect(sentNames(uploadDocument)).toEqual(['fresh.txt']);
@@ -1252,7 +1312,7 @@ describe('NotebookDetailPage', () => {
       expect(await screen.findByText('1 uploaded, 0 skipped, 0 failed')).toBeTruthy();
       expect(dialog()).toBeNull();
       expect(sentNames(uploadDocument)).toEqual(['deleted-earlier.txt']);
-      expect(within(panelRow('deleted-earlier.txt')).getByText('uploaded')).toBeTruthy();
+      expect(within(panelRow('deleted-earlier.txt')).getByText('Uploaded')).toBeTruthy();
     });
 
     it('asks the same question for a single-file upload', async () => {
@@ -1273,7 +1333,6 @@ describe('NotebookDetailPage', () => {
   });
 
   it('deletes a Document, removing it from the list, then restores it via Undo', async () => {
-    const listNotebooks = vi.fn().mockResolvedValue([]);
     const existingDocument = {
       id: 'doc-3',
       notebookId: NOTEBOOK_ID,
@@ -1293,14 +1352,9 @@ describe('NotebookDetailPage', () => {
     const restoreDocument = vi.fn().mockResolvedValue(existingDocument);
 
     await render(NotebookDetailPage, {
-      providers: [
-        activatedRouteFor(NOTEBOOK_ID),
-        { provide: NotebooksService, useValue: { listNotebooks } },
-        { provide: DocumentsService, useValue: { listDocuments, deleteDocument, restoreDocument } },
-        chatServiceStub(),
-        { provide: DocumentTransferService, useValue: {} },
-        appEventsStub().provider,
-      ],
+      providers: pageProviders({
+        documents: { listDocuments, deleteDocument, restoreDocument },
+      }),
     });
 
     await screen.findByText('contract.pdf');
@@ -1309,16 +1363,58 @@ describe('NotebookDetailPage', () => {
     expect(deleteDocument).toHaveBeenCalledWith({ notebookId: NOTEBOOK_ID, documentId: 'doc-3' });
     await screen.findByText('No Documents yet.');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    // The offer is a snack bar (NBK-33), which only becomes visible to
+    // assistive technology once Material has announced it.
+    fireEvent.click(await screen.findByRole('button', { name: 'Undo' }));
     expect(restoreDocument).toHaveBeenCalledWith({ notebookId: NOTEBOOK_ID, documentId: 'doc-3' });
     expect(await screen.findByText('contract.pdf')).toBeTruthy();
+  });
+
+  // NBK-33: the undo offer is a snack bar, not a line in the page, so the
+  // cards no longer jump when a Document is deleted.
+  it('announces a deleted Document in a snack bar instead of an inline line', async () => {
+    const listDocuments = vi.fn().mockResolvedValue([documentFor('contract.pdf')]);
+    const deleteDocument = vi.fn().mockResolvedValue(null);
+
+    await render(NotebookDetailPage, {
+      providers: pageProviders({
+        documents: { listDocuments, deleteDocument },
+      }),
+    });
+
+    await screen.findByText('contract.pdf');
+    fireEvent.click(screen.getByRole('button', { name: 'Delete contract.pdf' }));
+
+    expect(await screen.findByText('contract.pdf deleted')).toBeTruthy();
+    expect(screen.queryByText(/"contract\.pdf" deleted\./)).toBeNull();
+  });
+
+  it('replaces the undo offer when a second Document is deleted', async () => {
+    const listDocuments = vi
+      .fn()
+      .mockResolvedValue([documentFor('contract.pdf'), documentFor('report.txt')]);
+    const deleteDocument = vi.fn().mockResolvedValue(null);
+
+    await render(NotebookDetailPage, {
+      providers: pageProviders({
+        documents: { listDocuments, deleteDocument },
+      }),
+    });
+
+    await screen.findByText('contract.pdf');
+    fireEvent.click(screen.getByRole('button', { name: 'Delete contract.pdf' }));
+    await screen.findByText('contract.pdf deleted');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete report.txt' }));
+
+    expect(await screen.findByText('report.txt deleted')).toBeTruthy();
+    await waitFor(() => expect(screen.queryByText('contract.pdf deleted')).toBeNull());
   });
 
   // NBK-6: the status badge must follow the background conversion with no
   // page refresh. Nothing is re-fetched here — the only new information is
   // the app event, which is the whole point.
   it('updates a Document status badge live from an app event', async () => {
-    const listNotebooks = vi.fn().mockResolvedValue([]);
     const listDocuments = vi.fn().mockResolvedValue([
       {
         id: 'doc-5',
@@ -1338,18 +1434,14 @@ describe('NotebookDetailPage', () => {
     const appEvents = appEventsStub();
 
     await render(NotebookDetailPage, {
-      providers: [
-        activatedRouteFor(NOTEBOOK_ID),
-        { provide: NotebooksService, useValue: { listNotebooks } },
-        { provide: DocumentsService, useValue: { listDocuments } },
-        chatServiceStub(),
-        { provide: DocumentTransferService, useValue: {} },
-        appEvents.provider,
-      ],
+      providers: pageProviders({
+        documents: { listDocuments },
+        appEvents,
+      }),
     });
 
     await screen.findByText('thesis.pdf');
-    expect(screen.getByText('queued')).toBeTruthy();
+    expect(screen.getByText('Queued')).toBeTruthy();
     // Only this Notebook's events are asked for — by every store on the page
     // that follows the stream (Document statuses, and since NBK-11 the chat
     // panel's streamed answers). How *many* ask is not the point, and the
@@ -1366,7 +1458,7 @@ describe('NotebookDetailPage', () => {
       occurredAt: '2026-01-01T00:00:01.000Z',
       data: { documentId: 'doc-5', versionId: 'v-7', status: 'converting' },
     });
-    expect(await screen.findByText('converting')).toBeTruthy();
+    expect(await screen.findByText('Converting')).toBeTruthy();
 
     appEvents.events.next({
       id: 'event-2',
@@ -1375,10 +1467,11 @@ describe('NotebookDetailPage', () => {
       occurredAt: '2026-01-01T00:00:02.000Z',
       data: { documentId: 'doc-5', versionId: 'v-7', status: 'converted' },
     });
-    const badge = await screen.findByText('converted');
+    const badge = await screen.findByText('Converted');
     // The badge is styled by outcome, so a failed conversion can't be
-    // mistaken for a finished one at a glance.
-    expect(badge.className).toContain('notebook-detail-page__badge--converted');
+    // mistaken for a finished one at a glance: "converted" is a stage done,
+    // not the end of ingestion, so it reads as in progress (NBK-32).
+    expect(badge.className).toContain('app-badge--progress');
     // Nothing was re-fetched: the event alone drove the change.
     expect(listDocuments).toHaveBeenCalledTimes(1);
   });
@@ -1388,7 +1481,6 @@ describe('NotebookDetailPage', () => {
   // to rely on it for chat". So the badge has to reach "ready" live, and
   // "ready" has to look different from a mid-pipeline stage boundary.
   it('follows a Document through stage 3 to the "ready" badge', async () => {
-    const listNotebooks = vi.fn().mockResolvedValue([]);
     const listDocuments = vi.fn().mockResolvedValue([
       {
         id: 'doc-9',
@@ -1409,14 +1501,10 @@ describe('NotebookDetailPage', () => {
     const appEvents = appEventsStub();
 
     await render(NotebookDetailPage, {
-      providers: [
-        activatedRouteFor(NOTEBOOK_ID),
-        { provide: NotebooksService, useValue: { listNotebooks } },
-        { provide: DocumentsService, useValue: { listDocuments } },
-        chatServiceStub(),
-        { provide: DocumentTransferService, useValue: {} },
-        appEvents.provider,
-      ],
+      providers: pageProviders({
+        documents: { listDocuments },
+        appEvents,
+      }),
     });
 
     await screen.findByText('report.pdf');
@@ -1428,7 +1516,7 @@ describe('NotebookDetailPage', () => {
       occurredAt: '2026-01-01T00:00:01.000Z',
       data: { documentId: 'doc-9', versionId: 'v-9', status: 'indexing' },
     });
-    expect(await screen.findByText('indexing')).toBeTruthy();
+    expect(await screen.findByText('Indexing')).toBeTruthy();
 
     appEvents.events.next({
       id: 'event-2',
@@ -1437,14 +1525,13 @@ describe('NotebookDetailPage', () => {
       occurredAt: '2026-01-01T00:00:02.000Z',
       data: { documentId: 'doc-9', versionId: 'v-9', status: 'ready' },
     });
-    const badge = await screen.findByText('ready');
-    expect(badge.className).toContain('notebook-detail-page__badge--ready');
+    const badge = await screen.findByText('Ready');
+    expect(badge.className).toContain('app-badge--success');
     // The event alone drove it; nothing was re-fetched.
     expect(listDocuments).toHaveBeenCalledTimes(1);
   });
 
   it('ignores a status event for a Version that is no longer the latest', async () => {
-    const listNotebooks = vi.fn().mockResolvedValue([]);
     const listDocuments = vi.fn().mockResolvedValue([
       {
         id: 'doc-6',
@@ -1464,14 +1551,10 @@ describe('NotebookDetailPage', () => {
     const appEvents = appEventsStub();
 
     await render(NotebookDetailPage, {
-      providers: [
-        activatedRouteFor(NOTEBOOK_ID),
-        { provide: NotebooksService, useValue: { listNotebooks } },
-        { provide: DocumentsService, useValue: { listDocuments } },
-        chatServiceStub(),
-        { provide: DocumentTransferService, useValue: {} },
-        appEvents.provider,
-      ],
+      providers: pageProviders({
+        documents: { listDocuments },
+        appEvents,
+      }),
     });
 
     await screen.findByText('superseded.txt');
@@ -1487,8 +1570,8 @@ describe('NotebookDetailPage', () => {
       data: { documentId: 'doc-6', versionId: 'v-1', status: 'failed' },
     });
 
-    expect(screen.getByText('converted')).toBeTruthy();
-    expect(screen.queryByText('failed')).toBeNull();
+    expect(screen.getByText('Converted')).toBeTruthy();
+    expect(screen.queryByText('Failed')).toBeNull();
   });
 
   // NBK-7: "Document cards show the Abstract". Per GLOSSARY.md the Abstract
@@ -1517,18 +1600,12 @@ describe('NotebookDetailPage', () => {
     }
 
     it("shows the Abstract on the Document's card, and links to the Document", async () => {
-      const listNotebooks = vi.fn().mockResolvedValue([]);
       const listDocuments = vi.fn().mockResolvedValue([summarizedDocument()]);
 
       await render(NotebookDetailPage, {
-        providers: [
-          activatedRouteFor(NOTEBOOK_ID),
-          { provide: NotebooksService, useValue: { listNotebooks } },
-          { provide: DocumentsService, useValue: { listDocuments } },
-          chatServiceStub(),
-          { provide: DocumentTransferService, useValue: {} },
-          appEventsStub().provider,
-        ],
+        providers: pageProviders({
+          documents: { listDocuments },
+        }),
       });
 
       expect(await screen.findByText('quarterly.pdf')).toBeTruthy();
@@ -1545,20 +1622,14 @@ describe('NotebookDetailPage', () => {
     });
 
     it('says the Abstract is still being generated while ingestion has not produced one', async () => {
-      const listNotebooks = vi.fn().mockResolvedValue([]);
       const listDocuments = vi
         .fn()
         .mockResolvedValue([summarizedDocument({ status: 'converting', abstract: null })]);
 
       await render(NotebookDetailPage, {
-        providers: [
-          activatedRouteFor(NOTEBOOK_ID),
-          { provide: NotebooksService, useValue: { listNotebooks } },
-          { provide: DocumentsService, useValue: { listDocuments } },
-          chatServiceStub(),
-          { provide: DocumentTransferService, useValue: {} },
-          appEventsStub().provider,
-        ],
+        providers: pageProviders({
+          documents: { listDocuments },
+        }),
       });
 
       await screen.findByText('quarterly.pdf');
@@ -1574,7 +1645,6 @@ describe('NotebookDetailPage', () => {
     // "summarized" is the cue to re-read that one Document over the normal
     // API, which is the ADR's "an event is a hint" contract made concrete.
     it('tracks the stage-2 statuses live, then re-reads the Document to pick up its Abstract', async () => {
-      const listNotebooks = vi.fn().mockResolvedValue([]);
       const listDocuments = vi
         .fn()
         .mockResolvedValue([summarizedDocument({ status: 'converted', abstract: null })]);
@@ -1586,18 +1656,14 @@ describe('NotebookDetailPage', () => {
       const appEvents = appEventsStub();
 
       await render(NotebookDetailPage, {
-        providers: [
-          activatedRouteFor(NOTEBOOK_ID),
-          { provide: NotebooksService, useValue: { listNotebooks } },
-          { provide: DocumentsService, useValue: { listDocuments, getDocument } },
-          chatServiceStub(),
-          { provide: DocumentTransferService, useValue: {} },
-          appEvents.provider,
-        ],
+        providers: pageProviders({
+          documents: { listDocuments, getDocument },
+          appEvents,
+        }),
       });
 
       await screen.findByText('quarterly.pdf');
-      expect(screen.getByText('converted')).toBeTruthy();
+      expect(screen.getByText('Converted')).toBeTruthy();
       expect(screen.getByText('Abstract not generated yet.')).toBeTruthy();
 
       appEvents.events.next({
@@ -1607,7 +1673,7 @@ describe('NotebookDetailPage', () => {
         occurredAt: '2026-01-01T00:00:01.000Z',
         data: { documentId: 'doc-7', versionId: 'v-11', status: 'summarizing' },
       });
-      expect(await screen.findByText('summarizing')).toBeTruthy();
+      expect(await screen.findByText('Summarizing')).toBeTruthy();
       // An in-progress stage is not a reason to re-read anything.
       expect(getDocument).not.toHaveBeenCalled();
 
@@ -1619,8 +1685,8 @@ describe('NotebookDetailPage', () => {
         data: { documentId: 'doc-7', versionId: 'v-11', status: 'summarized' },
       });
 
-      const badge = await screen.findByText('summarized');
-      expect(badge.className).toContain('notebook-detail-page__badge--summarized');
+      const badge = await screen.findByText('Summarized');
+      expect(badge.className).toContain('app-badge--progress');
       // The Abstract arrives from the re-read, not from the event.
       expect(await screen.findByText('The freshly generated Abstract.')).toBeTruthy();
       expect(getDocument).toHaveBeenCalledWith({ notebookId: NOTEBOOK_ID, documentId: 'doc-7' });
@@ -1631,7 +1697,6 @@ describe('NotebookDetailPage', () => {
   });
 
   it('downloads a Document Version through the transfer service', async () => {
-    const listNotebooks = vi.fn().mockResolvedValue([]);
     const existingDocument = {
       id: 'doc-4',
       notebookId: NOTEBOOK_ID,
@@ -1650,14 +1715,10 @@ describe('NotebookDetailPage', () => {
     const downloadDocumentVersion = vi.fn().mockResolvedValue(undefined);
 
     await render(NotebookDetailPage, {
-      providers: [
-        activatedRouteFor(NOTEBOOK_ID),
-        { provide: NotebooksService, useValue: { listNotebooks } },
-        { provide: DocumentsService, useValue: { listDocuments } },
-        chatServiceStub(),
-        { provide: DocumentTransferService, useValue: { downloadDocumentVersion } },
-        appEventsStub().provider,
-      ],
+      providers: pageProviders({
+        documents: { listDocuments },
+        transfer: { downloadDocumentVersion },
+      }),
     });
 
     await screen.findByText('sheet.xlsx');
@@ -1666,23 +1727,219 @@ describe('NotebookDetailPage', () => {
     expect(downloadDocumentVersion).toHaveBeenCalledWith(NOTEBOOK_ID, 'doc-4', 'v-9', 'sheet.xlsx');
   });
 
-  // NBK-9: search is how a user finds a source without opening a chat, so it
-  // has to be reachable from the Notebook they are already looking at.
+  // NBK-9: search is how a user looks something up in the Documents without
+  // opening a chat, so it has to be reachable from the Notebook they are
+  // already looking at.
   it("links to this Notebook's search page", async () => {
-    const listNotebooks = vi.fn().mockResolvedValue([]);
     const listDocuments = vi.fn().mockResolvedValue([]);
 
     await render(NotebookDetailPage, {
-      providers: [
-        activatedRouteFor(NOTEBOOK_ID),
-        { provide: NotebooksService, useValue: { listNotebooks } },
-        { provide: DocumentsService, useValue: { listDocuments } },
-        { provide: DocumentTransferService, useValue: {} },
-        appEventsStub().provider,
-      ],
+      providers: pageProviders({
+        documents: { listDocuments },
+      }),
     });
 
     const link = await screen.findByLabelText('Search this Notebook');
     expect(link.getAttribute('href')).toBe(`/notebooks/${NOTEBOOK_ID}/search`);
+  });
+
+  // NBK-35: the Notebook is a full-height workspace of three cards — the
+  // Chat Threads navigator, the open Thread and the Documents panel — each a
+  // labelled landmark so a keyboard user can jump between them, under a slim
+  // header that carries the way back, the title and the Notebook's actions.
+  describe('NBK-35: workspace frame', () => {
+    it('lays the Notebook out as three labelled regions', async () => {
+      await renderWithUpload(vi.fn());
+
+      const navigator = screen.getByRole('navigation', { name: 'Chat Threads' });
+      const chat = screen.getByRole('region', { name: 'Chat' });
+      const documents = screen.getByRole('complementary', { name: 'Documents' });
+
+      expect(within(navigator).getByRole('button', { name: 'Start Chat Thread' })).toBeTruthy();
+      expect(
+        within(chat).getByText('Open a Chat Thread, or start one, to ask a question.'),
+      ).toBeTruthy();
+      expect(within(documents).getByText('No Documents yet.')).toBeTruthy();
+    });
+
+    it('renames the Notebook from its title on Enter', async () => {
+      const renameNotebook = vi.fn().mockResolvedValue({ ...RESEARCH, title: 'Research 2026' });
+      await renderWithUpload(vi.fn(), [], { notebook: RESEARCH, renameNotebook });
+
+      fireEvent.keyDown(await typeTitle('Research 2026'), { key: 'Enter' });
+
+      expect(renameNotebook).toHaveBeenCalledWith({
+        id: NOTEBOOK_ID,
+        body: { title: 'Research 2026' },
+      });
+      expect(await screen.findByRole('button', { name: 'Research 2026' })).toBeTruthy();
+      expect(screen.queryByLabelText('Notebook title')).toBeNull();
+    });
+
+    it('commits the rename when the title box loses focus', async () => {
+      const renameNotebook = vi.fn().mockResolvedValue({ ...RESEARCH, title: 'Archive' });
+      await renderWithUpload(vi.fn(), [], { notebook: RESEARCH, renameNotebook });
+
+      fireEvent.blur(await typeTitle('Archive'));
+
+      expect(renameNotebook).toHaveBeenCalledWith({ id: NOTEBOOK_ID, body: { title: 'Archive' } });
+      expect(await screen.findByRole('button', { name: 'Archive' })).toBeTruthy();
+    });
+
+    it('discards the edit on Escape and sends nothing', async () => {
+      const renameNotebook = vi.fn();
+      await renderWithUpload(vi.fn(), [], { notebook: RESEARCH, renameNotebook });
+
+      fireEvent.keyDown(await typeTitle('Mistake'), { key: 'Escape' });
+
+      expect(renameNotebook).not.toHaveBeenCalled();
+      expect(screen.getByRole('button', { name: 'Research' })).toBeTruthy();
+      expect(screen.queryByLabelText('Notebook title')).toBeNull();
+    });
+
+    it('"Back to Notebooks" takes the user to the Notebooks list', async () => {
+      const listNotebooks = vi.fn().mockResolvedValue([RESEARCH]);
+      const listDocuments = vi.fn().mockResolvedValue([]);
+      const { navigate } = await render(RouterShell, {
+        routes: [
+          { path: 'notebooks/:notebookId', component: NotebookDetailPage },
+          { path: '', component: Elsewhere },
+        ],
+        providers: pageProviders({
+          notebooks: { listNotebooks },
+          documents: { listDocuments },
+          inRouterShell: true,
+        }),
+      });
+      await navigate(`/notebooks/${NOTEBOOK_ID}`);
+      await screen.findByText('No Documents yet.');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Back to Notebooks' }));
+
+      expect(await screen.findByText('Somewhere else')).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'Back to Notebooks' })).toBeNull();
+    });
+
+    it('"Add Documents" opens the picker, and is disabled with it while a batch runs', async () => {
+      const request = deferred<Record<string, unknown>>();
+      await renderWithUpload(vi.fn().mockReturnValue(request.promise));
+      const input = screen.getByLabelText('Upload Documents') as HTMLInputElement;
+      const open = vi.spyOn(input, 'click');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Add Documents' }));
+      expect(open).toHaveBeenCalledTimes(1);
+
+      pick([fileNamed('a.txt')]);
+      await screen.findByText('a.txt');
+      expect(
+        (screen.getByRole('button', { name: 'Add Documents' }) as HTMLButtonElement).disabled,
+      ).toBe(true);
+      expect(input.disabled).toBe(true);
+
+      request.resolve(documentFor('a.txt'));
+      await screen.findByText('1 uploaded, 0 skipped, 0 failed');
+      expect(
+        (screen.getByRole('button', { name: 'Add Documents' }) as HTMLButtonElement).disabled,
+      ).toBe(false);
+    });
+
+    it('puts the Notebook title in the browser tab while open, and restores it on leaving', async () => {
+      document.title = 'RAG Notebook';
+      const listNotebooks = vi.fn().mockResolvedValue([RESEARCH]);
+      const listDocuments = vi.fn().mockResolvedValue([]);
+      const { navigate } = await render(RouterShell, {
+        routes: [
+          { path: 'notebooks/:notebookId', component: NotebookDetailPage },
+          { path: 'elsewhere', component: Elsewhere },
+        ],
+        providers: pageProviders({
+          notebooks: { listNotebooks },
+          documents: { listDocuments },
+          inRouterShell: true,
+        }),
+      });
+
+      await navigate(`/notebooks/${NOTEBOOK_ID}`);
+      await waitFor(() => expect(document.title).toBe('Research – RAG Notebook'));
+
+      await navigate('/elsewhere');
+      await screen.findByText('Somewhere else');
+      expect(document.title).toBe('RAG Notebook');
+    });
+  });
+
+  // NBK-37: a user reading answers can hide the Documents panel and get it
+  // back from the page header. Hidden means gone for assistive technology and
+  // the keyboard too, not just out of sight, so the tests ask the
+  // accessibility tree (role queries skip hidden content) rather than styles.
+  describe('NBK-37: hiding the Documents panel', () => {
+    const THREE = [documentFor('a.txt'), documentFor('b.txt'), documentFor('c.txt')];
+
+    function hideDocumentsButton() {
+      return within(documentsPanel()).getByRole('button', { name: 'Hide Documents' });
+    }
+
+    function showDocumentsButton() {
+      return screen.queryByRole('button', { name: 'Show Documents' });
+    }
+
+    it('offers "Hide Documents" in the panel and no "Show Documents" while the panel is visible', async () => {
+      await renderWithUpload(vi.fn(), THREE);
+
+      expect(hideDocumentsButton()).toBeTruthy();
+      expect(showDocumentsButton()).toBeNull();
+    });
+
+    it('"Hide Documents" hides the panel and offers "Show Documents" with the Document count', async () => {
+      await renderWithUpload(vi.fn(), THREE);
+
+      fireEvent.click(hideDocumentsButton());
+
+      expect(screen.queryByRole('complementary', { name: 'Documents' })).toBeNull();
+      expect(screen.queryByRole('list', { name: 'Documents' })).toBeNull();
+      // Only the panel goes: the reader hid it to make room for these two.
+      expect(screen.getByRole('navigation', { name: 'Chat Threads' })).toBeTruthy();
+      expect(screen.getByRole('region', { name: 'Chat' })).toBeTruthy();
+      const show = showDocumentsButton()!;
+      expect(show).toBeTruthy();
+      expect(show.textContent?.replace(/\s+/g, ' ').trim()).toBe('Documents 3');
+    });
+
+    it('"Show Documents" restores the panel, goes away, and focuses "Hide Documents"', async () => {
+      await renderWithUpload(vi.fn(), THREE);
+      fireEvent.click(hideDocumentsButton());
+
+      fireEvent.click(showDocumentsButton()!);
+
+      expect(screen.getByRole('complementary', { name: 'Documents' })).toBeTruthy();
+      expect(
+        within(screen.getByRole('list', { name: 'Documents' })).getByText('a.txt'),
+      ).toBeTruthy();
+      expect(showDocumentsButton()).toBeNull();
+      // The keyboard has somewhere to be: the control that undoes what it just did.
+      await waitFor(() => expect(document.activeElement).toBe(hideDocumentsButton()));
+    });
+
+    it('a drag carrying files while hidden brings the panel back as the drop target', async () => {
+      const uploadDocument = vi
+        .fn()
+        .mockImplementation((_notebookId: string, file: File) =>
+          Promise.resolve(documentFor(file.name)),
+        );
+      await renderWithUpload(uploadDocument);
+      fireEvent.click(hideDocumentsButton());
+      expect(screen.queryByRole('complementary', { name: 'Documents' })).toBeNull();
+
+      const report = new File(['x'], 'report.txt');
+      const dataTransfer = dataTransferOf([report]);
+      fireEvent.dragEnter(elsewhereOnThePage(), { dataTransfer });
+
+      expect(highlightsDocumentsPanel()).toBe(true);
+      expect(showDocumentsButton()).toBeNull();
+      // ...and the drop then behaves as it always did.
+      fireEvent.drop(documentsPanel(), { dataTransfer });
+      expect(await screen.findByText('1 uploaded, 0 skipped, 0 failed')).toBeTruthy();
+      expect(uploadDocument).toHaveBeenCalledWith(NOTEBOOK_ID, report);
+    });
   });
 });
