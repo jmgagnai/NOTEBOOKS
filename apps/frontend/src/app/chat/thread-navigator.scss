@@ -1,8 +1,40 @@
 @use './controls';
+@use '../workspace-card';
 
 // The Chat Threads navigator of a Notebook (NBK-10, split out of the chat
-// panel in NBK-34). The column it sits in is the page's to lay out.
+// panel in NBK-34). The card it sits in is the page's (NBK-35); this fills
+// it as a column — the header row fixed, the Thread list scrolling — so the
+// host stretches to the card's height.
+:host {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
 .thread-navigator {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+
+  // The workspace card's header row, wrapping because at 240 px the title
+  // and the start-a-Thread box do not share a line.
+  &__head {
+    @include workspace-card.head;
+    flex-wrap: wrap;
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+
+  &__title {
+    @include workspace-card.title;
+  }
+
+  &__body {
+    @include workspace-card.body;
+  }
+
   &__field {
     @include controls.field;
   }
@@ -13,6 +45,8 @@
 
   &__new-thread {
     @include controls.field-row;
+    flex: 1 1 100%;
+    margin-bottom: 0;
   }
 
   &__empty {
@@ -29,13 +63,13 @@
   }
 
   &__thread {
-    border: 1px solid var(--mat-sys-outline-variant, #ddd);
-    border-radius: 0.5rem;
+    border: 1px solid var(--mat-sys-outline-variant);
+    border-radius: var(--mat-sys-corner-medium);
 
     // The open Thread, so a reader can tell which Thread they are in
     // when several are listed.
     &--active {
-      border-color: var(--mat-sys-primary, #3f51b5);
+      border-color: var(--mat-sys-primary);
     }
   }
 
@@ -60,7 +94,7 @@
   // Attribution, not a heading: whose Thread this is matters, but it must not
   // compete with the title it belongs to.
   &__thread-author {
-    font-size: 0.75rem;
+    font-size: var(--mat-sys-body-small-size);
     opacity: 0.7;
   }
 }

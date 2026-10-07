@@ -18,13 +18,6 @@
       <button mat-flat-button color="primary" type="submit">Create</button>
     </form>
 
-    @if (store.lastDeleted(); as deleted) {
-      <p class="notebooks-page__undo">
-        "{{ deleted.title }}" deleted.
-        <button mat-button type="button" (click)="restore(deleted.id)">Undo</button>
-      </p>
-    }
-
     @if (store.loading()) {
       <mat-progress-spinner mode="indeterminate" diameter="32" />
     } @else if (store.error(); as error) {

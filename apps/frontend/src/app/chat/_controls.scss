@@ -14,8 +14,8 @@
   textarea {
     font: inherit;
     padding: 0.4rem 0.5rem;
-    border: 1px solid var(--mat-sys-outline-variant, #ddd);
-    border-radius: 0.25rem;
+    border: 1px solid var(--mat-sys-outline-variant);
+    border-radius: var(--mat-sys-corner-extra-small);
     background: transparent;
     color: inherit;
     resize: vertical;
@@ -23,7 +23,7 @@
 }
 
 @mixin field-label {
-  font-size: 0.75rem;
+  font-size: var(--mat-sys-body-small-size);
   opacity: 0.75;
 }
 

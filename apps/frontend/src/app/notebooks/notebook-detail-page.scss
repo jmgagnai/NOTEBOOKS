@@ -1,14 +1,25 @@
-.notebook-detail-page {
-  max-width: 640px;
-  margin: 2rem auto;
-  position: relative;
+@use '../workspace-card';
 
-  // The drop target is the whole page (NBK-18), so the whole card shows it:
-  // a dashed outline while files are dragged over it, plus a hint pinned
-  // over the content saying what a drop will do.
+// The Notebook workspace (NBK-35): a column of header and card grid filling
+// the viewport under the title bar, so the cards scroll and the page never
+// does. `100vh` minus the bar rather than `height: 100%`: the routed element
+// is a flex child of an `app-root` with only a min-height, so a percentage
+// would have nothing definite to resolve against.
+.notebook-detail-page {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  height: calc(100vh - var(--app-title-bar-height));
+
+  // The drop target is still the whole page (NBK-18, until NBK-36 moves it
+  // to the Documents panel), so the whole workspace shows it: a dashed
+  // outline while files are dragged over it, drawn inside the edge because
+  // the page meets the viewport, plus a hint pinned over the content saying
+  // what a drop will do.
   &--drag-over {
     outline: 2px dashed var(--mat-sys-primary);
-    outline-offset: 4px;
+    outline-offset: -4px;
   }
 
   &__drop-hint {
@@ -29,20 +40,112 @@
     pointer-events: none;
   }
 
-  &__back {
-    display: inline-block;
-    margin-bottom: 1rem;
+  // The page header: as high as the title bar, so the two read as one chrome.
+  &__header {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: var(--app-title-bar-height);
+    padding: 0 12px 0 8px;
+  }
+
+  &__crumb {
+    color: var(--mat-sys-on-surface-variant);
+    white-space: nowrap;
+  }
+
+  &__spacer {
+    flex: 1 1 auto;
+  }
+
+  // The title as a button that reads as text: the section type step, no
+  // border, a subtle hover so it is discoverable as a control.
+  &__title {
+    min-width: 0;
+    height: var(--app-control-height);
+    padding: 0 6px;
+    border: 0;
+    border-radius: var(--mat-sys-corner-extra-small);
+    background: transparent;
+    font: var(--mat-sys-title-medium);
+    color: var(--mat-sys-on-surface);
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: text;
+
+    &:hover {
+      background: var(--mat-sys-surface-container-high);
+    }
+  }
+
+  // ...and the box it swaps to, same size and type so nothing jumps.
+  &__title-input {
+    box-sizing: border-box;
+    min-width: 320px;
+    height: var(--app-control-height);
+    padding: 0 6px;
+    border: 1px solid var(--mat-sys-primary);
+    border-radius: var(--mat-sys-corner-extra-small);
+    background: var(--mat-sys-surface);
+    font: var(--mat-sys-title-medium);
+    color: var(--mat-sys-on-surface);
+  }
+
+  // The file input behind "Add Documents": off screen rather than
+  // `display: none`, so it keeps working for everything that reaches it by
+  // its accessible name.
+  &__file-input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  // The three cards: navigator 240 px, Thread view the rest, Documents
+  // 300 px (200/260 under 1100 px); one column under 900 px, the navigator at
+  // its natural height, the Thread view taking the rest, Documents a strip
+  // of about a third (spec 02 "Page structure").
+  &__workspace {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 240px 1fr 300px;
+    gap: 8px;
+    padding: 0 8px 8px;
+
+    @media (max-width: 1100px) {
+      grid-template-columns: 200px 1fr 260px;
+    }
+
+    @media (max-width: 900px) {
+      grid-template-columns: 1fr;
+      grid-template-rows: auto minmax(240px, 1fr) minmax(160px, 32%);
+    }
+  }
+
+  &__panel {
+    @include workspace-card.card;
+  }
+
+  &__panel-head {
+    @include workspace-card.head;
+  }
+
+  &__panel-title {
+    @include workspace-card.title;
+  }
+
+  &__panel-body {
+    @include workspace-card.body;
   }
 
   &__error {
     color: var(--mat-sys-error);
-  }
-
-  &__upload {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-    margin-bottom: 1rem;
   }
 
   // The upload batch panel (NBK-16): one row per file, then the summary.
@@ -106,12 +209,6 @@
     margin-top: 0.5rem;
   }
 
-  &__undo {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
   // Document cards (NBK-7): each entry has to hold an Abstract, so it is a
   // stacked card rather than a single-line list row.
   &__cards {
@@ -138,6 +235,7 @@
   &__card-actions {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 0.25rem;
   }
 
@@ -153,26 +251,12 @@
 
   &__filename {
     flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
 
   &__version {
     color: var(--mat-sys-on-surface-variant);
     font: var(--mat-sys-body-small);
-  }
-
-  // The chat panel's two columns — the Thread navigator and the Thread view —
-  // collapsing to one on a narrow viewport (NBK-1 scopes the frontend to
-  // "standard Material responsive layout only"). Moved here from the panel
-  // when NBK-34 split it, with its values unchanged; the workspace frame
-  // (NBK-35) replaces it with the page's own cards.
-  &__chat {
-    display: grid;
-    grid-template-columns: minmax(12rem, 16rem) 1fr;
-    gap: 1.5rem;
-    align-items: start;
-
-    @media (max-width: 40rem) {
-      grid-template-columns: 1fr;
-    }
   }
 }
