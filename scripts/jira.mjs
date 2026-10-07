@@ -17,6 +17,7 @@
  *        [--type Task] [--parent NBK-1] [--label ready-for-agent]
  *   node scripts/jira.mjs transition NBK-5 Done
  *   node scripts/jira.mjs link NBK-6 blocked-by NBK-5
+ *   node scripts/jira.mjs link NBK-15 relates-to NBK-14
  *
  * Markdown supported: #/##/### headings, paragraphs, - bullets, 1. ordered
  * lists, - [ ] task lists, and inline **bold**, `code`, [text](url).
@@ -208,7 +209,21 @@ const commands = {
       issuetype: { name: o.type ?? 'Task' },
     };
     if (o.body) fields.description = readBody(o.body);
-    if (o.parent) fields.parent = { key: o.parent };
+    if (o.parent) {
+      // Jira only lets an Epic parent a Task (a Task can parent Subtasks). A
+      // spec published as a Task therefore can't take its tickets as
+      // children; link them with `relates-to` instead. Checked here so the
+      // refusal comes before anything is created, not as a 400 mid-batch.
+      const parent = await api('GET', `/rest/api/3/issue/${o.parent}?fields=issuetype`);
+      const parentType = parent.fields.issuetype.name;
+      if (parentType !== 'Epic' && (o.type ?? 'Task') !== 'Subtask') {
+        throw new Error(
+          `${o.parent} is a ${parentType}, and only an Epic can be the parent of a ${o.type ?? 'Task'}. ` +
+            `Create without --parent, then \`link <new> relates-to ${o.parent}\`.`,
+        );
+      }
+      fields.parent = { key: o.parent };
+    }
     if (o.labels.length > 0) fields.labels = o.labels;
     const result = await api('POST', '/rest/api/3/issue', { fields });
     console.log(result.key);
@@ -224,15 +239,23 @@ const commands = {
     console.log(`${key}: → ${match.to.name}`);
   },
 
-  /** `link NBK-6 blocked-by NBK-5` reads as the sentence it asserts. */
+  /**
+   * `link NBK-6 blocked-by NBK-5` reads as the sentence it asserts;
+   * `link NBK-15 relates-to NBK-14` ties a ticket to the spec it came from.
+   */
   async link([inward, relation, outward]) {
-    if (relation !== 'blocked-by') throw new Error('only `blocked-by` is supported');
+    const relations = {
+      'blocked-by': { type: 'Blocks', sentence: 'is blocked by' },
+      'relates-to': { type: 'Relates', sentence: 'relates to' },
+    };
+    const link = relations[relation];
+    if (!link) throw new Error(`unknown relation "${relation}"; use ${Object.keys(relations).join(' or ')}`);
     await api('POST', '/rest/api/3/issueLink', {
-      type: { name: 'Blocks' },
+      type: { name: link.type },
       inwardIssue: { key: inward },
       outwardIssue: { key: outward },
     });
-    console.log(`${inward} is blocked by ${outward}`);
+    console.log(`${inward} ${link.sentence} ${outward}`);
   },
 };
 
@@ -243,6 +266,10 @@ const USAGE = `Usage: node scripts/jira.mjs <command>
   create --summary "..." [--body body.md] [--type Task] [--parent NBK-1] [--label ready-for-agent]
   transition NBK-5 Done
   link NBK-6 blocked-by NBK-5
+  link NBK-15 relates-to NBK-14
+
+--parent takes an Epic only (a Task can't parent a Task); tickets of a spec
+published as a Task are linked to it with relates-to instead.
 
 Markdown bodies are converted to Atlassian Document Format: #/##/### headings,
 paragraphs, bullets, 1. ordered lists, - [ ] task lists, **bold**, \`code\`, links.`;

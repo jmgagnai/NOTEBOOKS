@@ -91,6 +91,21 @@ status column:
 
 Create a Jira issue (issue type `Task`) in project `NBK`.
 
+A spec and its tickets are all Tasks, and **a Task cannot be the parent of a
+Task** — Jira reserves `parent` for Epic → Task and Task → Subtask, and answers
+anything else with a 400 ("Please select valid parent issue") that creates
+nothing. So publish a spec's tickets without `--parent`, name the spec under a
+`## Parent` heading in each body, and tie them together with links:
+
+```bash
+node scripts/jira.mjs create --summary "..." --body ticket.md --label ready-for-agent   # prints NBK-15
+node scripts/jira.mjs link NBK-15 relates-to NBK-14      # ticket ↔ spec
+node scripts/jira.mjs link NBK-17 blocked-by NBK-16      # the task graph's edges
+```
+
+The helper refuses `--parent` on a non-Epic up front, before anything is
+created. Use `--parent` only when the parent really is an Epic.
+
 ## When a skill says "fetch the relevant ticket"
 
 `GET` the issue by key, expanding `comment` and `labels`.
