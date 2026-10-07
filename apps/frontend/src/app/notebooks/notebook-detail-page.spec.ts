@@ -467,6 +467,138 @@ describe('NotebookDetailPage', () => {
     });
   });
 
+  // NBK-17: while a batch runs the user can steer it and is protected from
+  // losing it — Retry failed, Cancel, a disabled picker, the browser's
+  // leave-page warning, survival across in-app navigation, and a dismiss
+  // once it is done. Same seam as NBK-16: the real page and store, with only
+  // the upload client, the generated Documents client and the app-events
+  // stream mocked. The helpers mirror NBK-16's rather than sharing them, so
+  // the tickets built in parallel on this file merge without touching each
+  // other's blocks.
+  describe('NBK-17: retry, cancel, and leaving the page', () => {
+    function documentFor(filename: string) {
+      return {
+        id: `doc-${filename}`,
+        notebookId: NOTEBOOK_ID,
+        filename,
+        status: 'queued',
+        abstract: null,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        latestVersion: {
+          id: `v-${filename}-1`,
+          versionNumber: 1,
+          mimeType: 'text/plain',
+          sizeBytes: 1,
+          createdAt: '2026-01-01T00:00:00.000Z',
+        },
+      };
+    }
+
+    /** A promise the test resolves or rejects by hand, to hold a request "in flight". */
+    function deferred<T>() {
+      let resolve!: (value: T) => void;
+      let reject!: (reason: unknown) => void;
+      const promise = new Promise<T>((res, rej) => {
+        resolve = res;
+        reject = rej;
+      });
+      return { promise, resolve, reject };
+    }
+
+    /** An upload client whose every request stays in flight until the test settles it. */
+    function heldUploads() {
+      const inFlight: {
+        file: File;
+        request: ReturnType<typeof deferred<Record<string, unknown>>>;
+      }[] = [];
+      const uploadDocument = vi.fn().mockImplementation((_notebookId: string, file: File) => {
+        const request = deferred<Record<string, unknown>>();
+        inFlight.push({ file, request });
+        return request.promise;
+      });
+      const sentNames = () => inFlight.map(({ file }) => file.name);
+      const land = (filename: string) =>
+        inFlight.find(({ file }) => file.name === filename)!.request.resolve(documentFor(filename));
+      const fail = (filename: string) =>
+        inFlight
+          .find(({ file }) => file.name === filename)!
+          .request.reject({ error: { message: 'Storage is unavailable.' } });
+      return { uploadDocument, inFlight, sentNames, land, fail };
+    }
+
+    async function renderWithUpload(uploadDocument: ReturnType<typeof vi.fn>) {
+      const listNotebooks = vi.fn().mockResolvedValue([]);
+      const listDocuments = vi.fn().mockResolvedValue([]);
+      const result = await render(NotebookDetailPage, {
+        providers: [
+          activatedRouteFor(NOTEBOOK_ID),
+          { provide: NotebooksService, useValue: { listNotebooks } },
+          { provide: DocumentsService, useValue: { listDocuments } },
+          chatServiceStub(),
+          { provide: DocumentTransferService, useValue: { uploadDocument } },
+          appEventsStub().provider,
+        ],
+      });
+      await screen.findByText('No Documents yet.');
+      return result;
+    }
+
+    function pick(names: string[]) {
+      const input = screen.getByLabelText('Upload Documents') as HTMLInputElement;
+      fireEvent.change(input, { target: { files: names.map((name) => new File(['x'], name)) } });
+      return input;
+    }
+
+    function panelRow(filename: string) {
+      const panel = screen.getByRole('list', { name: 'Upload progress' });
+      return within(panel)
+        .getAllByRole('listitem')
+        .find((row) => within(row).queryByText(filename) !== null)!;
+    }
+
+    it('re-sends only the failed files on Retry failed, three at a time, leaving the rest alone', async () => {
+      const uploads = heldUploads();
+      await renderWithUpload(uploads.uploadDocument);
+
+      pick(['good.txt', 'photo.png', 'bad1.txt', 'bad2.txt', 'bad3.txt', 'bad4.txt']);
+      await waitFor(() => expect(uploads.uploadDocument).toHaveBeenCalledTimes(3));
+      uploads.land('good.txt');
+      for (const name of ['bad1.txt', 'bad2.txt', 'bad3.txt', 'bad4.txt']) {
+        await waitFor(() => expect(uploads.sentNames()).toContain(name));
+        uploads.fail(name);
+      }
+      expect(await screen.findByText('1 uploaded, 1 skipped, 4 failed')).toBeTruthy();
+      expect(uploads.uploadDocument).toHaveBeenCalledTimes(5);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Retry failed' }));
+
+      // Only the failures go again, through the same 3-at-a-time flow: three
+      // in flight, the fourth waiting for a slot.
+      await waitFor(() => expect(uploads.uploadDocument).toHaveBeenCalledTimes(8));
+      expect(uploads.sentNames().slice(5)).toEqual(['bad1.txt', 'bad2.txt', 'bad3.txt']);
+      expect(within(panelRow('bad4.txt')).getByText('waiting')).toBeTruthy();
+      expect(screen.queryByText(/uploaded, .* skipped, .* failed/)).toBeNull();
+      // The file that landed and the one that was skipped are untouched.
+      expect(within(panelRow('good.txt')).getByText('uploaded')).toBeTruthy();
+      expect(within(panelRow('photo.png')).getByText('skipped')).toBeTruthy();
+
+      uploads.inFlight[5].request.resolve(documentFor('bad1.txt'));
+      await waitFor(() => expect(uploads.uploadDocument).toHaveBeenCalledTimes(9));
+      expect(uploads.sentNames()[8]).toBe('bad4.txt');
+      for (const { file, request } of uploads.inFlight.slice(6)) {
+        request.resolve(documentFor(file.name));
+      }
+
+      expect(await screen.findByText('5 uploaded, 1 skipped, 0 failed')).toBeTruthy();
+      expect(uploads.uploadDocument).toHaveBeenCalledTimes(9);
+      // Nothing is left to retry.
+      expect(screen.queryByRole('button', { name: 'Retry failed' })).toBeNull();
+      const cards = screen.getByRole('list', { name: 'Documents' });
+      expect(within(cards).getByText('bad4.txt')).toBeTruthy();
+      expect(within(cards).getAllByText('good.txt')).toHaveLength(1);
+    });
+  });
+
   it('deletes a Document, removing it from the list, then restores it via Undo', async () => {
     const listNotebooks = vi.fn().mockResolvedValue([]);
     const existingDocument = {

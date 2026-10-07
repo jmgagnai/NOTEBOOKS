@@ -87,6 +87,11 @@ export class NotebookDetailPage implements OnInit, OnDestroy {
     input.value = '';
   }
 
+  /** Re-sends every failed file of the batch (NBK-17). */
+  protected retryFailed(): void {
+    void this.store.retryFailed();
+  }
+
   /** How an item's status reads in the progress panel. */
   protected statusLabel(status: UploadItemStatus): string {
     return status === 'new-version' ? 'new version' : status;

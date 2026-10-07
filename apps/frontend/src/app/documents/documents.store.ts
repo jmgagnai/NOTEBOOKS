@@ -530,6 +530,26 @@ export const DocumentsStore = signalStore(
           await drainBatch();
         },
 
+        /**
+         * Re-queues every `failed` item of the current batch and sends them
+         * again (NBK-17), through the same 3-at-a-time flow and without the
+         * user re-selecting anything. Items that landed or were skipped are
+         * untouched. Resolves when the batch is no longer running.
+         */
+        async retryFailed(): Promise<void> {
+          const batch = store.batch();
+          if (!batch) return;
+          patchState(store, {
+            batch: {
+              ...batch,
+              items: batch.items.map((item): UploadItem =>
+                item.status === 'failed' ? { ...item, status: 'waiting', reason: null } : item,
+              ),
+            },
+          });
+          await drainBatch();
+        },
+
         async deleteDocument(notebookId: string, documentId: string): Promise<void> {
           patchState(store, { error: null });
           const deleted = store.documents().find((d) => d.id === documentId) ?? null;
