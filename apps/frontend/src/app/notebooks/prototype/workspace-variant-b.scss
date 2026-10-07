@@ -24,6 +24,15 @@
   &__crumb-sep {
     color: #8a8a8a;
   }
+  &__restore-count {
+    font-size: 11px;
+    font-weight: 600;
+    color: #0f6cbd;
+    background: #ebf3fc;
+    border-radius: 10px;
+    padding: 0 6px;
+    line-height: 18px;
+  }
   &__icon-btn {
     width: 32px;
     height: 32px;
@@ -99,14 +108,33 @@
     gap: 8px;
     padding: 0 8px 8px;
     grid-template-columns: 240px 1fr 300px;
+    transition: grid-template-columns 0.2s ease;
     @media (max-width: 1100px) {
       grid-template-columns: 200px 1fr 260px;
     }
+    // Documents slid out to the right: the column shrinks to nothing and the
+    // card slides with it; the header's restore button brings it back.
+    &--docs-collapsed {
+      grid-template-columns: 240px 1fr 0px;
+      gap: 8px 0;
+      @media (max-width: 1100px) {
+        grid-template-columns: 200px 1fr 0px;
+      }
+      .vb__docs {
+        transform: translateX(16px);
+        opacity: 0;
+        border-width: 0;
+        pointer-events: none;
+      }
+    }
     @media (max-width: 900px) {
-      grid-template-columns: 1fr;
+      grid-template-columns: 1fr !important;
       // Threads take their height, chat keeps the lion's share, Documents a
       // scrolling strip at the bottom.
       grid-template-rows: auto minmax(240px, 1fr) minmax(160px, 32%);
+      &--docs-collapsed {
+        grid-template-rows: auto minmax(240px, 1fr) 0;
+      }
     }
   }
 
@@ -189,14 +217,28 @@
     &:hover {
       background: #f5f5f5;
     }
+    // The open Thread (verdict: highlight it more): brand left bar, tinted
+    // fill with a tinted border, bold brand-coloured title; the others stay
+    // regular weight so the contrast is in weight as well as colour.
     &--active {
-      background: #ebf3fc;
+      background: #deecf9;
       border-left-color: #0f6cbd;
+      box-shadow: inset 0 0 0 1px #b4d6fa;
+      .vb__thread-title {
+        color: #0c3b5e;
+        font-weight: 700;
+      }
+      .vb__thread-sub {
+        color: #0f548c;
+      }
+      &:hover {
+        background: #d3e5f7;
+      }
     }
   }
   &__thread-title {
     font-size: 14px;
-    font-weight: 600;
+    font-weight: 400;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -251,6 +293,11 @@
       color: #242424;
       min-width: 0;
     }
+  }
+  &__docs {
+    transition:
+      transform 0.2s ease,
+      opacity 0.2s ease;
   }
   &__docs--drag {
     border-color: #0f6cbd;

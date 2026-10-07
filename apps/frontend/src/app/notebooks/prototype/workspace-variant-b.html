@@ -35,9 +35,21 @@
       <proto-icon name="search" [size]="16" /> Search
     </a>
     <proto-add-documents-button [notebookId]="notebookId()" kind="primary" />
+    @if (docsCollapsed()) {
+      <button
+        type="button"
+        class="vb__btn"
+        aria-label="Show Documents"
+        matTooltip="Show Documents"
+        (click)="docsCollapsed.set(false)"
+      >
+        <proto-icon name="panel-right-expand" [size]="16" /> Documents
+        <span class="vb__restore-count">{{ documentCount() }}</span>
+      </button>
+    }
   </header>
 
-  <div class="vb__body">
+  <div class="vb__body" [class.vb__body--docs-collapsed]="docsCollapsed()">
     <nav class="vb__card vb__threads" aria-label="Chat Threads">
       <div class="vb__card-head">
         <h2 class="vb__card-title"><proto-icon name="history" [size]="16" /> Chat Threads</h2>
@@ -102,6 +114,16 @@
       <div class="vb__card-head">
         <h2 class="vb__card-title"><proto-icon name="document" [size]="16" /> Documents</h2>
         <span class="vb__count">{{ readyCount() }}/{{ documentCount() }} ready</span>
+        <span class="vb__spacer"></span>
+        <button
+          type="button"
+          class="vb__icon-btn"
+          aria-label="Hide Documents"
+          matTooltip="Hide Documents"
+          (click)="docsCollapsed.set(true)"
+        >
+          <proto-icon name="panel-right-contract" [size]="18" />
+        </button>
       </div>
       <label class="vb__filter">
         <proto-icon name="search" [size]="14" />

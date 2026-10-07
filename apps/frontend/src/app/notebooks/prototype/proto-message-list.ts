@@ -1,4 +1,4 @@
-import { Component, computed, inject, input } from '@angular/core';
+import { Component, computed, effect, ElementRef, inject, input } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { ChatMessage, ChatStore, Citation } from '../../chat/chat.store';
@@ -301,6 +301,31 @@ export class ProtoMessageList {
     if (!s) return [];
     return s.chunks.map((text, index) => ({ index, segments: protoSegments(text, s.citations) }));
   });
+
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+
+  constructor() {
+    // When an answer starts arriving (first streamed chunk) and again when
+    // the recorded message replaces the preview, scroll the nearest
+    // scrollable ancestor so the answer's first line sits at the top.
+    let seenBlocks = 0;
+    let seenMessages = 0;
+    effect(() => {
+      const blocks = this.blocks().length;
+      const messages = this.store.messages();
+      const lastIsAnswer = messages.at(-1)?.role === 'assistant';
+      const answerStarted = seenBlocks === 0 && blocks > 0;
+      const answerLanded =
+        blocks === 0 && messages.length > seenMessages && lastIsAnswer && seenMessages > 0;
+      seenBlocks = blocks;
+      seenMessages = messages.length;
+      if (!answerStarted && !answerLanded) return;
+      setTimeout(() => {
+        const rows = this.host.nativeElement.querySelectorAll<HTMLElement>('.pml__row');
+        rows[rows.length - 1]?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      });
+    });
+  }
 
   protected author(m: ChatMessage): string {
     return m.role === 'assistant' ? `Copilot · for ${m.askedBy.email}` : m.askedBy.email;

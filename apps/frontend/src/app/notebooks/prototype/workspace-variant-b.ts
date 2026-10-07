@@ -1,4 +1,4 @@
-import { Component } from '@angular/core';
+import { Component, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { ChatThread } from '../../chat/chat.store';
@@ -33,6 +33,8 @@ import { ProtoVariantBase } from './proto-variant-base';
 })
 export class WorkspaceVariantB extends ProtoVariantBase {
   static readonly variantName = 'Threads navigator';
+  /** Documents panel slid out to the right (verdict: collapsible, with a restore control). */
+  protected readonly docsCollapsed = signal(false);
 
   protected open(t: ChatThread): void {
     void this.chat.openThread(this.notebookId(), t.id);

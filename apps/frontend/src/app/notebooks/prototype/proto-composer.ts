@@ -1,4 +1,4 @@
-import { Component, computed, inject, input, signal } from '@angular/core';
+import { Component, computed, effect, ElementRef, inject, input, signal } from '@angular/core';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { ChatStore } from '../../chat/chat.store';
 import { ProtoIcon } from './proto-icon';
@@ -58,10 +58,6 @@ import { ProtoIcon } from './proto-icon';
         border-color 0.12s,
         box-shadow 0.12s;
     }
-    .pc:focus-within {
-      border-color: #0f6cbd;
-      box-shadow: 0 0 0 1px #0f6cbd inset;
-    }
     .pc--disabled {
       background: #f5f5f5;
     }
@@ -120,13 +116,29 @@ export class ProtoComposer {
   protected readonly store = inject(ChatStore);
   protected readonly draft = signal('');
 
-  protected readonly enabled = computed(() => this.threadId() !== null);
+  /** Off while there is no Thread, and while the backend is answering. */
+  protected readonly enabled = computed(() => this.threadId() !== null && !this.store.sending());
+
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+
+  constructor() {
+    // Disabling the textarea drops focus; give it back once the answer is in
+    // so the next question can be typed straight away.
+    let wasSending = false;
+    effect(() => {
+      const sending = this.store.sending();
+      if (wasSending && !sending) {
+        queueMicrotask(() => this.host.nativeElement.querySelector('textarea')?.focus());
+      }
+      wasSending = sending;
+    });
+  }
   protected readonly canSend = computed(
     () => this.enabled() && this.draft().trim().length > 0 && !this.store.sending(),
   );
   protected readonly hint = computed(() => {
     if (!this.enabled()) return 'Open or start a Chat Thread to ask';
-    if (this.store.sending()) return 'Answering…';
+    if (this.store.sending()) return 'Answering… the box reopens when the answer is in';
     return 'Enter to send · Shift+Enter for a new line';
   });
 

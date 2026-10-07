@@ -149,7 +149,8 @@ html.proto-fluent {
     --mdc-checkbox-selected-pressed-icon-color: #0c3b5e;
   }
 
-  *:focus-visible {
+  // The composer draws no ring at all (verdict on variant B).
+  *:not(.pc__input):focus-visible {
     outline: 2px solid #242424;
     outline-offset: 1px;
   }

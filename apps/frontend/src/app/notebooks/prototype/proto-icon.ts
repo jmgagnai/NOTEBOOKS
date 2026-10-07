@@ -26,6 +26,8 @@ const PATHS: Record<string, string> = {
   warning: 'M10 3 18 17H2zM10 8v4M10 14.5v.01',
   'panel-left-contract': 'M3 5h14v10H3zM8 5v10M13 8l-2 2 2 2',
   'panel-left-expand': 'M3 5h14v10H3zM8 5v10M11 8l2 2-2 2',
+  'panel-right-contract': 'M3 5h14v10H3zM12 5v10M7 8l2 2-2 2',
+  'panel-right-expand': 'M3 5h14v10H3zM12 5v10M9 8l-2 2 2 2',
   chat: 'M4 4h12v9H8l-4 3z',
   notebook: 'M5 3h10v14H5zM5 7h2M5 10h2M5 13h2M9 3v14',
   filter: 'M3 5h14l-5.5 6v5l-3-1.5V11z',
