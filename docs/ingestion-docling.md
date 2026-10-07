@@ -74,20 +74,28 @@ never load a model, which is why the original smoke test — a `.md` file —
 passed while every PDF failed; the real-container test now converts a PDF
 too.
 
-### OCR is off unless the PDF needs it
+### OCR is off, and scanned PDFs are refused
 
 Docling's PDF pipeline turns OCR on by default and initialises EasyOCR
 before looking at a single page, even when the PDF's text is already text.
-The converter runs every document with `--no-ocr` first. A PDF whose result
-has no text layer — nothing but `<!-- image -->` placeholders, see
-`looksScanned` — is converted a second time with `--ocr`. Text PDFs, the
-common case, pay nothing for OCR; scanned ones still get read, at the cost
-of one wasted no-OCR pass.
+That is a model load per conversion and, more to the point, memory: with
+OCR on, a 543-page novel was killed at Docker Desktop's 8GB cap after 39
+minutes (`oom` in `docker events`). The converter therefore runs every
+document with `--no-ocr`, always.
 
-The scanned-or-not call is a heuristic on the output, not a probe of the
-input, so it needs no PDF library on the host. It errs on the side of OCR:
-a sparse text PDF misjudged as a scan costs one idle extra pass, a scan
-misjudged as text costs an empty Document that stage 2 then summarises.
+A scanned PDF — pages that are pictures of text — then converts to nothing
+but `<!-- image -->` placeholders. Rather than let that through as an empty
+Document that stage 2 summarises and stage 3 indexes, the converter refuses
+it (`looksScanned` in `docling.ts`): the Version fails with
+`<file> has no text layer (a scanned PDF), and OCR is disabled`. The check
+is a heuristic on the output, not a probe of the input, so it needs no PDF
+library on the host, and its threshold is low so a sparse but genuine text
+PDF is not refused.
+
+Supporting scans is a feature, not a flag: it needs an OCR pass with its own
+memory budget (per-page, or on a machine with more than 8GB for Docker),
+and a decision about which engine. The EasyOCR weights are in the image if
+that day comes.
 
 The `-cpu` variant is deliberate: the CUDA variant is much larger and buys
 nothing without a GPU.
