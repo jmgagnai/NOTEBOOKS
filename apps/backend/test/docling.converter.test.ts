@@ -1,12 +1,14 @@
 import { execFile } from 'node:child_process';
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { beforeAll, describe, expect, it } from 'vitest';
 import {
+  DOCLING_ARTIFACTS_PATH,
   DOCLING_IMAGE,
   createDoclingConverter,
+  looksScanned,
   markdownOutputPath,
 } from '../src/ingestion/docling.js';
 
@@ -23,11 +25,176 @@ async function imageIsPresent(): Promise<boolean> {
 }
 
 /**
- * The one test that runs Docling for real. Everything else stubs the
- * `MarkdownConverter` seam, which means the `docker run` invocation itself —
- * the mount layout, the entrypoint override, and the rename from the CLI's
- * own output filename to the path the caller asked for — would otherwise
- * never be exercised.
+ * A one-page PDF whose text is text (not a scan), built by hand so the test
+ * carries no binary fixture. Offsets in the cross-reference table are
+ * computed, not guessed: Docling's PDF backend reads the file for real.
+ */
+function textPdf(text: string): Buffer {
+  const content = `BT /F1 24 Tf 72 720 Td (${text}) Tj ET`;
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R ' +
+      '/Resources << /Font << /F1 5 0 R >> >> >>',
+    `<< /Length ${content.length} >>\nstream\n${content}\nendstream`,
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+  ];
+  let body = '%PDF-1.4\n';
+  const offsets: number[] = [];
+  objects.forEach((object, index) => {
+    offsets.push(body.length);
+    body += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  });
+  const xref = body.length;
+  body += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (const offset of offsets) body += `${String(offset).padStart(10, '0')} 00000 n \n`;
+  body += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  // Everything above is ASCII, so string length and byte offsets agree.
+  return Buffer.from(body, 'latin1');
+}
+
+/**
+ * A stand-in for the `docker` binary: records each invocation's arguments
+ * and writes `<stem>.md` into the host directory mounted at `/work/out`,
+ * with one text for a `--no-ocr` run and another for an `--ocr` run.
+ *
+ * This is what lets the OCR decision — off first, on again only for a PDF
+ * that came back without text — be tested without the 4.5GB image, and
+ * without a scanned PDF fixture that OCR would read non-deterministically.
+ */
+async function fakeDocker(
+  directory: string,
+  outputs: { noOcr: string; ocr: string },
+): Promise<{ docker: string; invocations: () => Promise<string[][]> }> {
+  const noOcrFile = join(directory, 'no-ocr.md');
+  const ocrFile = join(directory, 'ocr.md');
+  const log = join(directory, 'invocations.log');
+  await writeFile(noOcrFile, outputs.noOcr, 'utf8');
+  await writeFile(ocrFile, outputs.ocr, 'utf8');
+  await writeFile(log, '', 'utf8');
+
+  const script = join(directory, 'docker');
+  await writeFile(
+    script,
+    `#!/bin/sh
+printf '%s\\n' "$@" >> '${log}'
+printf -- '---\\n' >> '${log}'
+out=''
+prev=''
+for a in "$@"; do
+  if [ "$prev" = '--volume' ]; then case "$a" in *:/work/out) out="\${a%:/work/out}";; esac; fi
+  prev="$a"
+done
+last=''
+for a in "$@"; do last="$a"; done
+stem=$(basename "$last")
+stem="\${stem%.*}"
+if printf '%s\\n' "$@" | grep -qx -- '--no-ocr'; then
+  cp '${noOcrFile}' "$out/$stem.md"
+else
+  cp '${ocrFile}' "$out/$stem.md"
+fi
+`,
+    'utf8',
+  );
+  await chmod(script, 0o755);
+
+  return {
+    docker: script,
+    async invocations() {
+      const recorded = await readFile(log, 'utf8');
+      return recorded
+        .split('---\n')
+        .filter((entry) => entry.length > 0)
+        .map((entry) => entry.split('\n').filter((line) => line.length > 0));
+    },
+  };
+}
+
+describe('Docling converter: OCR policy (fake docker)', () => {
+  it('converts a text PDF without OCR, pointing the CLI at the models in the image', async () => {
+    const workDir = await mkdtemp(join(tmpdir(), 'nbk-docling-fake-'));
+    const inputPath = join(workDir, 'report.pdf');
+    const outputPath = markdownOutputPath(workDir);
+    await writeFile(inputPath, textPdf('Quarterly report'));
+    const fake = await fakeDocker(workDir, {
+      noOcr: '# Quarterly report\n\nRevenue grew in every region.\n',
+      ocr: 'should not be produced',
+    });
+
+    await createDoclingConverter({ docker: fake.docker })({ inputPath, outputPath });
+
+    const invocations = await fake.invocations();
+    expect(invocations).toHaveLength(1);
+    const [args] = invocations;
+    // Bare, the CLI cannot find the models the image ships and tries to
+    // download them — which `--network none` turns into a crash on every PDF.
+    expect(args).toContain('--artifacts-path');
+    expect(args[args.indexOf('--artifacts-path') + 1]).toBe(DOCLING_ARTIFACTS_PATH);
+    expect(args).toContain('--network');
+    expect(args).toContain('--no-ocr');
+    expect(args).not.toContain('--ocr');
+    expect(await readFile(outputPath, 'utf8')).toContain('Revenue grew in every region.');
+  });
+
+  it('converts a PDF a second time with OCR when it came back without a text layer', async () => {
+    const workDir = await mkdtemp(join(tmpdir(), 'nbk-docling-fake-'));
+    const inputPath = join(workDir, 'scan.pdf');
+    const outputPath = markdownOutputPath(workDir);
+    await writeFile(inputPath, textPdf('irrelevant'));
+    const fake = await fakeDocker(workDir, {
+      noOcr: '<!-- image -->\n\n<!-- image -->\n\n<!-- image -->\n',
+      ocr: '# Scanned minutes\n\nThe meeting opened at nine.\n',
+    });
+
+    await createDoclingConverter({ docker: fake.docker })({ inputPath, outputPath });
+
+    const invocations = await fake.invocations();
+    expect(invocations).toHaveLength(2);
+    expect(invocations[0]).toContain('--no-ocr');
+    expect(invocations[1]).toContain('--ocr');
+    expect(invocations[1]).not.toContain('--no-ocr');
+    expect(await readFile(outputPath, 'utf8')).toContain('The meeting opened at nine.');
+  });
+
+  it('never OCRs anything but a PDF, however little text it has', async () => {
+    const workDir = await mkdtemp(join(tmpdir(), 'nbk-docling-fake-'));
+    const inputPath = join(workDir, 'empty.md');
+    const outputPath = markdownOutputPath(workDir);
+    await writeFile(inputPath, '', 'utf8');
+    const fake = await fakeDocker(workDir, { noOcr: '', ocr: 'should not be produced' });
+
+    await createDoclingConverter({ docker: fake.docker })({ inputPath, outputPath });
+
+    expect(await fake.invocations()).toHaveLength(1);
+    expect(await readFile(outputPath, 'utf8')).toBe('');
+  });
+});
+
+describe('looksScanned', () => {
+  it('is true for Markdown that is only picture placeholders', () => {
+    expect(looksScanned('<!-- image -->\n\n<!-- image -->\n')).toBe(true);
+    expect(looksScanned('')).toBe(true);
+    expect(looksScanned('\n\n---\n\n')).toBe(true);
+  });
+
+  it('is false once there is a sentence of real text, in any script', () => {
+    expect(looksScanned('# Chapter One\n\nIt was a dark and stormy night.\n')).toBe(false);
+    expect(looksScanned('<!-- image -->\n\nLe commissaire regarda la fenêtre un instant.\n')).toBe(
+      false,
+    );
+    expect(looksScanned('第一章 夜は暗く、嵐が吹き荒れていた。その中で彼は立ち上がった。')).toBe(
+      false,
+    );
+  });
+});
+
+/**
+ * The tests that run Docling for real. Everything else stubs the
+ * `MarkdownConverter` seam or the `docker` binary, which means the actual
+ * `docker run` invocation — the mount layout, the entrypoint override, the
+ * artifacts path, the rename from the CLI's own output filename to the path
+ * the caller asked for — would otherwise never be exercised.
  *
  * Skipped unless the image is already pulled: it is a multi-gigabyte
  * download, so `pnpm test` must not drag it in on a fresh clone. See
@@ -62,6 +229,23 @@ describe('Docling converter (real container)', () => {
     const markdown = await readFile(outputPath, 'utf8');
     expect(markdown).toContain('Team Handbook');
     expect(markdown).toContain('Onboarding starts on day one');
+  }, 600_000);
+
+  it('converts a real PDF through the PDF pipeline', async () => {
+    if (!available) return;
+
+    // The Markdown test above never touches the PDF pipeline, which is the
+    // one that loads the layout and OCR models — and the one that failed on
+    // every upload when the CLI could not find them (it tried to download
+    // them with the network off). A PDF, however small, goes through it.
+    const workDir = await mkdtemp(join(tmpdir(), 'nbk6-docling-pdf-'));
+    const inputPath = join(workDir, 'memo.pdf');
+    const outputPath = markdownOutputPath(workDir);
+    await writeFile(inputPath, textPdf('Onboarding starts on day one'));
+
+    await createDoclingConverter()({ inputPath, outputPath });
+
+    expect(await readFile(outputPath, 'utf8')).toContain('Onboarding starts on day one');
   }, 600_000);
 
   it('fails loudly when Docling converts nothing but still exits 0', async () => {

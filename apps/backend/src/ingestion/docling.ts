@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
-import { access, rename } from 'node:fs/promises';
-import { basename, dirname, join, parse } from 'node:path';
+import { access, readFile, rename, rm } from 'node:fs/promises';
+import { basename, dirname, extname, join, parse } from 'node:path';
 
 async function fileExists(path: string): Promise<boolean> {
   try {
@@ -43,18 +43,60 @@ export type MarkdownConverter = (request: MarkdownConversionRequest) => Promise<
  */
 export const DOCLING_IMAGE = 'ghcr.io/docling-project/docling-serve-cpu:v1.1.0';
 
+/**
+ * Where the pinned image keeps its pre-downloaded models (layout, table
+ * structure, figure classifier, and the EasyOCR weights).
+ *
+ * The image advertises this directory only through `DOCLING_SERVE_ARTIFACTS_PATH`,
+ * which the HTTP server reads and the `docling` CLI does not. Run bare, the
+ * CLI looks in Docling's default cache, finds nothing, and tries to download
+ * — which `--network none` turns into `Name or service not known` ten
+ * seconds into every PDF. So the path is passed explicitly on every run.
+ * It is tied to the image tag above: bump one, re-check the other.
+ */
+export const DOCLING_ARTIFACTS_PATH = '/opt/app-root/src/.cache/docling/models';
+
 export interface DoclingOptions {
   /** Container image to run. Defaults to `DOCLING_IMAGE`, overridable by `DOCLING_IMAGE` in the env. */
   image?: string;
   /** The `docker` binary. Defaults to `DOCKER_BIN` or `docker`. */
   docker?: string;
-  /** Hard cap on one conversion, in ms. Defaults to `DOCLING_TIMEOUT_MS` or 10 minutes. */
+  /** Hard cap on one conversion, in ms. Defaults to `DOCLING_TIMEOUT_MS` or 60 minutes. */
   timeoutMs?: number;
 }
 
 /** Mount points inside the container. Nothing outside them is visible to it. */
 const CONTAINER_INPUT_DIR = '/work/in';
 const CONTAINER_OUTPUT_DIR = '/work/out';
+
+/**
+ * One conversion's hard cap. Sixty minutes rather than Docling's own idea of
+ * "a document": the layout model runs on every page on CPU, and a 540-page
+ * novel took the pinned image well over ten minutes on a four-core Docker
+ * Desktop. A cap that kills the largest legitimate upload is a bug report
+ * that reads as "conversion hangs"; a cap this generous still stops a
+ * genuinely wedged container from holding the one-at-a-time worker forever.
+ */
+const DEFAULT_TIMEOUT_MS = 60 * 60_000;
+
+/**
+ * Whether Markdown that Docling produced *without OCR* looks like it came from
+ * a scanned PDF — pages that are pictures of text rather than text.
+ *
+ * Without OCR, Docling's layout model still runs and still emits an
+ * `<!-- image -->` placeholder per picture it finds; on a scanned page that
+ * is all it emits. So "scanned" here means: once the placeholders and
+ * Markdown punctuation are gone, essentially no letters or digits remain.
+ * The threshold is low on purpose. Misjudging a sparse text PDF as scanned
+ * costs one extra (idle) OCR pass; misjudging a scanned PDF as text costs an
+ * empty Document that stage 2 then summarises and stage 3 indexes.
+ */
+export function looksScanned(markdown: string): boolean {
+  const textual = markdown.replace(/<!--[\s\S]*?-->/g, '').replace(/[^\p{L}\p{N}]/gu, '');
+  return textual.length < MIN_TEXT_CHARS_FOR_TEXT_PDF;
+}
+
+const MIN_TEXT_CHARS_FOR_TEXT_PDF = 20;
 
 /**
  * Builds the real Docling-backed converter: a `docker run --rm` per
@@ -68,6 +110,14 @@ const CONTAINER_OUTPUT_DIR = '/work/out';
  * toolchain to install on the host — which mattered here, since Docling's
  * `docling-parse` dependency has no macOS x86_64 wheels past 4.7.2.
  *
+ * Why OCR is off unless the document needs it: Docling's PDF pipeline turns
+ * OCR on by default and initialises EasyOCR (a model load that costs seconds
+ * and memory) before looking at a single page, even for a PDF whose text is
+ * already text. So every document is first converted with `--no-ocr`, and a
+ * PDF that comes back with no text layer (see `looksScanned`) is converted a
+ * second time with OCR on. Text PDFs — the common case — pay nothing for
+ * OCR, and scanned ones still get read.
+ *
  * Why an output *file* and not stdout: Docling and its transitive Python
  * dependencies write warnings and progress to stdout, which would corrupt
  * the Markdown; and a file still holds the result if this process dies after
@@ -77,7 +127,8 @@ const CONTAINER_OUTPUT_DIR = '/work/out';
 export function createDoclingConverter(options: DoclingOptions = {}): MarkdownConverter {
   const image = options.image ?? process.env.DOCLING_IMAGE ?? DOCLING_IMAGE;
   const docker = options.docker ?? process.env.DOCKER_BIN ?? 'docker';
-  const timeoutMs = options.timeoutMs ?? Number(process.env.DOCLING_TIMEOUT_MS ?? 600_000);
+  const timeoutMs =
+    options.timeoutMs ?? Number(process.env.DOCLING_TIMEOUT_MS ?? DEFAULT_TIMEOUT_MS);
 
   return async function convertWithDocling({
     inputPath,
@@ -92,93 +143,113 @@ export function createDoclingConverter(options: DoclingOptions = {}): MarkdownCo
     // for. Keeping `(inputPath, outputPath)` as the seam means the Docker
     // details stay inside this function and the stub in tests stays trivial.
     const producedName = `${parse(inputName).name}.md`;
-
-    const args = [
-      'run',
-      '--rm',
-      // No network: conversion is pure local computation, and the models are
-      // baked into the image. This also makes a malformed document unable to
-      // reach anything.
-      '--network',
-      'none',
-      // The input is mounted read-only and on its own, so the container can
-      // neither modify the file the rest of the job still relies on nor see
-      // any other document's scratch space.
-      '--volume',
-      `${inputPath}:${CONTAINER_INPUT_DIR}/${inputName}:ro`,
-      '--volume',
-      `${outputDir}:${CONTAINER_OUTPUT_DIR}`,
-      // The image's entrypoint starts the docling-serve HTTP server; this
-      // runs the CLI that ships in the same image instead and exits.
-      '--entrypoint',
-      'docling',
-      image,
-      '--to',
-      'md',
-      '--output',
-      CONTAINER_OUTPUT_DIR,
-      `${CONTAINER_INPUT_DIR}/${inputName}`,
-    ];
-
-    const diagnostics = await new Promise<string>((resolvePromise, reject) => {
-      const child = spawn(docker, args, { stdio: ['ignore', 'pipe', 'pipe'] });
-
-      // Captured only for error messages — never parsed as the conversion
-      // result. Bounded so a chatty dependency can't make this process grow
-      // without limit.
-      const captured: string[] = [];
-      let diagnosticsBytes = 0;
-      const capture = (chunk: Buffer): void => {
-        if (diagnosticsBytes >= 8_000) return;
-        diagnosticsBytes += chunk.length;
-        captured.push(chunk.toString('utf8'));
-      };
-      child.stdout?.on('data', capture);
-      child.stderr?.on('data', capture);
-
-      const timer = setTimeout(() => {
-        child.kill('SIGKILL');
-        reject(new Error(`Docling timed out after ${timeoutMs}ms converting ${inputName}.`));
-      }, timeoutMs);
-
-      child.on('error', (err) => {
-        clearTimeout(timer);
-        reject(
-          new Error(
-            `Could not start Docling via ${docker}: ${err.message}. ` +
-              'See docs/ingestion-docling.md for the setup step.',
-          ),
-        );
-      });
-
-      child.on('close', (code, signal) => {
-        clearTimeout(timer);
-        const output = captured.join('').trim();
-        if (code === 0) {
-          resolvePromise(output);
-          return;
-        }
-        reject(
-          new Error(
-            `Docling exited with ${signal ? `signal ${signal}` : `code ${code}`}: ${output}`,
-          ),
-        );
-      });
-    });
-
-    // A zero exit code is NOT evidence of success: the `docling` CLI logs
-    // "failed to convert", writes no output file, and still exits 0 (verified
-    // against the pinned image — see test/docling.converter.test.ts). The
-    // produced file is therefore the only trustworthy signal, and its absence
-    // has to be turned into a loud failure here. Otherwise a document that
-    // Docling choked on would reach the job handler as a confusing ENOENT,
-    // or — worse, if an output file ever pre-existed — as a silent success
-    // carrying the wrong content.
     const produced = join(outputDir, producedName);
-    if (!(await fileExists(produced))) {
-      throw new Error(
-        `Docling exited 0 but produced no Markdown for ${inputName}. Diagnostics: ${diagnostics || '(none)'}`,
-      );
+
+    async function runDocling(ocr: 'ocr' | 'no-ocr'): Promise<void> {
+      const args = [
+        'run',
+        '--rm',
+        // No network: conversion is pure local computation, and every model
+        // it needs is in the image (at DOCLING_ARTIFACTS_PATH). This also
+        // makes a malformed document unable to reach anything.
+        '--network',
+        'none',
+        // The input is mounted read-only and on its own, so the container can
+        // neither modify the file the rest of the job still relies on nor see
+        // any other document's scratch space.
+        '--volume',
+        `${inputPath}:${CONTAINER_INPUT_DIR}/${inputName}:ro`,
+        '--volume',
+        `${outputDir}:${CONTAINER_OUTPUT_DIR}`,
+        // The image's entrypoint starts the docling-serve HTTP server; this
+        // runs the CLI that ships in the same image instead and exits.
+        '--entrypoint',
+        'docling',
+        image,
+        '--artifacts-path',
+        DOCLING_ARTIFACTS_PATH,
+        `--${ocr}`,
+        '--to',
+        'md',
+        '--output',
+        CONTAINER_OUTPUT_DIR,
+        `${CONTAINER_INPUT_DIR}/${inputName}`,
+      ];
+
+      const diagnostics = await new Promise<string>((resolvePromise, reject) => {
+        const child = spawn(docker, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+
+        // Captured only for error messages — never parsed as the conversion
+        // result. Bounded so a chatty dependency can't make this process grow
+        // without limit.
+        const captured: string[] = [];
+        let diagnosticsBytes = 0;
+        const capture = (chunk: Buffer): void => {
+          if (diagnosticsBytes >= 8_000) return;
+          diagnosticsBytes += chunk.length;
+          captured.push(chunk.toString('utf8'));
+        };
+        child.stdout?.on('data', capture);
+        child.stderr?.on('data', capture);
+
+        const timer = setTimeout(() => {
+          child.kill('SIGKILL');
+          reject(new Error(`Docling timed out after ${timeoutMs}ms converting ${inputName}.`));
+        }, timeoutMs);
+
+        child.on('error', (err) => {
+          clearTimeout(timer);
+          reject(
+            new Error(
+              `Could not start Docling via ${docker}: ${err.message}. ` +
+                'See docs/ingestion-docling.md for the setup step.',
+            ),
+          );
+        });
+
+        child.on('close', (code, signal) => {
+          clearTimeout(timer);
+          const output = captured.join('').trim();
+          if (code === 0) {
+            resolvePromise(output);
+            return;
+          }
+          reject(
+            new Error(
+              `Docling exited with ${signal ? `signal ${signal}` : `code ${code}`}: ${output}`,
+            ),
+          );
+        });
+      });
+
+      // A zero exit code is NOT evidence of success: the `docling` CLI logs
+      // "failed to convert", writes no output file, and still exits 0 (verified
+      // against the pinned image — see test/docling.converter.test.ts). The
+      // produced file is therefore the only trustworthy signal, and its absence
+      // has to be turned into a loud failure here. Otherwise a document that
+      // Docling choked on would reach the job handler as a confusing ENOENT,
+      // or — worse, if an output file ever pre-existed — as a silent success
+      // carrying the wrong content.
+      if (!(await fileExists(produced))) {
+        throw new Error(
+          `Docling exited 0 but produced no Markdown for ${inputName}. Diagnostics: ${diagnostics || '(none)'}`,
+        );
+      }
+    }
+
+    await runDocling('no-ocr');
+
+    // Only a PDF can be a scan. Everything else this pipeline accepts (Office
+    // formats, Markdown, CSV, plain text) carries its text as text, and OCR
+    // would have nothing to add.
+    if (
+      extname(inputName).toLowerCase() === '.pdf' &&
+      looksScanned(await readFile(produced, 'utf8'))
+    ) {
+      // Removed first so a stale no-OCR result can never pass the
+      // produced-file check on the OCR pass's behalf.
+      await rm(produced, { force: true });
+      await runDocling('ocr');
     }
 
     if (produced !== outputPath) {

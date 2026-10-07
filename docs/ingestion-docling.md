@@ -29,9 +29,14 @@ docker run --rm --network none \
   --volume /tmp/docling-out:/work/out \
   --entrypoint docling \
   ghcr.io/docling-project/docling-serve-cpu:v1.1.0 \
-  --to md --output /work/out /work/in/README.md
+  --artifacts-path /opt/app-root/src/.cache/docling/models \
+  --no-ocr --to md --output /work/out /work/in/README.md
 cat /tmp/docling-out/README.md
 ```
+
+A Markdown file never loads a model, so to verify the PDF pipeline too, run
+the same command on any small PDF. Without `--artifacts-path` that is the
+run that fails (see below).
 
 ### Why that image
 
@@ -48,6 +53,41 @@ exits. That is preferable to a repo-built `python:slim + pip install docling`
 image: no build step for anyone cloning the repo, no dependency resolution to
 go stale, and the models are already baked in — which is also why the
 container can run with `--network none`.
+
+### The CLI has to be told where the models are
+
+The image's models (layout, table structure, figure classifier, EasyOCR
+weights) live at `/opt/app-root/src/.cache/docling/models`, and the image
+advertises that directory only through `DOCLING_SERVE_ARTIFACTS_PATH` — an
+env var the HTTP server reads and the `docling` CLI ignores. Run bare, the
+CLI looks in Docling's default cache, finds nothing, and tries to download;
+with the network off, every PDF then dies about ten seconds in with
+
+```
+urllib.error.URLError: <urlopen error [Errno -2] Name or service not known>
+```
+
+The converter therefore passes `--artifacts-path` with that directory on
+every run (`DOCLING_ARTIFACTS_PATH` in `docling.ts`). The path is tied to the
+image tag: bump one, re-check the other. Markdown, CSV and plain-text inputs
+never load a model, which is why the original smoke test — a `.md` file —
+passed while every PDF failed; the real-container test now converts a PDF
+too.
+
+### OCR is off unless the PDF needs it
+
+Docling's PDF pipeline turns OCR on by default and initialises EasyOCR
+before looking at a single page, even when the PDF's text is already text.
+The converter runs every document with `--no-ocr` first. A PDF whose result
+has no text layer — nothing but `<!-- image -->` placeholders, see
+`looksScanned` — is converted a second time with `--ocr`. Text PDFs, the
+common case, pay nothing for OCR; scanned ones still get read, at the cost
+of one wasted no-OCR pass.
+
+The scanned-or-not call is a heuristic on the output, not a probe of the
+input, so it needs no PDF library on the host. It errs on the side of OCR:
+a sparse text PDF misjudged as a scan costs one idle extra pass, a scan
+misjudged as text costs an empty Document that stage 2 then summarises.
 
 The `-cpu` variant is deliberate: the CUDA variant is much larger and buys
 nothing without a GPU.
@@ -120,7 +160,13 @@ validation tweak.
 | -------------------- | -------------------------------------------------- | ---------------------------- |
 | `DOCLING_IMAGE`      | `ghcr.io/docling-project/docling-serve-cpu:v1.1.0` | Image to run                 |
 | `DOCKER_BIN`         | `docker`                                           | The `docker` binary          |
-| `DOCLING_TIMEOUT_MS` | `600000`                                           | Hard cap on one conversion   |
+| `DOCLING_TIMEOUT_MS` | `3600000`                                          | Hard cap on one conversion   |
+
+The timeout is an hour because the layout model runs on every page on CPU:
+a 540-page novel takes the pinned image well over ten minutes on a
+four-core Docker Desktop, and conversions run one at a time. Expect a batch
+of book-length PDFs to take hours; a Document is "converting" for as long
+as its container runs, and the ones behind it are "queued".
 
 ## Tests
 
@@ -131,10 +177,12 @@ function) is the seam, and most tests stub it:
   handler against real Postgres and real MinIO, conversion stubbed.
 - `apps/backend/test/job-queue.test.ts` — pg_boss wiring, retry, restart.
 
-One test does run the real container:
+`apps/backend/test/docling.converter.test.ts` covers the converter itself,
+in two halves:
 
-- `apps/backend/test/docling.converter.test.ts` — proves the `docker run`
-  invocation and the output-file contract actually work.
-
-It is skipped unless the image is already present locally, so `pnpm test`
-is green on a machine that hasn't pulled it. Pull the image to include it.
+- The OCR policy and the `docker run` argument list, against a fake `docker`
+  script that records its arguments and writes a canned result. Always runs.
+- The real container: a Markdown file, a hand-built one-page PDF (so the PDF
+  pipeline and its model loading are exercised), and a corrupt PDF. Skipped
+  unless the image is already present locally, so `pnpm test` is green on a
+  machine that hasn't pulled it. Pull the image to include it.

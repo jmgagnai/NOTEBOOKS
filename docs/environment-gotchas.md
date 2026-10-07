@@ -29,6 +29,22 @@ isolation. Sequential takes ~150s.
 Even sequentially, Testcontainers' Reaper sidecar occasionally fails to connect
 under Docker pressure. It is a flake, not a failure: re-run the file.
 
+## The Docling CLI does not find the models the image ships
+
+Every PDF failing about ten seconds in with `Name or service not known`,
+while Markdown converts fine, is the `docling` CLI trying to download EasyOCR
+weights that are already in the image. The image points at them with
+`DOCLING_SERVE_ARTIFACTS_PATH`, which only docling-serve reads. The converter
+passes `--artifacts-path` for it; see
+[ingestion-docling.md](./ingestion-docling.md#the-cli-has-to-be-told-where-the-models-are).
+If you run the image by hand, pass it too.
+
+A related symptom, now fixed, hid that one for a while: a stage's failure
+message carrying a whole Python traceback was too big for the app-event bus,
+the refusal rolled back the transaction recording the failure, and the
+Version sat at "converting" with no error anywhere but the pg_boss job table.
+Events now carry a headline; the full text is on `ingestion_error`.
+
 ## Local Docling conversion is not an option on macOS x86_64
 
 `docling-parse` stopped publishing macOS x86_64 wheels after 4.7.2, and building

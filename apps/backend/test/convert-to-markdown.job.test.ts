@@ -262,6 +262,54 @@ describe('convert-to-Markdown job', () => {
     expect(version.ingestion_error).toContain('transient docling crash');
   });
 
+  it('records a failure whose message is too long for an event, with the full text on the row', async () => {
+    const seeded = await seedUploadedVersion('verbose.txt', 'noisy converter');
+    // Stage 1 attaches up to 8000 bytes of Docling's own output to its error.
+    // Before NBK-14's follow-up this blew the event bus's payload cap inside
+    // the transaction recording the failure, so the Version silently stayed
+    // at "converting" and the real error was replaced by the bus's complaint.
+    const traceback = `Docling exited with code 1: ${'Traceback line\n'.repeat(600)}`;
+    expect(traceback.length).toBeGreaterThan(7000);
+
+    await expect(
+      runConvertToMarkdownJob(
+        {
+          pool,
+          s3,
+          documentsBucket: DOCUMENTS_BUCKET,
+          tempDir: tempRoot,
+          convertToMarkdown: async () => {
+            throw new Error(traceback);
+          },
+        },
+        {
+          payload: { documentId: seeded.documentId, versionId: seeded.versionId },
+          willRetry: false,
+        },
+      ),
+    ).rejects.toThrow('Docling exited with code 1');
+
+    const version = await readVersion(seeded.versionId);
+    expect(version.ingestion_status).toBe('failed');
+    expect(version.ingestion_error).toBe(traceback);
+
+    const events = await waitForEvents((all) =>
+      all.some(
+        (e) =>
+          (e.data as { versionId?: string }).versionId === seeded.versionId &&
+          (e.data as { status?: string }).status === 'failed',
+      ),
+    );
+    const failure = events.find(
+      (e) =>
+        (e.data as { versionId?: string }).versionId === seeded.versionId &&
+        (e.data as { status?: string }).status === 'failed',
+    )!;
+    const announced = (failure.data as { error: string }).error;
+    expect(announced.startsWith('Docling exited with code 1')).toBe(true);
+    expect(announced.length).toBeLessThan(traceback.length);
+  });
+
   // Per ADR-0004 and GLOSSARY.md, Ingestion is "a chain of independently
   // retryable Stages, each one enqueuing the next on success". Stage 2
   // (NBK-7) is the first stage to be on the receiving end of that, so the
