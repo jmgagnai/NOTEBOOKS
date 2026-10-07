@@ -1,5 +1,5 @@
 import { convertToParamMap, ActivatedRoute } from '@angular/router';
-import { fireEvent, render, screen } from '@testing-library/angular';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/angular';
 import { Subject } from 'rxjs';
 import { NotebookDetailPage } from './notebook-detail-page';
 import { NotebooksService } from '../api/services/notebooks.service';
@@ -154,11 +154,317 @@ describe('NotebookDetailPage', () => {
     await screen.findByText('No Documents yet.');
 
     const file = new File(['# hi'], 'notes.md', { type: 'text/markdown' });
-    const input = screen.getByLabelText('Upload a Document') as HTMLInputElement;
+    const input = screen.getByLabelText('Upload Documents') as HTMLInputElement;
     fireEvent.change(input, { target: { files: [file] } });
 
-    expect(await screen.findByText('notes.md')).toBeTruthy();
+    // The Document lands on its card, and — since NBK-16 — a single file goes
+    // through the same batch panel as a multi-select, so the filename shows
+    // there too.
+    const cards = await screen.findByRole('list', { name: 'Documents' });
+    expect(await within(cards).findByText('notes.md')).toBeTruthy();
     expect(uploadDocument).toHaveBeenCalledWith(NOTEBOOK_ID, file);
+    expect(await screen.findByText('1 uploaded, 0 skipped, 0 failed')).toBeTruthy();
+  });
+
+  // NBK-16: several files picked at once upload as one batch — one request per
+  // file to the existing single-file route, at most 3 in flight, with a
+  // per-file progress panel and a summary. The batch lives in the
+  // root-provided store, but the only things asserted here are what a user
+  // sees and the calls the mocked upload client receives.
+  describe('NBK-16: batch upload', () => {
+    function documentFor(filename: string, overrides: Partial<Record<string, unknown>> = {}) {
+      return {
+        id: `doc-${filename}`,
+        notebookId: NOTEBOOK_ID,
+        filename,
+        status: 'queued',
+        abstract: null,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        latestVersion: {
+          id: `v-${filename}-1`,
+          versionNumber: 1,
+          mimeType: 'text/plain',
+          sizeBytes: 1,
+          createdAt: '2026-01-01T00:00:00.000Z',
+        },
+        ...overrides,
+      };
+    }
+
+    /** A promise the test resolves or rejects by hand, to hold a request "in flight". */
+    function deferred<T>() {
+      let resolve!: (value: T) => void;
+      let reject!: (reason: unknown) => void;
+      const promise = new Promise<T>((res, rej) => {
+        resolve = res;
+        reject = rej;
+      });
+      return { promise, resolve, reject };
+    }
+
+    async function renderWithUpload(
+      uploadDocument: ReturnType<typeof vi.fn>,
+      existing: Record<string, unknown>[] = [],
+    ) {
+      const listNotebooks = vi.fn().mockResolvedValue([]);
+      const listDocuments = vi.fn().mockResolvedValue(existing);
+      await render(NotebookDetailPage, {
+        providers: [
+          activatedRouteFor(NOTEBOOK_ID),
+          { provide: NotebooksService, useValue: { listNotebooks } },
+          { provide: DocumentsService, useValue: { listDocuments } },
+          chatServiceStub(),
+          { provide: DocumentTransferService, useValue: { uploadDocument } },
+          appEventsStub().provider,
+        ],
+      });
+      if (existing.length === 0) await screen.findByText('No Documents yet.');
+      else await screen.findByText(String(existing[0]['filename']));
+    }
+
+    function pick(files: File[]) {
+      const input = screen.getByLabelText('Upload Documents') as HTMLInputElement;
+      fireEvent.change(input, { target: { files } });
+      return input;
+    }
+
+    function panelRow(filename: string) {
+      const panel = screen.getByRole('list', { name: 'Upload progress' });
+      return within(panel)
+        .getAllByRole('listitem')
+        .find((row) => within(row).queryByText(filename) !== null)!;
+    }
+
+    it('accepts several files at once and sends one request per file', async () => {
+      const uploadDocument = vi
+        .fn()
+        .mockImplementation((_notebookId: string, file: File) =>
+          Promise.resolve(documentFor(file.name)),
+        );
+      await renderWithUpload(uploadDocument);
+
+      const input = pick([new File(['a'], 'a.txt'), new File(['b'], 'b.md')]);
+      expect(input.multiple).toBe(true);
+      // The picker only offers what the backend accepts — the one list the
+      // frontend keeps for it.
+      expect(input.accept).toBe('.txt,.md,.markdown,.docx,.xlsx,.csv,.pdf');
+
+      const cards = await screen.findByRole('list', { name: 'Documents' });
+      expect(await within(cards).findByText('a.txt')).toBeTruthy();
+      expect(await within(cards).findByText('b.md')).toBeTruthy();
+      expect(uploadDocument).toHaveBeenCalledTimes(2);
+      expect(uploadDocument.mock.calls.map(([, file]) => (file as File).name)).toEqual([
+        'a.txt',
+        'b.md',
+      ]);
+    });
+
+    it('keeps at most 3 requests in flight, taking files in selection order', async () => {
+      const inFlight: ReturnType<typeof deferred<Record<string, unknown>>>[] = [];
+      const uploadDocument = vi.fn().mockImplementation(() => {
+        const request = deferred<Record<string, unknown>>();
+        inFlight.push(request);
+        return request.promise;
+      });
+      await renderWithUpload(uploadDocument);
+
+      const files = ['1.txt', '2.txt', '3.txt', '4.txt', '5.txt'].map(
+        (name) => new File(['x'], name),
+      );
+      pick(files);
+
+      const sentNames = () => uploadDocument.mock.calls.map(([, file]) => (file as File).name);
+      await waitFor(() => expect(uploadDocument).toHaveBeenCalledTimes(3));
+      expect(sentNames()).toEqual(['1.txt', '2.txt', '3.txt']);
+
+      // Nothing more goes out until a slot frees up...
+      await screen.findByText('5.txt');
+      expect(uploadDocument).toHaveBeenCalledTimes(3);
+
+      // ...and when one does, the next file in selection order takes it.
+      inFlight[1].resolve(documentFor('2.txt'));
+      await waitFor(() => expect(uploadDocument).toHaveBeenCalledTimes(4));
+      expect(sentNames()[3]).toBe('4.txt');
+
+      inFlight[0].resolve(documentFor('1.txt'));
+      await waitFor(() => expect(uploadDocument).toHaveBeenCalledTimes(5));
+      expect(sentNames()[4]).toBe('5.txt');
+
+      for (const [index, request] of inFlight.slice(2).entries()) {
+        request.resolve(documentFor(`${index + 3}.txt`));
+      }
+      expect(await screen.findByText('5 uploaded, 0 skipped, 0 failed')).toBeTruthy();
+      expect(uploadDocument).toHaveBeenCalledTimes(5);
+    });
+
+    it('shows each file moving from waiting to uploading to uploaded', async () => {
+      const inFlight: ReturnType<typeof deferred<Record<string, unknown>>>[] = [];
+      const uploadDocument = vi.fn().mockImplementation(() => {
+        const request = deferred<Record<string, unknown>>();
+        inFlight.push(request);
+        return request.promise;
+      });
+      await renderWithUpload(uploadDocument);
+
+      pick(['1.txt', '2.txt', '3.txt', '4.txt'].map((name) => new File(['x'], name)));
+
+      await screen.findByText('4.txt');
+      expect(within(panelRow('1.txt')).getByText('uploading')).toBeTruthy();
+      expect(within(panelRow('4.txt')).getByText('waiting')).toBeTruthy();
+      // No summary while files are still moving.
+      expect(screen.queryByText(/uploaded, .* skipped, .* failed/)).toBeNull();
+
+      inFlight[0].resolve(documentFor('1.txt'));
+      expect(await within(panelRow('1.txt')).findByText('uploaded')).toBeTruthy();
+      expect(await within(panelRow('4.txt')).findByText('uploading')).toBeTruthy();
+    });
+
+    // Filtering happens in the browser before anything is sent, so a stray
+    // file never costs a request and never blocks the others.
+    it('skips unsupported files with a reason, and explains .xls specifically', async () => {
+      const uploadDocument = vi
+        .fn()
+        .mockImplementation((_notebookId: string, file: File) =>
+          Promise.resolve(documentFor(file.name)),
+        );
+      await renderWithUpload(uploadDocument);
+
+      pick([
+        new File(['x'], 'photo.png'),
+        new File(['x'], 'legacy.xls'),
+        new File(['x'], 'fine.pdf'),
+      ]);
+
+      expect(await screen.findByText('1 uploaded, 2 skipped, 0 failed')).toBeTruthy();
+      const photo = panelRow('photo.png');
+      expect(within(photo).getByText('skipped')).toBeTruthy();
+      expect(
+        within(photo).getByText(
+          'Unsupported file type. Accepted types: text, Markdown, DOCX, Excel (.xlsx), CSV, and PDF.',
+        ),
+      ).toBeTruthy();
+      const legacy = panelRow('legacy.xls');
+      expect(within(legacy).getByText('skipped')).toBeTruthy();
+      expect(within(legacy).getByText(/Re-save it as \.xlsx/)).toBeTruthy();
+      expect(uploadDocument).toHaveBeenCalledTimes(1);
+      expect((uploadDocument.mock.calls[0][1] as File).name).toBe('fine.pdf');
+    });
+
+    it('skips a file over 50 MiB before sending anything, naming the limit', async () => {
+      const uploadDocument = vi
+        .fn()
+        .mockImplementation((_notebookId: string, file: File) =>
+          Promise.resolve(documentFor(file.name)),
+        );
+      await renderWithUpload(uploadDocument);
+
+      const huge = new File([''], 'huge.pdf');
+      Object.defineProperty(huge, 'size', { value: 50 * 1024 * 1024 + 1 });
+      const atLimit = new File([''], 'at-limit.pdf');
+      Object.defineProperty(atLimit, 'size', { value: 50 * 1024 * 1024 });
+      pick([huge, atLimit]);
+
+      expect(await screen.findByText('1 uploaded, 1 skipped, 0 failed')).toBeTruthy();
+      expect(within(panelRow('huge.pdf')).getByText(/50 MiB/)).toBeTruthy();
+      expect(within(panelRow('at-limit.pdf')).getByText('uploaded')).toBeTruthy();
+      expect(uploadDocument).toHaveBeenCalledTimes(1);
+      expect((uploadDocument.mock.calls[0][1] as File).name).toBe('at-limit.pdf');
+    });
+
+    it('skips a later file whose name repeats an earlier one in the same selection', async () => {
+      const uploadDocument = vi
+        .fn()
+        .mockImplementation((_notebookId: string, file: File) =>
+          Promise.resolve(documentFor(file.name)),
+        );
+      await renderWithUpload(uploadDocument);
+
+      const first = new File(['first'], 'notes.md');
+      const second = new File(['second'], 'notes.md');
+      pick([first, second]);
+
+      expect(await screen.findByText('1 uploaded, 1 skipped, 0 failed')).toBeTruthy();
+      const rows = within(screen.getByRole('list', { name: 'Upload progress' })).getAllByRole(
+        'listitem',
+      );
+      expect(within(rows[0]).getByText('uploaded')).toBeTruthy();
+      expect(within(rows[1]).getByText('skipped')).toBeTruthy();
+      expect(within(rows[1]).getByText(/duplicate/i)).toBeTruthy();
+      // The first one wins.
+      expect(uploadDocument).toHaveBeenCalledTimes(1);
+      expect(uploadDocument).toHaveBeenCalledWith(NOTEBOOK_ID, first);
+    });
+
+    it('refuses a selection of more than 100 uploadable files, naming the cap and the count', async () => {
+      const uploadDocument = vi.fn();
+      await renderWithUpload(uploadDocument);
+
+      // Skipped files do not count toward the cap, so this is 101 uploadable
+      // files plus one that would be skipped anyway.
+      const files = Array.from({ length: 101 }, (_, i) => new File(['x'], `f${i}.txt`));
+      files.push(new File(['x'], 'photo.png'));
+      pick(files);
+
+      expect(
+        await screen.findByText(
+          'Too many files: 101 uploadable files selected, but one upload takes at most 100. Split the selection and try again.',
+        ),
+      ).toBeTruthy();
+      expect(uploadDocument).not.toHaveBeenCalled();
+      expect(screen.queryByRole('list', { name: 'Upload progress' })).toBeNull();
+    });
+
+    it('marks a failed request as failed with its reason and counts it in the summary', async () => {
+      const uploadDocument = vi
+        .fn()
+        .mockImplementation((_notebookId: string, file: File) =>
+          file.name === 'bad.txt'
+            ? Promise.reject({ error: { message: 'Storage is unavailable.' } })
+            : Promise.resolve(documentFor(file.name)),
+        );
+      await renderWithUpload(uploadDocument);
+
+      pick([new File(['x'], 'good.txt'), new File(['x'], 'bad.txt')]);
+
+      expect(await screen.findByText('1 uploaded, 0 skipped, 1 failed')).toBeTruthy();
+      const bad = panelRow('bad.txt');
+      expect(within(bad).getByText('failed')).toBeTruthy();
+      expect(within(bad).getByText('Storage is unavailable.')).toBeTruthy();
+      // The failure stays in the panel; it does not replace the Document list
+      // with an error banner, and the other file still landed.
+      const cards = screen.getByRole('list', { name: 'Documents' });
+      expect(within(cards).getByText('good.txt')).toBeTruthy();
+      expect(within(cards).queryByText('bad.txt')).toBeNull();
+    });
+
+    it('lands a re-uploaded filename as a new Version, replacing its card and counted in the summary', async () => {
+      const existing = documentFor('report.txt', { id: 'doc-existing' });
+      const uploadDocument = vi.fn().mockImplementation((_notebookId: string, file: File) =>
+        Promise.resolve(
+          file.name === 'report.txt'
+            ? documentFor('report.txt', {
+                id: 'doc-existing',
+                latestVersion: { ...existing.latestVersion, id: 'v-report-2', versionNumber: 2 },
+              })
+            : documentFor(file.name),
+        ),
+      );
+      await renderWithUpload(uploadDocument, [existing]);
+
+      pick([new File(['x'], 'report.txt'), new File(['x'], 'fresh.txt')]);
+
+      expect(
+        await screen.findByText('2 uploaded (1 as new Versions), 0 skipped, 0 failed'),
+      ).toBeTruthy();
+      expect(within(panelRow('report.txt')).getByText('new version')).toBeTruthy();
+      expect(within(panelRow('fresh.txt')).getByText('uploaded')).toBeTruthy();
+
+      const cards = screen.getByRole('list', { name: 'Documents' });
+      // One card for report.txt, now at v2 — not a duplicate.
+      expect(within(cards).getAllByText('report.txt')).toHaveLength(1);
+      expect(within(cards).getByText('v2')).toBeTruthy();
+      expect(within(cards).getByText('fresh.txt')).toBeTruthy();
+    });
   });
 
   it('deletes a Document, removing it from the list, then restores it via Undo', async () => {
