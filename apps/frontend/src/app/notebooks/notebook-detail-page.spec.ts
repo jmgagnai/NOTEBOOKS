@@ -628,6 +628,25 @@ describe('NotebookDetailPage', () => {
       // Cancel is for a running batch; a finished one has nothing to cancel.
       expect(screen.queryByRole('button', { name: 'Cancel' })).toBeNull();
     });
+
+    it('disables the picker while the batch runs, so a second batch cannot start mid-way', async () => {
+      const uploads = heldUploads();
+      await renderWithUpload(uploads.uploadDocument);
+
+      expect((screen.getByLabelText('Upload Documents') as HTMLInputElement).disabled).toBe(false);
+      const input = pick(['1.txt', '2.txt']);
+      await screen.findByText('2.txt');
+      await waitFor(() => expect(input.disabled).toBe(true));
+
+      uploads.land('1.txt');
+      // One file landing does not free the picker; the batch is still running.
+      await within(panelRow('1.txt')).findByText('uploaded');
+      expect(input.disabled).toBe(true);
+
+      uploads.land('2.txt');
+      await screen.findByText('2 uploaded, 0 skipped, 0 failed');
+      await waitFor(() => expect(input.disabled).toBe(false));
+    });
   });
 
   it('deletes a Document, removing it from the list, then restores it via Undo', async () => {

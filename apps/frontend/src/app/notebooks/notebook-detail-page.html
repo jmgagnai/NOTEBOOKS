@@ -27,10 +27,15 @@
     -->
     <label class="notebook-detail-page__upload">
       Upload Documents
+      <!--
+        Disabled while a batch runs (NBK-17): a second batch behind the
+        first is out of scope, so the picker cannot start one mid-way.
+      -->
       <input
         type="file"
         multiple
         [accept]="accept"
+        [disabled]="store.batchRunning()"
         (change)="onFileSelected($event)"
         aria-label="Upload Documents"
       />
