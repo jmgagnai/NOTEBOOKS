@@ -30,6 +30,12 @@ formatting, both typechecks, then the published OpenAPI contract against
 `GLOSSARY.md`'s `_Avoid_` lists. `pnpm run verify` adds the test suite. The
 pre-commit hook runs a subset; CI runs everything.
 
+## Coding standards
+
+The judgement calls review enforces that no check can — glossary vocabulary in
+UI copy, mirrored cross-app constants, seam-3 test-helper placement, comments
+that carry the why — are in `CODING_STANDARDS.md`.
+
 ## Generated code
 
 `apps/frontend/src/app/api/` is ng-openapi-gen output, derived from the
