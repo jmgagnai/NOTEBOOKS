@@ -80,6 +80,19 @@ const CONTAINER_OUTPUT_DIR = '/work/out';
 const DEFAULT_TIMEOUT_MS = 60 * 60_000;
 
 /**
+ * The timeout one conversion runs under: `override` if given, else
+ * `DOCLING_TIMEOUT_MS` from the env, else the default above.
+ *
+ * Exported because the job queue has to know it too: pg_boss expires a job
+ * still active after the queue's own limit, and that limit has to sit above
+ * this one or a long conversion is retried while its container is still
+ * running (NBK-22). Resolving it in one place keeps the two from drifting.
+ */
+export function resolveDoclingTimeoutMs(override?: number): number {
+  return override ?? Number(process.env.DOCLING_TIMEOUT_MS ?? DEFAULT_TIMEOUT_MS);
+}
+
+/**
  * Whether Markdown that Docling produced looks like it came from a scanned
  * PDF — pages that are pictures of text rather than text.
  *
@@ -130,8 +143,7 @@ const MIN_TEXT_CHARS_FOR_TEXT_PDF = 20;
 export function createDoclingConverter(options: DoclingOptions = {}): MarkdownConverter {
   const image = options.image ?? process.env.DOCLING_IMAGE ?? DOCLING_IMAGE;
   const docker = options.docker ?? process.env.DOCKER_BIN ?? 'docker';
-  const timeoutMs =
-    options.timeoutMs ?? Number(process.env.DOCLING_TIMEOUT_MS ?? DEFAULT_TIMEOUT_MS);
+  const timeoutMs = resolveDoclingTimeoutMs(options.timeoutMs);
 
   return async function convertWithDocling({
     inputPath,

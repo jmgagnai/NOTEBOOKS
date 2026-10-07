@@ -20,6 +20,7 @@ import {
   type EmbedChunksDeps,
   type EmbedChunksPayload,
 } from '../ingestion/embed-chunks.js';
+import { resolveDoclingTimeoutMs } from '../ingestion/docling.js';
 
 /**
  * Background jobs run on pg_boss against the same Postgres instance as
@@ -106,6 +107,29 @@ const DEFAULT_RETRY_LIMIT = 3;
 const DEFAULT_RETRY_DELAY_SECONDS = 10;
 
 /**
+ * How much longer than a conversion's own timeout a job may stay active
+ * before pg_boss declares it dead: enough for the download from object
+ * storage, the Markdown write and the hand-over to stage 2 around it.
+ */
+const JOB_EXPIRY_MARGIN_SECONDS = 5 * 60;
+
+/**
+ * How long a job may stay active before pg_boss expires it and schedules a
+ * retry (NBK-22). pg_boss's default is 15 minutes, which a book-length PDF
+ * exceeds: the handler is not cancelled, so the Docling container runs on
+ * and the Version is eventually written "converted" — but the retry pg_boss
+ * already scheduled then converts the same book again, up to `retryLimit`
+ * times, each one holding up the one-at-a-time worker. The expiry therefore
+ * sits above the Docling timeout, derived from the same setting so the two
+ * cannot drift apart. The other stages get the same value: they have no
+ * hard timeout of their own, and a stage 2 summarising a 500-page book
+ * makes a great many OpenRouter calls.
+ */
+export function jobExpirySeconds(): number {
+  return Math.ceil(resolveDoclingTimeoutMs() / 1000) + JOB_EXPIRY_MARGIN_SECONDS;
+}
+
+/**
  * Starts pg_boss, ensures the stage queues exist, and (if `worker` is given)
  * registers the stage handlers.
  *
@@ -138,7 +162,12 @@ export async function startJobQueue(options: StartJobQueueOptions): Promise<JobQ
   // in whatever state the database was left in. Each stage gets its own queue
   // precisely so these policies can diverge later (stage 2 is rate-limit
   // bound, stage 1 is CPU bound).
-  const policy = { retryLimit, retryDelay, retryBackoff: retryDelay > 0 };
+  const policy = {
+    retryLimit,
+    retryDelay,
+    retryBackoff: retryDelay > 0,
+    expireInSeconds: jobExpirySeconds(),
+  };
   for (const queue of [CONVERT_TO_MARKDOWN_QUEUE, SUMMARIZE_DOCUMENT_QUEUE, EMBED_CHUNKS_QUEUE]) {
     await boss.createQueue(queue, { name: queue, ...policy });
     await boss.updateQueue(queue, { name: queue, ...policy });
