@@ -47,15 +47,23 @@ Linux and CI; it uses POSIX inline-env syntax, so it assumes a POSIX shell.
 
 ## The pre-commit hook needs git 2.32 or newer
 
-lint-staged 17, which the hook runs, requires git ≥ 2.32, and macOS 13 ships
-2.17. On such a machine every commit fails in the hook with a version
-complaint, not a lint failure. `brew install git` (and a shell that picks up
-Homebrew's `git` first) fixes it for good.
+lint-staged 17, which the hook runs, requires git ≥ 2.32. macOS ships a new
+enough one at `/usr/bin/git` (2.39 on macOS 13), but a package manager's git
+earlier on `PATH` shadows it — MacPorts' `/opt/local/bin/git` is 2.17 — and
+then every commit fails in the hook with a version complaint, not a lint
+failure. `which -a git` shows the order.
 
-Until then, run what the hook would have run by hand —
-`pnpm run check:format:fix` and `pnpm run check` — and commit past the hook
-with `git -c core.hooksPath=/dev/null commit ...`. CI runs the full set
-regardless, so nothing is skipped for the branch, only for the local commit.
+The hook detects this and runs with `/usr/bin/git` when the first git on
+`PATH` is too old, so commits work. Everything else that shells out to `git`
+(Claude Code sessions, scripts) still gets the old one and trips on newer
+flags such as `git branch --show-current`. To fix that for good, put `/usr/bin`
+before `/opt/local/bin` in your shell's `PATH`, or `sudo port deactivate git`.
+
+Should the hook still refuse (no system git new enough), run what it would
+have run by hand — `pnpm run check:format:fix` and `pnpm run check` — and
+commit past it with `git -c core.hooksPath=/dev/null commit ...`. CI runs the
+full set regardless, so nothing is skipped for the branch, only for the local
+commit.
 
 ## Reaching `.env` from a git worktree
 
