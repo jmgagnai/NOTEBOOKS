@@ -1,7 +1,7 @@
 # Copilot-Notebooks-style UI — design overview
 
 Goal: make the frontend (renamed **Copycat Notebooks**, spec 06) look and behave like Microsoft Copilot
-Notebooks (Fluent 2 visual language, three-region notebook workspace,
+Notebooks (Fluent 2 visual language, three-column notebook workspace,
 chat-first interaction) **without touching the backend or the OpenAPI
 contract**.
 
@@ -14,11 +14,22 @@ workspace layout, then the panes it holds).
 | # | Spec | Depends on |
 |---|------|------------|
 | 01 | Fluent theme and app shell | — |
-| 02 | Notebook workspace layout (two panes) | 01 |
+| 02 | Notebook workspace layout (three cards: Threads, open Thread, Documents) | 01 |
 | 03 | Documents pane | 02 |
 | 04 | Chat pane | 02 |
 | 05 | Notebooks home and sign-in pages | 01 |
 | 06 | Copycat brand: name, mascot and favicon (assets in `brand/`) | 01 (shell), 05 (sign-in page) |
+
+## Settled by prototype
+
+The workspace layout was prototyped on the real page before these specs
+were published: three variants, switchable by URL, on the branch
+`prototype/notebook-workspace`. The "Threads navigator" variant won and
+spec 02 describes it; the refinements asked for while judging it (panel
+hiding, scrolling rules, the composer's answering state, Markdown answers
+with clickable Citation markers) are folded into specs 02 and 04. The
+decision to re-theme Angular Material rather than swap component libraries
+is ADR-0008.
 
 ## Backend / API impact: none
 
@@ -57,7 +68,9 @@ notebook workspace page); it never appears in user-facing copy.
 ## ADRs touched
 
 - ADR-0007 (reading a Document is its own route) — respected: the Documents
-  pane links to the Document page; it does not inline the Executive Summary.
+  panel links to the Document page; it does not inline the Executive Summary.
+- ADR-0008 (Fluent look by re-theming Angular Material) — the premise of
+  spec 01 and of every spec after it.
 - Search stays its own route (the "search is a place a user can be" note on
   the route) — the pane adds a quick filter, it does not replace the page.
 

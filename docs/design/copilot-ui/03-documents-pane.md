@@ -1,4 +1,4 @@
-# 03 — Documents pane
+# 03 — Documents panel
 
 ## Problem Statement
 
@@ -12,10 +12,11 @@ single "+ Add" button, a hover "…" menu, and progress shown inline.
 
 ## Solution
 
-Redesign the Documents pane body as a compact list: one 40 px row per
+Redesign the Documents panel body as a compact list: one 40 px row per
 Document with a type icon, the filename, a subtle status indicator and an
-overflow menu. A single "Add Documents" button in the pane header replaces
-the native file input; a quick filter box narrows the list by filename.
+overflow menu. The page header's "Add Documents" button (spec 02 moved the native file
+input there) becomes the one upload control, styled as the primary button;
+a quick filter box in the panel header narrows the list by filename.
 The Abstract moves to a tooltip-like popover on hover/focus so it is still
 one gesture away without consuming the list. The upload batch panel and the
 conflict question keep their behaviour but are restyled to fit the pane.
@@ -32,16 +33,16 @@ conflict question keep their behaviour but are restyled to fit the pane.
 8. As a user, I want to hover or focus a row and read its Abstract in a popover, so that I can judge a Document without opening it.
 9. As a user, I want a "…" menu on each row with Open, Download and Delete, so that actions do not clutter every row.
 10. As a user, I want clicking the row itself (or pressing Enter on it) to open the Document, so that the most common action is the easiest.
-11. As a user, I want one "Add Documents" button in the pane header that opens the system file picker (multi-select, accepted types only), so that uploading is one obvious control.
+11. As a user, I want one "Add Documents" button in the page header that opens the system file picker (multi-select, accepted types only), so that uploading is one obvious control.
 12. As a user, I want the "Add Documents" button disabled while a batch is running, so that I cannot start a second batch mid-way (existing rule).
-13. As a user, I want a filter box in the pane header that narrows the list by filename as I type, so that I can find a Document among many without leaving the Notebook.
+13. As a user, I want a filter box in the panel header that narrows the list by filename as I type, so that I can find a Document among many without leaving the Notebook.
 14. As a user, I want the filter to be clearly different from "Search this Notebook" (semantic search, its own page), so that I know which one finds Documents by meaning.
 15. As a user, I want the upload batch progress shown as a compact panel at the top of the list, with one line per file, so that I can follow a batch of many files.
 16. As a user, I want the conflict question ("Document already exists") to appear in the same compact style with "Skip" and "New Version" buttons, so that batches keep the existing behaviour.
 17. As a user, I want "Retry failed", "Cancel" and "Dismiss" to remain available on the batch panel, so that steering a batch is unchanged.
 18. As a user, I want the "X deleted — Undo" message as a snack bar, so that it does not push the list down.
-19. As a user, I want an empty Notebook to show a friendly empty state ("No Documents yet. Add Documents to start asking questions.") with the Add button, so that the first step is obvious.
-20. As a user, I want the row count ("12 Documents") in the pane header, so that I know the Notebook's size.
+19. As a user, I want an empty Notebook to show a friendly empty state ("No Documents yet. Add Documents to start asking questions.") with a second Add Documents button inside the panel, so that the first step is obvious where the list would be.
+20. As a user, I want the row count ("12 Documents", and how many are ready) in the panel header, so that I know the Notebook's size.
 21. As a keyboard user, I want rows to be focusable with arrow-key navigation and the overflow menu reachable by keyboard, so that the pane is fully operable without a mouse.
 
 ## Implementation Decisions
@@ -70,17 +71,24 @@ route, keeping ADR-0007), Download (existing download action), Delete.
 Accessible names stay "Open <filename>", "Download <filename>",
 "Delete <filename>".
 
-**Add Documents.** A primary button with the add icon. It triggers a
-visually hidden file input carrying the same `accept`, `multiple` and
+**Add Documents.** The page header's button (spec 02) becomes a primary
+button with the add icon, triggering the visually hidden file input that
+already lives there with its `accept`, `multiple` and
 disabled-while-batch behaviour; the input keeps the accessible name
-"Upload Documents" so existing upload tests keep working. Drag-and-drop
-is unchanged (spec 02 moved the target to the pane).
+"Upload Documents" so existing upload tests keep working. The empty state
+carries a second, secondary-styled instance of the same control.
+Drag-and-drop is unchanged (spec 02 moved the target to the panel, and
+restores a hidden panel on drag).
 
-**Filter.** A search-styled input in the pane header, accessible name
+**Filter.** A search-styled input under the panel header, accessible name
 "Filter Documents", filtering the store's list client-side by
 case-insensitive substring of the filename. It does not call the search
-endpoint. The header also keeps the semantic "Search this Notebook" icon
-button defined in spec 02 (the search page is unchanged).
+endpoint; semantic search stays the page header's "Search" button (spec
+02) and its own page.
+
+**Panel header.** Title "Documents", the count ("25 Documents" or
+"23/25 ready" while some are still ingesting) in secondary text, and the
+hide control from spec 02.
 
 **Batch panel.** Same state machine and same copy; presentation becomes a
 bordered panel at the top of the list body with 12 px rows, the shared
@@ -89,7 +97,7 @@ highlighted block inside it. The "Apply to all remaining conflicts"
 checkbox stays.
 
 **Empty state.** Centered illustration-free block: a Documents icon, the
-sentence above, and the Add Documents button.
+sentence above, and the secondary Add Documents button.
 
 ## Testing Decisions
 
