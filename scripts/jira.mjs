@@ -11,7 +11,7 @@
  * Credentials come from .env (JIRA_BASE_URL, JIRA_EMAIL, JIRA_API_TOKEN,
  * JIRA_PROJECT_KEY). It is gitignored; the token is never printed.
  *
- *   node scripts/jira.mjs get NBK-1 [--comments]
+ *   node scripts/jira.mjs get NBK-1 [--comments] [--json]   # Markdown by default
  *   node scripts/jira.mjs comment NBK-1 body.md         # - reads stdin
  *   node scripts/jira.mjs create --summary "..." --body body.md \
  *        [--type Task] [--parent NBK-1] [--label ready-for-agent]
@@ -22,14 +22,35 @@
  * Markdown supported: #/##/### headings, paragraphs, - bullets, 1. ordered
  * lists, - [ ] task lists, and inline **bold**, `code`, [text](url).
  */
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { dirname, join, resolve } from 'node:path';
 
 const root = new URL('..', import.meta.url).pathname;
 
+/**
+ * `.env` is gitignored, so a worktree has none. The main checkout's copy is
+ * one `git rev-parse` away: the common git dir is `<main checkout>/.git`.
+ */
+function envFile() {
+  const local = join(root, '.env');
+  if (existsSync(local)) return local;
+  try {
+    // Printed relative to `cwd` by older gits, absolute by newer ones.
+    const commonDir = execFileSync('git', ['rev-parse', '--git-common-dir'], {
+      cwd: root,
+      encoding: 'utf8',
+    }).trim();
+    return join(dirname(resolve(root, commonDir)), '.env');
+  } catch {
+    return local;
+  }
+}
+
 function loadEnv() {
   const env = {};
-  for (const line of readFileSync(`${root}.env`, 'utf8').split('\n')) {
+  for (const line of readFileSync(envFile(), 'utf8').split('\n')) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith('#') || !trimmed.includes('=')) continue;
     const [key, ...rest] = trimmed.split('=');
@@ -167,6 +188,83 @@ export function markdownToAdf(markdown) {
   return { type: 'doc', version: 1, content };
 }
 
+// --- ADF → Markdown ---------------------------------------------------------
+
+/** Inline nodes back to the same Markdown `inline()` reads. */
+function inlineToMarkdown(nodes = []) {
+  return nodes
+    .map((node) => {
+      switch (node.type) {
+        case 'text': {
+          let text = node.text;
+          for (const mark of node.marks ?? []) {
+            if (mark.type === 'strong') text = `**${text}**`;
+            else if (mark.type === 'em') text = `_${text}_`;
+            else if (mark.type === 'code') text = `\`${text}\``;
+            else if (mark.type === 'link') text = `[${text}](${mark.attrs.href})`;
+          }
+          return text;
+        }
+        case 'hardBreak':
+          return '\n';
+        case 'mention':
+          return `@${node.attrs?.text ?? ''}`;
+        case 'emoji':
+          return node.attrs?.text ?? '';
+        case 'inlineCard':
+          return node.attrs?.url ?? '';
+        default:
+          return inlineToMarkdown(node.content);
+      }
+    })
+    .join('');
+}
+
+/** Block nodes to Markdown; `indent` prefixes nested lists. */
+function blocksToMarkdown(nodes = [], indent = '') {
+  return nodes
+    .map((node) => {
+      switch (node.type) {
+        case 'paragraph':
+          return indent + inlineToMarkdown(node.content);
+        case 'heading':
+          return `${'#'.repeat(node.attrs?.level ?? 1)} ${inlineToMarkdown(node.content)}`;
+        case 'bulletList':
+          return node.content.map((item) => listItemToMarkdown(item, '- ', indent)).join('\n');
+        case 'orderedList':
+          return node.content.map((item, i) => listItemToMarkdown(item, `${i + 1}. `, indent)).join('\n');
+        case 'taskList':
+          return node.content
+            .map((item) => `${indent}- [${item.attrs?.state === 'DONE' ? 'x' : ' '}] ${inlineToMarkdown(item.content)}`)
+            .join('\n');
+        case 'codeBlock':
+          return `${indent}\`\`\`${node.attrs?.language ?? ''}\n${inlineToMarkdown(node.content)}\n${indent}\`\`\``;
+        case 'blockquote':
+          return blocksToMarkdown(node.content, indent)
+            .split('\n')
+            .map((line) => `> ${line}`)
+            .join('\n');
+        case 'rule':
+          return `${indent}---`;
+        default:
+          return node.content ? blocksToMarkdown(node.content, indent) : '';
+      }
+    })
+    .filter((block) => block !== '')
+    .join('\n\n');
+}
+
+function listItemToMarkdown(item, marker, indent) {
+  const [first, ...rest] = item.content ?? [];
+  const head = `${indent}${marker}${first ? inlineToMarkdown(first.content) : ''}`;
+  if (rest.length === 0) return head;
+  return `${head}\n${blocksToMarkdown(rest, `${indent}  `)}`;
+}
+
+export function adfToMarkdown(doc) {
+  return doc ? blocksToMarkdown(doc.content) : '';
+}
+
 // --- Commands ---------------------------------------------------------------
 
 function readBody(pathOrDash) {
@@ -188,11 +286,41 @@ function flags(argv) {
 const [command, ...rest] = process.argv.slice(2);
 
 const commands = {
+  /**
+   * Prints the issue as Markdown — the ADF a `get` returns is several times the
+   * size of the text it carries, and every "fetch the relevant ticket" step
+   * pays that. `--json` keeps the raw document for anything the renderer
+   * doesn't cover.
+   */
   async get([key, ...opts]) {
-    const fields = opts.includes('--comments')
-      ? 'summary,description,status,labels,parent,comment,issuelinks'
-      : 'summary,description,status,labels,parent,issuelinks';
-    console.log(JSON.stringify(await api('GET', `/rest/api/3/issue/${key}?fields=${fields}`), null, 2));
+    const withComments = opts.includes('--comments');
+    const fields = `summary,description,status,labels,parent,issuetype,issuelinks${withComments ? ',comment' : ''}`;
+    const issue = await api('GET', `/rest/api/3/issue/${key}?fields=${fields}`);
+    if (opts.includes('--json')) {
+      console.log(JSON.stringify(issue, null, 2));
+      return;
+    }
+    const f = issue.fields;
+    const links = (f.issuelinks ?? []).map((l) =>
+      l.outwardIssue ? `${l.type.outward} ${l.outwardIssue.key}` : `${l.type.inward} ${l.inwardIssue.key}`,
+    );
+    const lines = [
+      `# ${issue.key}: ${f.summary}`,
+      '',
+      `${f.issuetype.name} · ${f.status.name}` +
+        (f.labels.length > 0 ? ` · labels: ${f.labels.join(', ')}` : '') +
+        (f.parent ? ` · parent: ${f.parent.key}` : ''),
+    ];
+    if (links.length > 0) lines.push(`Links: ${links.join('; ')}`);
+    lines.push('', adfToMarkdown(f.description));
+    if (withComments) {
+      const comments = f.comment?.comments ?? [];
+      lines.push('', `## Comments (${comments.length})`);
+      for (const c of comments) {
+        lines.push('', `### ${c.author?.displayName ?? '?'} — ${c.created}`, '', adfToMarkdown(c.body));
+      }
+    }
+    console.log(lines.join('\n'));
   },
 
   async comment([key, body]) {
@@ -261,7 +389,7 @@ const commands = {
 
 const USAGE = `Usage: node scripts/jira.mjs <command>
 
-  get NBK-1 [--comments]
+  get NBK-1 [--comments] [--json]       (Markdown by default)
   comment NBK-1 body.md                 (- reads stdin)
   create --summary "..." [--body body.md] [--type Task] [--parent NBK-1] [--label ready-for-agent]
   transition NBK-5 Done
