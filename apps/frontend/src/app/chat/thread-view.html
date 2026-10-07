@@ -48,7 +48,7 @@
                 @if (segment.citation; as citation) {
                   <a
                     class="thread-view__marker"
-                    [attr.aria-label]="'Source ' + citation.marker"
+                    [attr.aria-label]="'Citation ' + citation.marker"
                     [title]="citationName(citation) + ' (v' + citation.versionNumber + ')'"
                     [routerLink]="citationLink(citation)"
                     [queryParams]="citationParams(citation)"
@@ -114,7 +114,7 @@
                   @if (segment.citation; as citation) {
                     <a
                       class="thread-view__marker"
-                      [attr.aria-label]="'Source ' + citation.marker"
+                      [attr.aria-label]="'Citation ' + citation.marker"
                       [title]="citationName(citation) + ' (v' + citation.versionNumber + ')'"
                       [routerLink]="citationLink(citation)"
                       [queryParams]="citationParams(citation)"

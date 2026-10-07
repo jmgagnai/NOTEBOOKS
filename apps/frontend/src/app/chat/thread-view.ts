@@ -35,7 +35,7 @@ const MARKER = /\[(\d{1,3})\]/g;
  * and the composer.
  *
  * Every message names who asked it (GLOSSARY.md): a Thread is shared, so a
- * conversation is unreadable without the attribution.
+ * Chat Thread is unreadable without the attribution.
  *
  * An answer arrives twice over (NBK-11): first as paragraph/heading-sized
  * chunks on the live app-event stream, rendered as a preview the moment each

@@ -427,7 +427,7 @@ describe('Chat panel (ThreadNavigator + ThreadView)', () => {
 
       // The marker a reader sees mid-sentence is itself the way into the
       // source, so it is a link to the same pinned location.
-      const marker = await screen.findByRole('link', { name: 'Source 1' });
+      const marker = await screen.findByRole('link', { name: 'Citation 1' });
       expect(marker.textContent).toContain('[1]');
       expect(target(marker)).toEqual({
         pathname: `/notebooks/${NOTEBOOK_ID}/documents/${DOCUMENT_ID}`,
@@ -451,8 +451,8 @@ describe('Chat panel (ThreadNavigator + ThreadView)', () => {
         }),
       ]);
 
-      expect(await screen.findByRole('link', { name: 'Source 1' })).toBeTruthy();
-      expect(screen.queryByRole('link', { name: 'Source 4' })).toBeNull();
+      expect(await screen.findByRole('link', { name: 'Citation 1' })).toBeTruthy();
+      expect(screen.queryByRole('link', { name: 'Citation 4' })).toBeNull();
       // Still shown, because it is what the answer says.
       expect(screen.getByText(/Margins improved \[4\]/)).toBeTruthy();
     });
@@ -592,12 +592,12 @@ describe('Chat panel (ThreadNavigator + ThreadView)', () => {
       appEvents.events.next(chunk(0, 'Lead times lengthened to 14 weeks [1].'));
       expect(await screen.findByText(/Lead times lengthened to 14 weeks/)).toBeTruthy();
       // Nothing to link to yet, so the marker stays plain text.
-      expect(screen.queryByRole('link', { name: 'Source 1' })).toBeNull();
+      expect(screen.queryByRole('link', { name: 'Citation 1' })).toBeNull();
 
       appEvents.events.next(completed({ citations: [citation()] }));
 
       const preview = await screen.findByTestId('chat-streaming-answer');
-      expect(within(preview).getByRole('link', { name: 'Source 1' })).toBeTruthy();
+      expect(within(preview).getByRole('link', { name: 'Citation 1' })).toBeTruthy();
       expect(within(preview).getByTestId('chat-citation')).toBeTruthy();
     });
 
