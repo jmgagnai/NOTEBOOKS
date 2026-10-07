@@ -5,6 +5,7 @@ import { DocumentsService } from '../api/services/documents.service';
 import { AppEvent, AppEventsService } from '../events/app-events.service';
 import { errorMessage } from '../shared/error-message';
 import { DocumentTransferService } from './document-transfer.service';
+import { uploadSkipReason } from './upload-rules';
 
 export interface DocumentVersion {
   id: string;
@@ -495,12 +496,19 @@ export const DocumentsStore = signalStore(
          * Resolves when nothing is left waiting or in flight.
          */
         async uploadDocuments(notebookId: string, files: File[]): Promise<void> {
-          const items: UploadItem[] = files.map((file, index) => ({
-            id: `${index}`,
-            file,
-            status: 'waiting',
-            reason: null,
-          }));
+          // Filtered in the browser before anything is sent, so a stray file
+          // costs no request and blocks nothing (see upload-rules.ts).
+          const accepted = new Set<string>();
+          const items: UploadItem[] = files.map((file, index) => {
+            const reason = uploadSkipReason(file, accepted);
+            if (!reason) accepted.add(file.name);
+            return {
+              id: `${index}`,
+              file,
+              status: reason ? 'skipped' : 'waiting',
+              reason,
+            };
+          });
           patchState(store, { batch: { notebookId, items }, error: null });
           await drainBatch();
         },

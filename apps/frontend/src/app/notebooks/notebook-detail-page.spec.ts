@@ -318,6 +318,82 @@ describe('NotebookDetailPage', () => {
       expect(await within(panelRow('1.txt')).findByText('uploaded')).toBeTruthy();
       expect(await within(panelRow('4.txt')).findByText('uploading')).toBeTruthy();
     });
+
+    // Filtering happens in the browser before anything is sent, so a stray
+    // file never costs a request and never blocks the others.
+    it('skips unsupported files with a reason, and explains .xls specifically', async () => {
+      const uploadDocument = vi
+        .fn()
+        .mockImplementation((_notebookId: string, file: File) =>
+          Promise.resolve(documentFor(file.name)),
+        );
+      await renderWithUpload(uploadDocument);
+
+      pick([
+        new File(['x'], 'photo.png'),
+        new File(['x'], 'legacy.xls'),
+        new File(['x'], 'fine.pdf'),
+      ]);
+
+      expect(await screen.findByText('1 uploaded, 2 skipped, 0 failed')).toBeTruthy();
+      const photo = panelRow('photo.png');
+      expect(within(photo).getByText('skipped')).toBeTruthy();
+      expect(
+        within(photo).getByText(
+          'Unsupported file type. Accepted types: text, Markdown, DOCX, Excel (.xlsx), CSV, and PDF.',
+        ),
+      ).toBeTruthy();
+      const legacy = panelRow('legacy.xls');
+      expect(within(legacy).getByText('skipped')).toBeTruthy();
+      expect(within(legacy).getByText(/Re-save it as \.xlsx/)).toBeTruthy();
+      expect(uploadDocument).toHaveBeenCalledTimes(1);
+      expect((uploadDocument.mock.calls[0][1] as File).name).toBe('fine.pdf');
+    });
+
+    it('skips a file over 50 MiB before sending anything, naming the limit', async () => {
+      const uploadDocument = vi
+        .fn()
+        .mockImplementation((_notebookId: string, file: File) =>
+          Promise.resolve(documentFor(file.name)),
+        );
+      await renderWithUpload(uploadDocument);
+
+      const huge = new File([''], 'huge.pdf');
+      Object.defineProperty(huge, 'size', { value: 50 * 1024 * 1024 + 1 });
+      const atLimit = new File([''], 'at-limit.pdf');
+      Object.defineProperty(atLimit, 'size', { value: 50 * 1024 * 1024 });
+      pick([huge, atLimit]);
+
+      expect(await screen.findByText('1 uploaded, 1 skipped, 0 failed')).toBeTruthy();
+      expect(within(panelRow('huge.pdf')).getByText(/50 MiB/)).toBeTruthy();
+      expect(within(panelRow('at-limit.pdf')).getByText('uploaded')).toBeTruthy();
+      expect(uploadDocument).toHaveBeenCalledTimes(1);
+      expect((uploadDocument.mock.calls[0][1] as File).name).toBe('at-limit.pdf');
+    });
+
+    it('skips a later file whose name repeats an earlier one in the same selection', async () => {
+      const uploadDocument = vi
+        .fn()
+        .mockImplementation((_notebookId: string, file: File) =>
+          Promise.resolve(documentFor(file.name)),
+        );
+      await renderWithUpload(uploadDocument);
+
+      const first = new File(['first'], 'notes.md');
+      const second = new File(['second'], 'notes.md');
+      pick([first, second]);
+
+      expect(await screen.findByText('1 uploaded, 1 skipped, 0 failed')).toBeTruthy();
+      const rows = within(screen.getByRole('list', { name: 'Upload progress' })).getAllByRole(
+        'listitem',
+      );
+      expect(within(rows[0]).getByText('uploaded')).toBeTruthy();
+      expect(within(rows[1]).getByText('skipped')).toBeTruthy();
+      expect(within(rows[1]).getByText(/duplicate/i)).toBeTruthy();
+      // The first one wins.
+      expect(uploadDocument).toHaveBeenCalledTimes(1);
+      expect(uploadDocument).toHaveBeenCalledWith(NOTEBOOK_ID, first);
+    });
   });
 
   it('deletes a Document, removing it from the list, then restores it via Undo', async () => {
