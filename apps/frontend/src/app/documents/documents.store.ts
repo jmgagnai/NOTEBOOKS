@@ -495,6 +495,11 @@ export const DocumentsStore = signalStore(
               if (answer.applyToAll && batch) {
                 patchState(store, { batch: { ...batch, conflictAnswer: choice } });
               }
+              // The batch may have been cancelled while the dialog was open
+              // (NBK-17): its item is then already skipped as cancelled, and
+              // the answer that withdrew the dialog is not one to apply.
+              const current = batch?.items.find((item) => item.id === next.id);
+              if (current?.status !== 'waiting') continue;
             }
             if (choice === 'skip') {
               patchItem(next.id, { status: 'skipped', reason: NAME_ALREADY_EXISTS_REASON });
@@ -713,6 +718,11 @@ export const DocumentsStore = signalStore(
          * aborted, and nothing already stored is removed. The workers in
          * `drainBatch` find no `waiting` item afterwards and stop by
          * themselves.
+         *
+         * A file waiting on its conflict dialog (NBK-19) is a `waiting` file
+         * too, so it is cancelled with the rest — and its open dialog is
+         * withdrawn: the question is moot, and the asker loop is parked on
+         * that answer, so settling it is what lets the batch finish.
          */
         cancelBatch(): void {
           const batch = store.batch();
@@ -726,7 +736,11 @@ export const DocumentsStore = signalStore(
                   : item,
               ),
             },
+            conflict: null,
           });
+          // After the items above are cancelled, so the asker finds the
+          // dialog's item no longer waiting and nothing further to ask.
+          deliverAnswer?.({ choice: 'skip', applyToAll: false });
         },
 
         /**
