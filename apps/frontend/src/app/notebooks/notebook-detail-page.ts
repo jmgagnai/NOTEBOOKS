@@ -4,7 +4,8 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
 import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
-import { ChatPanel } from '../chat/chat-panel';
+import { ThreadNavigator } from '../chat/thread-navigator';
+import { ThreadView } from '../chat/thread-view';
 import {
   ConflictChoice,
   Document,
@@ -78,12 +79,13 @@ function droppedEntries(dataTransfer: DataTransfer | null): {
   selector: 'app-notebook-detail-page',
   standalone: true,
   imports: [
-    ChatPanel,
     MatButtonModule,
     MatCardModule,
     MatCheckboxModule,
     MatProgressSpinnerModule,
     RouterLink,
+    ThreadNavigator,
+    ThreadView,
   ],
   templateUrl: './notebook-detail-page.html',
   styleUrl: './notebook-detail-page.scss',

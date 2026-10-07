@@ -1,4 +1,4 @@
-import { Component, computed, inject, input, OnDestroy, OnInit, signal } from '@angular/core';
+import { Component, computed, inject, input, linkedSignal, untracked } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { RouterLink } from '@angular/router';
@@ -30,13 +30,12 @@ interface AnswerSegment {
 const MARKER = /\[(\d{1,3})\]/g;
 
 /**
- * The chat panel of a Notebook (NBK-10): the Notebook's Chat Threads on one
- * side, the open Thread's messages on the other.
+ * The open Chat Thread of a Notebook (NBK-10, split out in NBK-34): its
+ * title and rename box, its messages, the answer being streamed into it,
+ * and the composer.
  *
- * Per GLOSSARY.md and ADR-0001 the list is every Thread in the Notebook, not
- * this user's — so each entry names its author, and every message names who
- * asked it. That attribution is the only thing author identity is used for
- * here: nothing is hidden or disabled because someone else started it.
+ * Every message names who asked it (GLOSSARY.md): a Thread is shared, so a
+ * conversation is unreadable without the attribution.
  *
  * An answer arrives twice over (NBK-11): first as paragraph/heading-sized
  * chunks on the live app-event stream, rendered as a preview the moment each
@@ -51,29 +50,53 @@ const MARKER = /\[(\d{1,3})\]/g;
  * following one opens the Version the answer was actually grounded in rather
  * than whatever is latest — which is the guarantee GLOSSARY.md makes about a
  * Citation and the reason an old answer stays checkable.
+ *
+ * This component only reads the ChatStore: loading the Threads, watching the
+ * Notebook's App Events and resetting the store belong to the Thread
+ * navigator (`ThreadNavigator`), so that the two can sit in different cards
+ * (NBK-35) without either depending on the other being rendered first.
  */
 @Component({
-  selector: 'app-chat-panel',
+  selector: 'app-thread-view',
   standalone: true,
   imports: [MatButtonModule, MatProgressSpinnerModule, RouterLink],
-  templateUrl: './chat-panel.html',
-  styleUrl: './chat-panel.scss',
+  templateUrl: './thread-view.html',
+  styleUrl: './thread-view.scss',
 })
-export class ChatPanel implements OnInit, OnDestroy {
+export class ThreadView {
   readonly notebookId = input.required<string>();
 
   protected readonly store = inject(ChatStore);
 
-  /** The "start a Thread" box. Local: it is never read back from the server. */
-  protected readonly newThreadTitle = signal('');
-  /** The rename box for the open Thread. */
-  protected readonly renameTitle = signal('');
-  /** The question being typed. Survives a failed send so asking again works. */
-  protected readonly draft = signal('');
-
   protected readonly activeThread = computed<ChatThread | null>(
     () => this.store.threads().find((t) => t.id === this.store.activeThreadId()) ?? null,
   );
+
+  /**
+   * The rename box for the open Thread, pre-filled with its title.
+   *
+   * Keyed on the Thread's id, not on the Thread itself: the list is replaced
+   * whenever a rename or a reload lands, and a half-typed new title must not
+   * be thrown away by that. The title is read untracked for the same reason —
+   * the computation re-runs only when a different Thread is opened. (Before
+   * NBK-34 the navigator set this box directly when opening a Thread; now
+   * that the two are separate components, the open Thread in the store is
+   * the only thing they share.)
+   */
+  protected readonly renameTitle = linkedSignal<string | null, string>({
+    source: () => this.store.activeThreadId(),
+    computation: (id) =>
+      untracked(() => this.store.threads().find((t) => t.id === id)?.title ?? ''),
+  });
+
+  /**
+   * The question being typed. Survives a failed send so asking again works,
+   * and is dropped when another Thread is opened: it was asked of this one.
+   */
+  protected readonly draft = linkedSignal<string | null, string>({
+    source: () => this.store.activeThreadId(),
+    computation: () => '',
+  });
 
   /**
    * The streaming answer as blocks to render, one per chunk received.
@@ -91,22 +114,6 @@ export class ChatPanel implements OnInit, OnDestroy {
       segments: this.segments(text, streaming.citations),
     }));
   });
-
-  ngOnInit(): void {
-    void this.store.loadThreads(this.notebookId());
-    // The same stream the Document status badges follow (NBK-6): an answer's
-    // chunks are App Events like any other, so no second connection is
-    // opened for them.
-    this.store.watchNotebook(this.notebookId());
-  }
-
-  ngOnDestroy(): void {
-    // The store is root-provided and outlives this panel, so a stale Chat
-    // Thread would otherwise show up on the next Notebook opened.
-    // `reset` also closes the live connection, so a panel that is gone stops
-    // costing one.
-    this.store.reset();
-  }
 
   /** Who to credit a message to. An answer is attributed to the asker it replies to. */
   protected author(message: ChatMessage): string {
@@ -188,19 +195,6 @@ export class ChatPanel implements OnInit, OnDestroy {
     if (citation.charStart !== null) params['from'] = citation.charStart;
     if (citation.charEnd !== null) params['to'] = citation.charEnd;
     return params;
-  }
-
-  protected startThread(): void {
-    const title = this.newThreadTitle().trim();
-    if (!title) return;
-    void this.store.createThread(this.notebookId(), title);
-    this.newThreadTitle.set('');
-  }
-
-  protected openThread(thread: ChatThread): void {
-    this.renameTitle.set(thread.title);
-    this.draft.set('');
-    void this.store.openThread(this.notebookId(), thread.id);
   }
 
   protected rename(): void {

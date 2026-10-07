@@ -9,7 +9,7 @@ const VERSION_ID = '33333333-3333-3333-3333-333333333333';
 
 // A Citation opens this page with the Document Version it pinned, the chunk
 // it points at and that chunk's character range in the Converted Markdown —
-// see `ChatPanel.citationParams`.
+// see `ThreadView.citationParams`.
 function activatedRoute(queryParams: Record<string, string> = {}) {
   return {
     provide: ActivatedRoute,

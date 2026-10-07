@@ -1,0 +1,40 @@
+// The text controls the Thread navigator and the Thread view share (NBK-34).
+// One copy, as mixins, because the two components came out of one panel
+// stylesheet and their boxes have to keep looking identical until spec 04
+// redesigns them — a value that drifted between the two would read as a bug.
+
+// A labelled text box: the label above, the control below.
+@mixin field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex: 1;
+
+  input,
+  textarea {
+    font: inherit;
+    padding: 0.4rem 0.5rem;
+    border: 1px solid var(--mat-sys-outline-variant, #ddd);
+    border-radius: 0.25rem;
+    background: transparent;
+    color: inherit;
+    resize: vertical;
+  }
+}
+
+@mixin field-label {
+  font-size: 0.75rem;
+  opacity: 0.75;
+}
+
+// A text box with its action button beside it, bottom-aligned.
+@mixin field-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+@mixin empty {
+  opacity: 0.75;
+}
