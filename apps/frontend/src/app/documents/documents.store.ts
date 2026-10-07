@@ -5,7 +5,12 @@ import { DocumentsService } from '../api/services/documents.service';
 import { AppEvent, AppEventsService } from '../events/app-events.service';
 import { errorMessage } from '../shared/error-message';
 import { DocumentTransferService } from './document-transfer.service';
-import { MAX_UPLOAD_BATCH_FILES, uploadCapExceededMessage, uploadSkipReason } from './upload-rules';
+import {
+  FOLDER_SKIP_REASON,
+  MAX_UPLOAD_BATCH_FILES,
+  uploadCapExceededMessage,
+  uploadSkipReason,
+} from './upload-rules';
 
 export interface DocumentVersion {
   id: string;
@@ -633,13 +638,25 @@ export const DocumentsStore = signalStore(
          * per file to the single-file route, at most `UPLOAD_CONCURRENCY` in
          * flight, in selection order. Each file lands or fails on its own.
          * Resolves when nothing is left waiting or in flight.
+         *
+         * `options.folders` names the entries of `files` that are dropped
+         * folders (NBK-18) — a file manager hands a directory over as a File
+         * too, which is why they arrive in the same list. They are listed as
+         * skipped with the folder message and count toward nothing else:
+         * not the cap, and not the names a later duplicate is checked against.
          */
-        async uploadDocuments(notebookId: string, files: File[]): Promise<void> {
+        async uploadDocuments(
+          notebookId: string,
+          files: File[],
+          options: { folders?: ReadonlySet<File> } = {},
+        ): Promise<void> {
           // Filtered in the browser before anything is sent, so a stray file
           // costs no request and blocks nothing (see upload-rules.ts).
           const accepted = new Set<string>();
           const items: UploadItem[] = files.map((file, index) => {
-            const reason = uploadSkipReason(file, accepted);
+            const reason = options.folders?.has(file)
+              ? FOLDER_SKIP_REASON
+              : uploadSkipReason(file, accepted);
             if (!reason) accepted.add(file.name);
             return {
               id: `${index}`,

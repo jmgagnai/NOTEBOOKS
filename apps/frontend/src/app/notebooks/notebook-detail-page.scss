@@ -1,6 +1,33 @@
 .notebook-detail-page {
   max-width: 640px;
   margin: 2rem auto;
+  position: relative;
+
+  // The drop target is the whole page (NBK-18), so the whole card shows it:
+  // a dashed outline while files are dragged over it, plus a hint pinned
+  // over the content saying what a drop will do.
+  &--drag-over {
+    outline: 2px dashed var(--mat-sys-primary, #1b5e20);
+    outline-offset: 4px;
+  }
+
+  &__drop-hint {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    background: var(--mat-sys-primary-container, #d7f0d7);
+    color: var(--mat-sys-on-primary-container, #1b4d1b);
+    opacity: 0.92;
+    border-radius: inherit;
+    // The hint sits over the content, but the drop must still reach the
+    // page beneath it, not get swallowed by the hint.
+    pointer-events: none;
+  }
 
   &__back {
     display: inline-block;
