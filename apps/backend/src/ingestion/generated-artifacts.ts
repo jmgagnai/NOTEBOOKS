@@ -12,6 +12,15 @@ import { splitMarkdownSections, type MarkdownSection } from './markdown-sections
  * here is required, which is also why it is stored as JSONB rather than as
  * typed columns.
  */
+/**
+ * The most keywords a Document keeps. Ten is plenty for a search facet or a
+ * card, and it is the one field in the metadata a model can run away with:
+ * asked for an unbounded list, one model kept going until it hit its output
+ * limit mid-array and the answer never closed (NBK-24). The prompt asks for
+ * at most this many, and the schema cuts anything beyond it regardless.
+ */
+export const MAX_METADATA_KEYWORDS = 10;
+
 export const documentMetadataSchema = z.object({
   title: z.string().nullable().default(null),
   authors: z.array(z.string()).default([]),
@@ -19,7 +28,10 @@ export const documentMetadataSchema = z.object({
   language: z.string().nullable().default(null),
   publishedOn: z.string().nullable().default(null),
   subject: z.string().nullable().default(null),
-  keywords: z.array(z.string()).default([]),
+  keywords: z
+    .array(z.string())
+    .default([])
+    .transform((keywords) => keywords.slice(0, MAX_METADATA_KEYWORDS)),
 });
 export type DocumentMetadata = z.infer<typeof documentMetadataSchema>;
 
@@ -133,8 +145,18 @@ function parseJsonObject(text: string): unknown {
   const withoutFence = text.replace(/^\s*```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '');
   const start = withoutFence.indexOf('{');
   const end = withoutFence.lastIndexOf('}');
-  if (start === -1 || end <= start) {
+  if (start === -1) {
     throw new Error(`Expected a JSON object in the model's answer, got: ${text.slice(0, 200)}`);
+  }
+  if (end <= start) {
+    // An object that opens and never closes was cut off, not malformed: the
+    // model ran past its output limit. Naming that here matters because the
+    // generic message above sent the first investigation of NBK-24 looking
+    // for a non-JSON answer.
+    throw new Error(
+      "The model's answer was cut off before the JSON object closed, most likely at the output " +
+        `limit: ${text.slice(0, 200)}`,
+    );
   }
   return JSON.parse(withoutFence.slice(start, end + 1));
 }
@@ -367,6 +389,7 @@ export async function extractMetadata(
       'You extract bibliographic metadata from documents. Answer with a single JSON object and nothing else. ' +
       'Schema: {"title": string|null, "authors": string[], "documentType": string|null, "language": string|null, ' +
       '"publishedOn": string|null, "subject": string|null, "keywords": string[]}. ' +
+      `\`keywords\` is at most ${MAX_METADATA_KEYWORDS} short phrases, most distinctive first. ` +
       '`documentType` is a short noun phrase such as "contract", "annual report", "research paper", ' +
       '"meeting notes". `language` is a BCP-47 code such as "en". `publishedOn` is whatever date or year the ' +
       'document states, copied verbatim. Use null or [] for anything the document does not state — never guess, ' +
