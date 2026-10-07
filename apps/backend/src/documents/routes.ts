@@ -10,6 +10,7 @@ import { errorResponseSchema } from '../auth/schema.js';
 import { getObject, putObject } from '../storage/s3-client.js';
 import { notebookExists } from '../notebooks/repository.js';
 import { describeRejectedFileType, resolveAcceptedMimeType } from './file-types.js';
+import { MAX_UPLOAD_FILE_DESCRIPTION } from './upload-limit.js';
 import {
   createDocumentVersion,
   findDocumentContent,
@@ -206,6 +207,9 @@ export function registerDocumentRoutes(
           201: documentSchema,
           400: errorResponseSchema,
           404: errorResponseSchema,
+          413: errorResponseSchema.describe(
+            `The uploaded file is larger than the ${MAX_UPLOAD_FILE_DESCRIPTION} limit for a single upload.`,
+          ),
         },
       },
     },
@@ -230,7 +234,25 @@ export function registerDocumentRoutes(
         return;
       }
 
-      const buffer = await file.toBuffer();
+      let buffer: Buffer;
+      try {
+        buffer = await file.toBuffer();
+      } catch (err) {
+        // Past `limits.fileSize` (see app.ts) busboy truncates the stream and
+        // toBuffer() throws this. The plugin's own error is already a 413,
+        // but its message is the generic "request file too large"; an API
+        // client that skipped the browser-side check (NBK-14) needs the
+        // figure itself to act on.
+        if (err instanceof app.multipartErrors.RequestFileTooLargeError) {
+          await reply.status(413).send({
+            message:
+              `"${file.filename}" is larger than the ${MAX_UPLOAD_FILE_DESCRIPTION} limit for a ` +
+              'single upload, so it was not stored.',
+          });
+          return;
+        }
+        throw err;
+      }
       const storageKey = `notebooks/${request.params.notebookId}/${randomUUID()}-${file.filename}`;
       await putObject(s3, documentsBucket, storageKey, buffer, mimeType);
 

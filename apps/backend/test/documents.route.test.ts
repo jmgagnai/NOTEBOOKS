@@ -323,6 +323,29 @@ describe('Document routes', () => {
         expect(body.status).toBe('queued');
         expect(body.latestVersion.sizeBytes).toBe(50 * MIB - 1);
       });
+
+      it('refuses a file over 50 MiB with 413 and a message naming the limit', async () => {
+        const session = await loginAsNewUser('size-limit-over@example.com');
+        const notebookId = await createNotebook(session, 'Too large uploads');
+        const bytes = Buffer.alloc(50 * MIB + 1, 'a');
+
+        const response = await uploadFile(session, notebookId, 'huge.pdf', bytes);
+
+        expect(response.statusCode).toBe(413);
+        // The limit itself, in the message: an API client that bypassed the
+        // browser-side check still learns what to do, not just "too large".
+        const { message } = response.json() as { message: string };
+        expect(message).toContain('50 MiB');
+        expect(message).toContain('huge.pdf');
+
+        // Refused means nothing was stored: no Document, no Version.
+        const listResponse = await app.inject({
+          method: 'GET',
+          url: `/notebooks/${notebookId}/documents`,
+          cookies: { session },
+        });
+        expect(listResponse.json()).toEqual([]);
+      });
     });
   });
 
