@@ -12,7 +12,10 @@
     </button>
     <mat-menu #accountMenu="matMenu" xPosition="before">
       <button mat-menu-item disabled>{{ user.email }}</button>
-      <button mat-menu-item class="app-shell__sign-out" (click)="signOut()">Sign out</button>
+      <button mat-menu-item class="app-shell__sign-out" (click)="signOut()">
+        <mat-icon svgIcon="sign-out" />
+        <span>Sign out</span>
+      </button>
     </mat-menu>
   </mat-toolbar>
 }

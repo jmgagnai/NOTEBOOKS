@@ -3,6 +3,7 @@ import { App } from './app';
 import { routes } from './app.routes';
 import { AuthService } from './api/services/auth.service';
 import { NotebooksService } from './api/services/notebooks.service';
+import { provideAppIcons } from './shared/fluent-icons';
 
 // App-level seam-3 test (NBK-3): renders the real shell through the real
 // app routes and auth guard, mocking only the generated ng-openapi-gen
@@ -21,6 +22,7 @@ async function renderSignedIn(email: string) {
 
   await render(App, {
     providers: [
+      provideAppIcons(),
       { provide: AuthService, useValue: { getCurrentUser, logout } },
       { provide: NotebooksService, useValue: { listNotebooks } },
     ],
@@ -52,6 +54,17 @@ describe('App', () => {
     const emailItem = await screen.findByRole('menuitem', { name: 'ada@example.com' });
     expect((emailItem as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByRole('menuitem', { name: 'Sign out' })).toBeTruthy();
+  });
+
+  // NBK-31: the first Fluent icon on screen. It decorates the item without
+  // joining its name, so the menu still reads "Sign out" to assistive tech.
+  it('shows an icon on the Sign out item without changing its accessible name', async () => {
+    await renderSignedIn('ada@example.com');
+
+    fireEvent.click(avatarFor('ada@example.com'));
+
+    const signOut = await screen.findByRole('menuitem', { name: 'Sign out' });
+    expect(signOut.querySelector('svg')).not.toBeNull();
   });
 
   it('signs out from the avatar menu and lands on the sign-in page', async () => {
