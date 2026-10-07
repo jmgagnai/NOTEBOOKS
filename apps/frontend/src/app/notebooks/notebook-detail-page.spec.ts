@@ -1,5 +1,5 @@
 import { convertToParamMap, ActivatedRoute } from '@angular/router';
-import { fireEvent, render, screen } from '@testing-library/angular';
+import { fireEvent, render, screen, within } from '@testing-library/angular';
 import { Subject } from 'rxjs';
 import { NotebookDetailPage } from './notebook-detail-page';
 import { NotebooksService } from '../api/services/notebooks.service';
@@ -154,11 +154,110 @@ describe('NotebookDetailPage', () => {
     await screen.findByText('No Documents yet.');
 
     const file = new File(['# hi'], 'notes.md', { type: 'text/markdown' });
-    const input = screen.getByLabelText('Upload a Document') as HTMLInputElement;
+    const input = screen.getByLabelText('Upload Documents') as HTMLInputElement;
     fireEvent.change(input, { target: { files: [file] } });
 
-    expect(await screen.findByText('notes.md')).toBeTruthy();
+    // The Document lands on its card, and — since NBK-16 — a single file goes
+    // through the same batch panel as a multi-select, so the filename shows
+    // there too.
+    const cards = await screen.findByRole('list', { name: 'Documents' });
+    expect(await within(cards).findByText('notes.md')).toBeTruthy();
     expect(uploadDocument).toHaveBeenCalledWith(NOTEBOOK_ID, file);
+    expect(await screen.findByText('1 uploaded, 0 skipped, 0 failed')).toBeTruthy();
+  });
+
+  // NBK-16: several files picked at once upload as one batch — one request per
+  // file to the existing single-file route, at most 3 in flight, with a
+  // per-file progress panel and a summary. The batch lives in the
+  // root-provided store, but the only things asserted here are what a user
+  // sees and the calls the mocked upload client receives.
+  describe('NBK-16: batch upload', () => {
+    function documentFor(filename: string, overrides: Partial<Record<string, unknown>> = {}) {
+      return {
+        id: `doc-${filename}`,
+        notebookId: NOTEBOOK_ID,
+        filename,
+        status: 'queued',
+        abstract: null,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        latestVersion: {
+          id: `v-${filename}-1`,
+          versionNumber: 1,
+          mimeType: 'text/plain',
+          sizeBytes: 1,
+          createdAt: '2026-01-01T00:00:00.000Z',
+        },
+        ...overrides,
+      };
+    }
+
+    /** A promise the test resolves or rejects by hand, to hold a request "in flight". */
+    function deferred<T>() {
+      let resolve!: (value: T) => void;
+      let reject!: (reason: unknown) => void;
+      const promise = new Promise<T>((res, rej) => {
+        resolve = res;
+        reject = rej;
+      });
+      return { promise, resolve, reject };
+    }
+
+    async function renderWithUpload(
+      uploadDocument: ReturnType<typeof vi.fn>,
+      existing: Record<string, unknown>[] = [],
+    ) {
+      const listNotebooks = vi.fn().mockResolvedValue([]);
+      const listDocuments = vi.fn().mockResolvedValue(existing);
+      await render(NotebookDetailPage, {
+        providers: [
+          activatedRouteFor(NOTEBOOK_ID),
+          { provide: NotebooksService, useValue: { listNotebooks } },
+          { provide: DocumentsService, useValue: { listDocuments } },
+          chatServiceStub(),
+          { provide: DocumentTransferService, useValue: { uploadDocument } },
+          appEventsStub().provider,
+        ],
+      });
+      if (existing.length === 0) await screen.findByText('No Documents yet.');
+      else await screen.findByText(String(existing[0]['filename']));
+    }
+
+    function pick(files: File[]) {
+      const input = screen.getByLabelText('Upload Documents') as HTMLInputElement;
+      fireEvent.change(input, { target: { files } });
+      return input;
+    }
+
+    function panelRow(filename: string) {
+      const panel = screen.getByRole('list', { name: 'Upload progress' });
+      return within(panel)
+        .getAllByRole('listitem')
+        .find((row) => within(row).queryByText(filename) !== null)!;
+    }
+
+    it('accepts several files at once and sends one request per file', async () => {
+      const uploadDocument = vi
+        .fn()
+        .mockImplementation((_notebookId: string, file: File) =>
+          Promise.resolve(documentFor(file.name)),
+        );
+      await renderWithUpload(uploadDocument);
+
+      const input = pick([new File(['a'], 'a.txt'), new File(['b'], 'b.md')]);
+      expect(input.multiple).toBe(true);
+      // The picker only offers what the backend accepts — the one list the
+      // frontend keeps for it.
+      expect(input.accept).toBe('.txt,.md,.markdown,.docx,.xlsx,.csv,.pdf');
+
+      const cards = await screen.findByRole('list', { name: 'Documents' });
+      expect(await within(cards).findByText('a.txt')).toBeTruthy();
+      expect(await within(cards).findByText('b.md')).toBeTruthy();
+      expect(uploadDocument).toHaveBeenCalledTimes(2);
+      expect(uploadDocument.mock.calls.map(([, file]) => (file as File).name)).toEqual([
+        'a.txt',
+        'b.md',
+      ]);
+    });
   });
 
   it('deletes a Document, removing it from the list, then restores it via Undo', async () => {

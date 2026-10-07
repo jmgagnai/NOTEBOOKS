@@ -4,7 +4,8 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { ChatPanel } from '../chat/chat-panel';
-import { Document, DocumentsStore } from '../documents/documents.store';
+import { Document, DocumentsStore, UploadItemStatus } from '../documents/documents.store';
+import { UPLOAD_ACCEPT } from '../documents/upload-rules';
 import { NotebooksStore } from './notebooks.store';
 
 /**
@@ -58,12 +59,37 @@ export class NotebookDetailPage implements OnInit, OnDestroy {
     this.store.stopWatching();
   }
 
+  /** The picker only offers the accepted document types (NBK-16). */
+  protected readonly accept = UPLOAD_ACCEPT;
+
+  /** The upload batch, if the one in the store belongs to this Notebook. */
+  protected readonly batch = computed(() => {
+    const batch = this.store.batch();
+    return batch?.notebookId === this.notebookId ? batch : null;
+  });
+
+  /** The end-of-batch summary line, once nothing is waiting or in flight. */
+  protected readonly batchSummaryLine = computed(() => {
+    const summary = this.store.batchSummary();
+    if (!summary || !this.batch() || this.store.batchRunning()) return null;
+    const uploaded =
+      summary.newVersions > 0
+        ? `${summary.uploaded} uploaded (${summary.newVersions} as new Versions)`
+        : `${summary.uploaded} uploaded`;
+    return `${uploaded}, ${summary.skipped} skipped, ${summary.failed} failed`;
+  });
+
   protected onFileSelected(event: Event): void {
     const input = event.target as HTMLInputElement;
-    const file = input.files?.[0];
-    if (!file) return;
-    void this.store.uploadDocument(this.notebookId, file);
+    const files = Array.from(input.files ?? []);
+    if (files.length === 0) return;
+    void this.store.uploadDocuments(this.notebookId, files);
     input.value = '';
+  }
+
+  /** How an item's status reads in the progress panel. */
+  protected statusLabel(status: UploadItemStatus): string {
+    return status === 'new-version' ? 'new version' : status;
   }
 
   protected delete(document: Document): void {

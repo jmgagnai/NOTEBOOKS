@@ -18,6 +18,37 @@
     margin-bottom: 1rem;
   }
 
+  // The upload batch panel (NBK-16): one row per file, then the summary.
+  &__batch {
+    margin-bottom: 1rem;
+  }
+
+  &__batch-items {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  &__batch-item {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  &__batch-reason {
+    flex-basis: 100%;
+    font-size: 0.85rem;
+    color: var(--mat-sys-on-surface-variant, #666);
+  }
+
+  &__batch-summary {
+    font-weight: 600;
+  }
+
   &__undo {
     display: flex;
     align-items: center;

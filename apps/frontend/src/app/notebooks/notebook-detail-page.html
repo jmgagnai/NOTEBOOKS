@@ -21,13 +21,50 @@
       Search this Notebook
     </a>
 
+    <!--
+      Several files at once (NBK-16): the picker is multi-select and only
+      offers the accepted document types, derived from upload-rules.ts.
+    -->
     <label class="notebook-detail-page__upload">
-      Upload a Document
-      <input type="file" (change)="onFileSelected($event)" aria-label="Upload a Document" />
+      Upload Documents
+      <input
+        type="file"
+        multiple
+        [accept]="accept"
+        (change)="onFileSelected($event)"
+        aria-label="Upload Documents"
+      />
     </label>
 
-    @if (store.uploading()) {
-      <mat-progress-spinner mode="indeterminate" diameter="24" />
+    <!--
+      The progress panel (NBK-16): every file of the batch with its status and,
+      where it was skipped or failed, why — then the summary once the batch
+      is done. It replaces the single spinner, which could not say which of
+      forty files was the slow one.
+    -->
+    @if (batch(); as batch) {
+      <section class="notebook-detail-page__batch" aria-label="Upload batch">
+        @if (store.batchRunning()) {
+          <mat-progress-spinner mode="indeterminate" diameter="24" />
+        }
+        <ul class="notebook-detail-page__batch-items" aria-label="Upload progress">
+          @for (item of batch.items; track item.id) {
+            <li class="notebook-detail-page__batch-item">
+              <span class="notebook-detail-page__filename">{{ item.file.name }}</span>
+              <span
+                [class]="'notebook-detail-page__badge notebook-detail-page__badge--' + item.status"
+                >{{ statusLabel(item.status) }}</span
+              >
+              @if (item.reason) {
+                <span class="notebook-detail-page__batch-reason">{{ item.reason }}</span>
+              }
+            </li>
+          }
+        </ul>
+        @if (batchSummaryLine(); as summary) {
+          <p class="notebook-detail-page__batch-summary">{{ summary }}</p>
+        }
+      </section>
     }
 
     @if (store.lastDeleted(); as deleted) {
@@ -50,7 +87,7 @@
         "to be skimmed in a list"), so each entry needs room for a line or
         two of prose under its filename.
       -->
-      <ul class="notebook-detail-page__cards">
+      <ul class="notebook-detail-page__cards" aria-label="Documents">
         @for (document of store.documents(); track document.id) {
           <li class="notebook-detail-page__card">
             <div class="notebook-detail-page__card-head">

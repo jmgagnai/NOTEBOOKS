@@ -1,5 +1,5 @@
-import { inject } from '@angular/core';
-import { patchState, signalStore, withMethods, withState } from '@ngrx/signals';
+import { computed, inject } from '@angular/core';
+import { patchState, signalStore, withComputed, withMethods, withState } from '@ngrx/signals';
 import { Subscription } from 'rxjs';
 import { DocumentsService } from '../api/services/documents.service';
 import { AppEvent, AppEventsService } from '../events/app-events.service';
@@ -190,10 +190,52 @@ export interface DocumentContent {
   markdown: string | null;
 }
 
+/**
+ * Where one file of an upload batch is (NBK-16). `uploaded` and
+ * `new-version` are both successes — per GLOSSARY.md a filename that already
+ * exists in the Notebook "creates a new Version of that Document rather than
+ * a separate one", and the summary counts the two apart. `skipped` is decided
+ * in the browser before anything is sent; `failed` is a request that was sent
+ * and did not land.
+ */
+export type UploadItemStatus =
+  'waiting' | 'uploading' | 'uploaded' | 'new-version' | 'failed' | 'skipped';
+
+/** One file of an upload batch, in selection order. */
+export interface UploadItem {
+  /** Stable within the batch, for rendering; not a Document id. */
+  id: string;
+  file: File;
+  status: UploadItemStatus;
+  /** Why it was skipped or failed; null otherwise. */
+  reason: string | null;
+}
+
+/**
+ * One multi-file upload (NBK-16). Held in this root-provided store rather
+ * than the page so it survives in-app navigation. A batch is *running* while
+ * any item is still `waiting` or `uploading` — see `batchRunning`.
+ */
+export interface UploadBatch {
+  notebookId: string;
+  items: UploadItem[];
+}
+
+/** The counts the end-of-batch summary line reports. */
+export interface UploadBatchSummary {
+  uploaded: number;
+  newVersions: number;
+  skipped: number;
+  failed: number;
+}
+
+/** How many upload requests the browser keeps in flight at once. */
+const UPLOAD_CONCURRENCY = 3;
+
 interface DocumentsState {
   documents: Document[];
   loading: boolean;
-  uploading: boolean;
+  batch: UploadBatch | null;
   error: string | null;
   // The currently open Document, and its content once expanded.
   openDocument: OpenDocument | null;
@@ -210,7 +252,7 @@ interface DocumentsState {
 const initialState: DocumentsState = {
   documents: [],
   loading: false,
-  uploading: false,
+  batch: null,
   error: null,
   openDocument: null,
   openDocumentLoading: false,
@@ -229,6 +271,28 @@ const initialState: DocumentsState = {
 export const DocumentsStore = signalStore(
   { providedIn: 'root' },
   withState(initialState),
+  withComputed(({ batch }) => ({
+    /** True while any file of the current batch is still waiting or in flight. */
+    batchRunning: computed(
+      () =>
+        batch()?.items.some((item) => item.status === 'waiting' || item.status === 'uploading') ??
+        false,
+    ),
+    /** The counts behind the summary line, or null when there is no batch. */
+    batchSummary: computed((): UploadBatchSummary | null => {
+      const items = batch()?.items;
+      if (!items) return null;
+      const count = (status: UploadItemStatus) =>
+        items.filter((item) => item.status === status).length;
+      const newVersions = count('new-version');
+      return {
+        uploaded: count('uploaded') + newVersions,
+        newVersions,
+        skipped: count('skipped'),
+        failed: count('failed'),
+      };
+    }),
+  })),
   withMethods(
     (
       store,
@@ -245,6 +309,62 @@ export const DocumentsStore = signalStore(
       function stopWatching(): void {
         watching?.unsubscribe();
         watching = null;
+      }
+
+      /** Rewrites one item of the current batch. */
+      function patchItem(id: string, change: Partial<UploadItem>): void {
+        const batch = store.batch();
+        if (!batch) return;
+        patchState(store, {
+          batch: {
+            ...batch,
+            items: batch.items.map((item) => (item.id === id ? { ...item, ...change } : item)),
+          },
+        });
+      }
+
+      /** Sends one item's file and records how it landed. */
+      async function uploadItem(notebookId: string, item: UploadItem): Promise<void> {
+        patchItem(item.id, { status: 'uploading' });
+        try {
+          const document = await transferService.uploadDocument(notebookId, item.file);
+          // A re-upload of an existing filename comes back as a new Version
+          // of the same Document (same id, incremented versionNumber) rather
+          // than a new Document — replace the existing card instead of
+          // appending a duplicate.
+          const existing = store.documents().some((d) => d.id === document.id);
+          patchState(store, {
+            documents: existing
+              ? store.documents().map((d) => (d.id === document.id ? document : d))
+              : [...store.documents(), document],
+          });
+          patchItem(item.id, { status: 'uploaded' });
+        } catch (err) {
+          patchItem(item.id, {
+            status: 'failed',
+            reason: errorMessage(err, 'Failed to upload Document.'),
+          });
+        }
+      }
+
+      /**
+       * Keeps `UPLOAD_CONCURRENCY` requests in flight from the current batch's
+       * `waiting` items, in order, until none is left. Each worker takes the
+       * next waiting item as soon as its own request settles, so a slow file
+       * never holds the others back. Resolves when the batch is no longer
+       * running.
+       */
+      async function drainBatch(): Promise<void> {
+        const notebookId = store.batch()?.notebookId;
+        if (!notebookId) return;
+        async function worker(): Promise<void> {
+          for (;;) {
+            const next = store.batch()?.items.find((item) => item.status === 'waiting');
+            if (!next) return;
+            await uploadItem(notebookId!, next);
+          }
+        }
+        await Promise.all(Array.from({ length: UPLOAD_CONCURRENCY }, worker));
       }
 
       return {
@@ -368,26 +488,21 @@ export const DocumentsStore = signalStore(
           patchState(store, { openDocument: null, openContent: null, error: null });
         },
 
-        async uploadDocument(notebookId: string, file: File): Promise<void> {
-          patchState(store, { uploading: true, error: null });
-          try {
-            const document = await transferService.uploadDocument(notebookId, file);
-            patchState(store, {
-              uploading: false,
-              // A re-upload of an existing filename comes back as a new
-              // Version of the same Document (same id, incremented
-              // versionNumber) rather than a new Document — replace the
-              // existing entry instead of appending a duplicate.
-              documents: store.documents().some((d) => d.id === document.id)
-                ? store.documents().map((d) => (d.id === document.id ? document : d))
-                : [...store.documents(), document],
-            });
-          } catch (err) {
-            patchState(store, {
-              uploading: false,
-              error: errorMessage(err, 'Failed to upload Document.'),
-            });
-          }
+        /**
+         * Uploads `files` into a Notebook as one batch (NBK-16): one request
+         * per file to the single-file route, at most `UPLOAD_CONCURRENCY` in
+         * flight, in selection order. Each file lands or fails on its own.
+         * Resolves when nothing is left waiting or in flight.
+         */
+        async uploadDocuments(notebookId: string, files: File[]): Promise<void> {
+          const items: UploadItem[] = files.map((file, index) => ({
+            id: `${index}`,
+            file,
+            status: 'waiting',
+            reason: null,
+          }));
+          patchState(store, { batch: { notebookId, items }, error: null });
+          await drainBatch();
         },
 
         async deleteDocument(notebookId: string, documentId: string): Promise<void> {
