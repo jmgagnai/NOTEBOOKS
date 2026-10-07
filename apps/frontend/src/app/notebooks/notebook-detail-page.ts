@@ -97,6 +97,11 @@ export class NotebookDetailPage implements OnInit, OnDestroy {
     this.store.cancelBatch();
   }
 
+  /** Clears the panel once the batch is done (NBK-17). */
+  protected dismissBatch(): void {
+    this.store.dismissBatch();
+  }
+
   /** How an item's status reads in the progress panel. */
   protected statusLabel(status: UploadItemStatus): string {
     return status === 'new-version' ? 'new version' : status;

@@ -1,4 +1,5 @@
-import { convertToParamMap, ActivatedRoute } from '@angular/router';
+import { Component } from '@angular/core';
+import { convertToParamMap, ActivatedRoute, RouterOutlet } from '@angular/router';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/angular';
 import { Subject } from 'rxjs';
 import { NotebookDetailPage } from './notebook-detail-page';
@@ -9,6 +10,22 @@ import { DocumentTransferService } from '../documents/document-transfer.service'
 import { AppEvent, AppEventsService } from '../events/app-events.service';
 
 const NOTEBOOK_ID = '11111111-1111-1111-1111-111111111111';
+
+/**
+ * A bare outlet to route the real page in and out of (NBK-17): in-app
+ * navigation has to destroy and re-create the page the way the router does.
+ */
+@Component({
+  selector: 'app-router-shell',
+  standalone: true,
+  imports: [RouterOutlet],
+  template: '<router-outlet />',
+})
+class RouterShell {}
+
+/** Any other page of the app, to navigate away to. */
+@Component({ selector: 'app-elsewhere', standalone: true, template: '<p>Somewhere else</p>' })
+class Elsewhere {}
 
 function activatedRouteFor(notebookId: string) {
   return {
@@ -672,6 +689,87 @@ describe('NotebookDetailPage', () => {
       uploads.land('2.txt');
       await screen.findByText('2 uploaded, 0 skipped, 0 failed');
       expect(closingTab()).toBe(false);
+    });
+
+    // Real routing here, not the ActivatedRoute stub: the page has to be
+    // destroyed and created again by the router, the way it is in the app,
+    // for "navigating away and back" to mean anything.
+    it('keeps the batch going, and shows it again, across in-app navigation away and back', async () => {
+      const uploads = heldUploads();
+      const listNotebooks = vi.fn().mockResolvedValue([]);
+      // The second visit re-reads the list, and by then the first file is
+      // stored — as the real backend would report.
+      const listDocuments = vi
+        .fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValue([documentFor('1.txt')]);
+      const { navigate } = await render(RouterShell, {
+        routes: [
+          { path: 'notebooks/:notebookId', component: NotebookDetailPage },
+          { path: 'elsewhere', component: Elsewhere },
+        ],
+        providers: [
+          { provide: NotebooksService, useValue: { listNotebooks } },
+          { provide: DocumentsService, useValue: { listDocuments } },
+          chatServiceStub(),
+          {
+            provide: DocumentTransferService,
+            useValue: { uploadDocument: uploads.uploadDocument },
+          },
+          appEventsStub().provider,
+        ],
+      });
+      await navigate(`/notebooks/${NOTEBOOK_ID}`);
+      await screen.findByText('No Documents yet.');
+
+      pick(['1.txt', '2.txt']);
+      await waitFor(() => expect(uploads.uploadDocument).toHaveBeenCalledTimes(2));
+      await screen.findByText('2.txt');
+
+      await navigate('/elsewhere');
+      await screen.findByText('Somewhere else');
+      expect(screen.queryByRole('list', { name: 'Upload progress' })).toBeNull();
+      // A file landing while the page is away is not lost...
+      uploads.land('1.txt');
+
+      await navigate(`/notebooks/${NOTEBOOK_ID}`);
+      // ...the batch is still shown, in progress, with what landed meanwhile...
+      const panel = await screen.findByRole('list', { name: 'Upload progress' });
+      expect(within(panelRow('1.txt')).getByText('uploaded')).toBeTruthy();
+      expect(within(panelRow('2.txt')).getByText('uploading')).toBeTruthy();
+      expect(within(panel).getAllByRole('listitem')).toHaveLength(2);
+      expect(screen.getByRole('button', { name: 'Cancel' })).toBeTruthy();
+      expect((screen.getByLabelText('Upload Documents') as HTMLInputElement).disabled).toBe(true);
+      // ...and Documents keep landing on the re-created page; no file was
+      // sent twice.
+      uploads.land('2.txt');
+      expect(await screen.findByText('2 uploaded, 0 skipped, 0 failed')).toBeTruthy();
+      const cards = screen.getByRole('list', { name: 'Documents' });
+      expect(within(cards).getByText('1.txt')).toBeTruthy();
+      expect(within(cards).getByText('2.txt')).toBeTruthy();
+      expect(uploads.uploadDocument).toHaveBeenCalledTimes(2);
+    });
+
+    it('offers to dismiss the panel once the batch has finished, and not before', async () => {
+      const uploads = heldUploads();
+      await renderWithUpload(uploads.uploadDocument);
+
+      pick(['1.txt']);
+      await screen.findByText('1.txt');
+      expect(screen.queryByRole('button', { name: 'Dismiss' })).toBeNull();
+
+      uploads.land('1.txt');
+      await screen.findByText('1 uploaded, 0 skipped, 0 failed');
+      fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+
+      await waitFor(() =>
+        expect(screen.queryByRole('list', { name: 'Upload progress' })).toBeNull(),
+      );
+      expect(screen.queryByText('1 uploaded, 0 skipped, 0 failed')).toBeNull();
+      // Dismissing the panel forgets nothing that was stored.
+      expect(
+        within(screen.getByRole('list', { name: 'Documents' })).getByText('1.txt'),
+      ).toBeTruthy();
     });
   });
 

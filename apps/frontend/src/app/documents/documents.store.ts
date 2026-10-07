@@ -580,6 +580,16 @@ export const DocumentsStore = signalStore(
           });
         },
 
+        /**
+         * Drops a finished batch from the panel (NBK-17). A running one stays:
+         * the panel is where its Cancel lives, and the Documents it has
+         * stored are in the list regardless.
+         */
+        dismissBatch(): void {
+          if (store.batchRunning()) return;
+          patchState(store, { batch: null });
+        },
+
         async deleteDocument(notebookId: string, documentId: string): Promise<void> {
           patchState(store, { error: null });
           const deleted = store.documents().find((d) => d.id === documentId) ?? null;

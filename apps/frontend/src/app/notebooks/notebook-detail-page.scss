@@ -49,6 +49,14 @@
     font-weight: 600;
   }
 
+  // Steering the batch (NBK-17): Cancel while it runs, Retry failed and
+  // Dismiss once it is done.
+  &__batch-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
   &__undo {
     display: flex;
     align-items: center;
