@@ -1,20 +1,25 @@
 import { Component, computed, effect, ElementRef, inject, input } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
+import { marked } from 'marked';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { ChatMessage, ChatStore, Citation } from '../../chat/chat.store';
 import { ProtoIcon } from './proto-icon';
+/** Minimal escaping for a value placed in a double-quoted HTML attribute. */
+function escapeAttr(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+}
+
 import {
   protoCitationLink,
   protoCitationName,
   protoCitationParams,
   protoInitials,
   protoSegments,
-  ProtoSegment,
 } from './proto-chat-helpers';
 
 interface Block {
   index: number;
-  segments: ProtoSegment[];
+  html: string;
 }
 
 /**
@@ -50,21 +55,15 @@ interface Block {
             }
             <div class="pml__msg" [class.pml__msg--user]="m.role === 'user'">
               <span class="pml__author">{{ author(m) }}</span>
-              <p class="pml__content">
-                @for (s of segments(m); track $index) {
-                  @if (s.citation; as c) {
-                    <a
-                      class="pml__marker"
-                      [routerLink]="link(c)"
-                      [queryParams]="params(c)"
-                      [title]="name(c)"
-                      >{{ s.text }}</a
-                    >
-                  } @else {
-                    <span>{{ s.text }}</span>
-                  }
-                }
-              </p>
+              @if (m.role === 'assistant') {
+                <div
+                  class="pml__content pml__md"
+                  [innerHTML]="html(m.content, m.citations)"
+                  (click)="onContentClick($event)"
+                ></div>
+              } @else {
+                <p class="pml__content pml__plain">{{ m.content }}</p>
+              }
               @if (m.citations.length > 0) {
                 <ul class="pml__cites">
                   @for (c of m.citations; track c.id) {
@@ -92,17 +91,11 @@ interface Block {
             <div class="pml__msg pml__msg--streaming">
               <span class="pml__author">Assistant, answering…</span>
               @for (b of blocks(); track b.index) {
-                <p class="pml__content">
-                  @for (s of b.segments; track $index) {
-                    @if (s.citation; as c) {
-                      <a class="pml__marker" [routerLink]="link(c)" [queryParams]="params(c)">{{
-                        s.text
-                      }}</a>
-                    } @else {
-                      <span>{{ s.text }}</span>
-                    }
-                  }
-                </p>
+                <div
+                  class="pml__content pml__md"
+                  [innerHTML]="b.html"
+                  (click)="onContentClick($event)"
+                ></div>
               }
             </div>
           </li>
@@ -154,11 +147,101 @@ interface Block {
     }
     .pml__content {
       margin: 0;
-      white-space: pre-wrap;
       font-size: 14px;
       line-height: 20px;
       color: #242424;
     }
+    .pml__plain {
+      white-space: pre-wrap;
+    }
+    .pml__md {
+      overflow-wrap: break-word;
+    }
+    .pml__msg--streaming .pml__md + .pml__md {
+      margin-top: 8px;
+    }
+    .pml__md ::ng-deep > :first-child {
+      margin-top: 0;
+    }
+    .pml__md ::ng-deep > :last-child {
+      margin-bottom: 0;
+    }
+    .pml__md ::ng-deep h1,
+    .pml__md ::ng-deep h2,
+    .pml__md ::ng-deep h3,
+    .pml__md ::ng-deep h4 {
+      margin: 16px 0 6px;
+      line-height: 1.3;
+      font-weight: 600;
+      color: #242424;
+    }
+    .pml__md ::ng-deep h1 {
+      font-size: 20px;
+    }
+    .pml__md ::ng-deep h2 {
+      font-size: 18px;
+    }
+    .pml__md ::ng-deep h3 {
+      font-size: 16px;
+    }
+    .pml__md ::ng-deep h4 {
+      font-size: 14px;
+    }
+    .pml__md ::ng-deep p,
+    .pml__md ::ng-deep ul,
+    .pml__md ::ng-deep ol {
+      margin: 8px 0;
+    }
+    .pml__md ::ng-deep li + li {
+      margin-top: 2px;
+    }
+    .pml__md ::ng-deep table {
+      display: block;
+      max-width: 100%;
+      overflow-x: auto;
+      border-collapse: collapse;
+      margin: 10px 0;
+      font-size: 13px;
+    }
+    .pml__md ::ng-deep th,
+    .pml__md ::ng-deep td {
+      border: 1px solid #e0e0e0;
+      padding: 5px 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+    .pml__md ::ng-deep th {
+      background: #f5f5f5;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .pml__md ::ng-deep code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.9em;
+      background: #f5f5f5;
+      border-radius: 3px;
+      padding: 0 4px;
+    }
+    .pml__md ::ng-deep pre {
+      overflow-x: auto;
+      padding: 10px 12px;
+      border-radius: 6px;
+      background: #f5f5f5;
+    }
+    .pml__md ::ng-deep pre code {
+      background: none;
+      padding: 0;
+    }
+    .pml__md ::ng-deep blockquote {
+      margin: 8px 0;
+      padding-left: 12px;
+      border-left: 3px solid #e0e0e0;
+      color: #616161;
+    }
+    .pml__md ::ng-deep a:not(.pml__marker) {
+      color: #0f6cbd;
+    }
+    .pml__md ::ng-deep .pml__marker,
     .pml__marker {
       color: #0f6cbd;
       font-size: 11px;
@@ -166,6 +249,7 @@ interface Block {
       font-weight: 600;
       text-decoration: none;
     }
+    .pml__md ::ng-deep .pml__marker:hover,
     .pml__marker:hover {
       text-decoration: underline;
     }
@@ -299,7 +383,7 @@ export class ProtoMessageList {
   protected readonly blocks = computed<Block[]>(() => {
     const s = this.store.streamingAnswer();
     if (!s) return [];
-    return s.chunks.map((text, index) => ({ index, segments: protoSegments(text, s.citations) }));
+    return s.chunks.map((text, index) => ({ index, html: this.html(text, s.citations) }));
   });
 
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
@@ -351,8 +435,43 @@ export class ProtoMessageList {
   protected author(m: ChatMessage): string {
     return m.role === 'assistant' ? `Copilot · for ${m.askedBy.email}` : m.askedBy.email;
   }
-  protected segments(m: ChatMessage): ProtoSegment[] {
-    return protoSegments(m.content, m.citations);
+  private readonly router = inject(Router);
+
+  /**
+   * An answer as HTML (spec 04: answers are Markdown). Each source marker
+   * whose Citation exists is swapped for a real link *before* parsing, so it
+   * survives inside headings, list items and table cells; markers with no
+   * Citation stay plain text. The HTML goes through Angular's `[innerHTML]`
+   * sanitizer, which keeps `href`, `class` and `title` and drops the rest.
+   * Pulls `marked` into the main bundle — acceptable for the prototype only.
+   */
+  protected html(content: string, citations: Citation[]): string {
+    const marked_up = protoSegments(content, citations)
+      .map((seg) =>
+        seg.citation
+          ? `<a class="pml__marker" href="${this.href(seg.citation)}" title="${escapeAttr(protoCitationName(seg.citation))}">${seg.text}</a>`
+          : seg.text,
+      )
+      .join('');
+    return marked.parse(marked_up, { async: false, gfm: true }) as string;
+  }
+
+  private href(c: Citation): string {
+    return this.router.serializeUrl(
+      this.router.createUrlTree(protoCitationLink(this.notebookId(), c), {
+        queryParams: protoCitationParams(c),
+      }),
+    );
+  }
+
+  /** In-app links inside the rendered HTML go through the router, not a reload. */
+  protected onContentClick(event: MouseEvent): void {
+    const anchor = (event.target as HTMLElement).closest('a');
+    if (!anchor || event.metaKey || event.ctrlKey) return;
+    const href = anchor.getAttribute('href') ?? '';
+    if (!href.startsWith('/')) return;
+    event.preventDefault();
+    void this.router.navigateByUrl(href);
   }
   protected name(c: Citation): string {
     return protoCitationName(c);
