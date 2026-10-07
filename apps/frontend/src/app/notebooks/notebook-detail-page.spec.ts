@@ -1,5 +1,5 @@
 import { convertToParamMap, ActivatedRoute } from '@angular/router';
-import { fireEvent, render, screen, within } from '@testing-library/angular';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/angular';
 import { Subject } from 'rxjs';
 import { NotebookDetailPage } from './notebook-detail-page';
 import { NotebooksService } from '../api/services/notebooks.service';
@@ -257,6 +257,66 @@ describe('NotebookDetailPage', () => {
         'a.txt',
         'b.md',
       ]);
+    });
+
+    it('keeps at most 3 requests in flight, taking files in selection order', async () => {
+      const inFlight: ReturnType<typeof deferred<Record<string, unknown>>>[] = [];
+      const uploadDocument = vi.fn().mockImplementation(() => {
+        const request = deferred<Record<string, unknown>>();
+        inFlight.push(request);
+        return request.promise;
+      });
+      await renderWithUpload(uploadDocument);
+
+      const files = ['1.txt', '2.txt', '3.txt', '4.txt', '5.txt'].map(
+        (name) => new File(['x'], name),
+      );
+      pick(files);
+
+      const sentNames = () => uploadDocument.mock.calls.map(([, file]) => (file as File).name);
+      await waitFor(() => expect(uploadDocument).toHaveBeenCalledTimes(3));
+      expect(sentNames()).toEqual(['1.txt', '2.txt', '3.txt']);
+
+      // Nothing more goes out until a slot frees up...
+      await screen.findByText('5.txt');
+      expect(uploadDocument).toHaveBeenCalledTimes(3);
+
+      // ...and when one does, the next file in selection order takes it.
+      inFlight[1].resolve(documentFor('2.txt'));
+      await waitFor(() => expect(uploadDocument).toHaveBeenCalledTimes(4));
+      expect(sentNames()[3]).toBe('4.txt');
+
+      inFlight[0].resolve(documentFor('1.txt'));
+      await waitFor(() => expect(uploadDocument).toHaveBeenCalledTimes(5));
+      expect(sentNames()[4]).toBe('5.txt');
+
+      for (const [index, request] of inFlight.slice(2).entries()) {
+        request.resolve(documentFor(`${index + 3}.txt`));
+      }
+      expect(await screen.findByText('5 uploaded, 0 skipped, 0 failed')).toBeTruthy();
+      expect(uploadDocument).toHaveBeenCalledTimes(5);
+    });
+
+    it('shows each file moving from waiting to uploading to uploaded', async () => {
+      const inFlight: ReturnType<typeof deferred<Record<string, unknown>>>[] = [];
+      const uploadDocument = vi.fn().mockImplementation(() => {
+        const request = deferred<Record<string, unknown>>();
+        inFlight.push(request);
+        return request.promise;
+      });
+      await renderWithUpload(uploadDocument);
+
+      pick(['1.txt', '2.txt', '3.txt', '4.txt'].map((name) => new File(['x'], name)));
+
+      await screen.findByText('4.txt');
+      expect(within(panelRow('1.txt')).getByText('uploading')).toBeTruthy();
+      expect(within(panelRow('4.txt')).getByText('waiting')).toBeTruthy();
+      // No summary while files are still moving.
+      expect(screen.queryByText(/uploaded, .* skipped, .* failed/)).toBeNull();
+
+      inFlight[0].resolve(documentFor('1.txt'));
+      expect(await within(panelRow('1.txt')).findByText('uploaded')).toBeTruthy();
+      expect(await within(panelRow('4.txt')).findByText('uploading')).toBeTruthy();
     });
   });
 
