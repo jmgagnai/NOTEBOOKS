@@ -124,7 +124,12 @@ so this is approximated:
   `PUT .../issue/<key>/assignee`.
 - **Blocking**: Jira issue link type **"is blocked by"** /
   `POST $JIRA_BASE_URL/rest/api/3/issueLink` with
-  `{"type":{"name":"Blocks"},"inwardIssue":{"key":"<child>"},"outwardIssue":{"key":"<blocker>"}}`.
+  `{"type":{"name":"Blocks"},"inwardIssue":{"key":"<blocker>"},"outwardIssue":{"key":"<child>"}}`.
+  Mind the direction: for "Blocks", Jira's *inward* issue is the one that
+  blocks and the *outward* issue is the one blocked (the opposite of how
+  the body reads). `scripts/jira.mjs link <child> blocked-by <blocker>`
+  gets it right; the first run of `/to-tickets` on NBK-27 got it backwards
+  and had to re-link.
   A ticket is unblocked when every issue linked as a blocker is in status `Done`.
 - **Frontier query**: `GET /rest/api/3/search?jql=project=NBK AND labels="wayfinder-*" AND status!=Done`,
   then for each result fetch `issuelinks` and drop any with an open (`status != Done`)
