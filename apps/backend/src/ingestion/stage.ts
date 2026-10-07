@@ -86,7 +86,8 @@ export interface IngestionVersion extends DocumentVersionRef {
  * presence as meaningful rather than having to test for null. Per ADR-0004 an
  * event carries *what changed* and never bulk data — a NOTIFY payload has to
  * stay well inside Postgres's 8000-byte cap — which is why nothing here
- * carries Markdown, a summary, or metadata.
+ * carries Markdown, a summary, or metadata, and why the error is cut to a
+ * headline (see `eventErrorSummary`). The full text is on the Version row.
  */
 export function versionStatusChanged(
   version: IngestionVersion,
@@ -102,7 +103,29 @@ export function versionStatusChanged(
       versionId: version.versionId,
       filename: version.filename,
       status,
-      ...(error ? { error } : {}),
+      ...(error ? { error: eventErrorSummary(error) } : {}),
     },
   };
 }
+
+/**
+ * The most of a Stage's error that fits in an event.
+ *
+ * A failure message can carry a subprocess's whole captured output — stage
+ * 1 attaches up to 8000 bytes of Docling diagnostics — and an event that
+ * size is refused by the bus. That refusal used to happen *inside* the
+ * transaction recording the failure, so the failure was never recorded: the
+ * Version stayed at "converting", the event bus's complaint replaced the
+ * real error in the job table, and nothing told the user. The event gets
+ * the headline; `ingestion_error` keeps everything.
+ */
+export function eventErrorSummary(error: string): string {
+  if (error.length <= MAX_EVENT_ERROR_CHARS) return error;
+  return `${error.slice(0, MAX_EVENT_ERROR_CHARS)}…`;
+}
+
+/**
+ * Well under the bus's 7000-byte cap even for multi-byte text, with room
+ * left for the rest of the envelope.
+ */
+const MAX_EVENT_ERROR_CHARS = 500;
