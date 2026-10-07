@@ -73,6 +73,103 @@ function appEventsStub() {
   };
 }
 
+// Shared by the upload blocks (NBK-16..19): a Document as the API returns
+// it, a request the test settles by hand, the page rendered with an upload
+// client, and the picker and the progress panel as a user reaches them.
+
+function documentFor(filename: string, overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    id: `doc-${filename}`,
+    notebookId: NOTEBOOK_ID,
+    filename,
+    status: 'queued',
+    abstract: null,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    latestVersion: {
+      id: `v-${filename}-1`,
+      versionNumber: 1,
+      mimeType: 'text/plain',
+      sizeBytes: 1,
+      createdAt: '2026-01-01T00:00:00.000Z',
+    },
+    ...overrides,
+  };
+}
+
+/** A promise the test resolves or rejects by hand, to hold a request "in flight". */
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+/** An upload client whose every request stays in flight until the test settles it. */
+function heldUploads() {
+  const inFlight: {
+    file: File;
+    request: ReturnType<typeof deferred<Record<string, unknown>>>;
+  }[] = [];
+  const uploadDocument = vi.fn().mockImplementation((_notebookId: string, file: File) => {
+    const request = deferred<Record<string, unknown>>();
+    inFlight.push({ file, request });
+    return request.promise;
+  });
+  const sentNames = () => inFlight.map(({ file }) => file.name);
+  const land = (filename: string) =>
+    inFlight.find(({ file }) => file.name === filename)!.request.resolve(documentFor(filename));
+  const fail = (filename: string) =>
+    inFlight
+      .find(({ file }) => file.name === filename)!
+      .request.reject({ error: { message: 'Storage is unavailable.' } });
+  return { uploadDocument, inFlight, sentNames, land, fail };
+}
+
+/** The page on its Notebook, listing `existing`, with `uploadDocument` as the upload client. */
+async function renderWithUpload(
+  uploadDocument: ReturnType<typeof vi.fn>,
+  existing: Record<string, unknown>[] = [],
+) {
+  const listNotebooks = vi.fn().mockResolvedValue([]);
+  const listDocuments = vi.fn().mockResolvedValue(existing);
+  const result = await render(NotebookDetailPage, {
+    providers: [
+      activatedRouteFor(NOTEBOOK_ID),
+      { provide: NotebooksService, useValue: { listNotebooks } },
+      { provide: DocumentsService, useValue: { listDocuments } },
+      chatServiceStub(),
+      { provide: DocumentTransferService, useValue: { uploadDocument } },
+      appEventsStub().provider,
+    ],
+  });
+  if (existing.length === 0) await screen.findByText('No Documents yet.');
+  else await screen.findByText(String(existing[0]['filename']));
+  return result;
+}
+
+/** A one-byte file, when only its name matters. */
+function fileNamed(name: string) {
+  return new File(['x'], name);
+}
+
+/** Selects `files` in the picker. */
+function pick(files: File[]) {
+  const input = screen.getByLabelText('Upload Documents') as HTMLInputElement;
+  fireEvent.change(input, { target: { files } });
+  return input;
+}
+
+/** The progress panel's row for `filename`. */
+function panelRow(filename: string) {
+  const panel = screen.getByRole('list', { name: 'Upload progress' });
+  return within(panel)
+    .getAllByRole('listitem')
+    .find((row) => within(row).queryByText(filename) !== null)!;
+}
+
 // Seam-3 test (per NBK-1's testing decisions, and explicitly called for by
 // NBK-5's and NBK-6's acceptance criteria): render the real page +
 // SignalStore, mocking only the generated ng-openapi-gen client interface
@@ -189,69 +286,6 @@ describe('NotebookDetailPage', () => {
   // root-provided store, but the only things asserted here are what a user
   // sees and the calls the mocked upload client receives.
   describe('NBK-16: batch upload', () => {
-    function documentFor(filename: string, overrides: Partial<Record<string, unknown>> = {}) {
-      return {
-        id: `doc-${filename}`,
-        notebookId: NOTEBOOK_ID,
-        filename,
-        status: 'queued',
-        abstract: null,
-        createdAt: '2026-01-01T00:00:00.000Z',
-        latestVersion: {
-          id: `v-${filename}-1`,
-          versionNumber: 1,
-          mimeType: 'text/plain',
-          sizeBytes: 1,
-          createdAt: '2026-01-01T00:00:00.000Z',
-        },
-        ...overrides,
-      };
-    }
-
-    /** A promise the test resolves or rejects by hand, to hold a request "in flight". */
-    function deferred<T>() {
-      let resolve!: (value: T) => void;
-      let reject!: (reason: unknown) => void;
-      const promise = new Promise<T>((res, rej) => {
-        resolve = res;
-        reject = rej;
-      });
-      return { promise, resolve, reject };
-    }
-
-    async function renderWithUpload(
-      uploadDocument: ReturnType<typeof vi.fn>,
-      existing: Record<string, unknown>[] = [],
-    ) {
-      const listNotebooks = vi.fn().mockResolvedValue([]);
-      const listDocuments = vi.fn().mockResolvedValue(existing);
-      await render(NotebookDetailPage, {
-        providers: [
-          activatedRouteFor(NOTEBOOK_ID),
-          { provide: NotebooksService, useValue: { listNotebooks } },
-          { provide: DocumentsService, useValue: { listDocuments } },
-          chatServiceStub(),
-          { provide: DocumentTransferService, useValue: { uploadDocument } },
-          appEventsStub().provider,
-        ],
-      });
-      if (existing.length === 0) await screen.findByText('No Documents yet.');
-      else await screen.findByText(String(existing[0]['filename']));
-    }
-
-    function pick(files: File[]) {
-      const input = screen.getByLabelText('Upload Documents') as HTMLInputElement;
-      fireEvent.change(input, { target: { files } });
-      return input;
-    }
-
-    function panelRow(filename: string) {
-      const panel = screen.getByRole('list', { name: 'Upload progress' });
-      return within(panel)
-        .getAllByRole('listitem')
-        .find((row) => within(row).queryByText(filename) !== null)!;
-    }
-
     it('accepts several files at once and sends one request per file', async () => {
       const uploadDocument = vi
         .fn()
@@ -285,10 +319,7 @@ describe('NotebookDetailPage', () => {
       });
       await renderWithUpload(uploadDocument);
 
-      const files = ['1.txt', '2.txt', '3.txt', '4.txt', '5.txt'].map(
-        (name) => new File(['x'], name),
-      );
-      pick(files);
+      pick(['1.txt', '2.txt', '3.txt', '4.txt', '5.txt'].map(fileNamed));
 
       const sentNames = () => uploadDocument.mock.calls.map(([, file]) => (file as File).name);
       await waitFor(() => expect(uploadDocument).toHaveBeenCalledTimes(3));
@@ -323,7 +354,7 @@ describe('NotebookDetailPage', () => {
       });
       await renderWithUpload(uploadDocument);
 
-      pick(['1.txt', '2.txt', '3.txt', '4.txt'].map((name) => new File(['x'], name)));
+      pick(['1.txt', '2.txt', '3.txt', '4.txt'].map(fileNamed));
 
       await screen.findByText('4.txt');
       expect(within(panelRow('1.txt')).getByText('uploading')).toBeTruthy();
@@ -494,99 +525,15 @@ describe('NotebookDetailPage', () => {
   // leave-page warning, survival across in-app navigation, and a dismiss
   // once it is done. Same seam as NBK-16: the real page and store, with only
   // the upload client, the generated Documents client and the app-events
-  // stream mocked. The helpers mirror NBK-16's rather than sharing them, so
-  // the tickets built in parallel on this file merge without touching each
-  // other's blocks.
+  // stream mocked.
   describe('NBK-17: retry, cancel, and leaving the page', () => {
-    function documentFor(filename: string) {
-      return {
-        id: `doc-${filename}`,
-        notebookId: NOTEBOOK_ID,
-        filename,
-        status: 'queued',
-        abstract: null,
-        createdAt: '2026-01-01T00:00:00.000Z',
-        latestVersion: {
-          id: `v-${filename}-1`,
-          versionNumber: 1,
-          mimeType: 'text/plain',
-          sizeBytes: 1,
-          createdAt: '2026-01-01T00:00:00.000Z',
-        },
-      };
-    }
-
-    /** A promise the test resolves or rejects by hand, to hold a request "in flight". */
-    function deferred<T>() {
-      let resolve!: (value: T) => void;
-      let reject!: (reason: unknown) => void;
-      const promise = new Promise<T>((res, rej) => {
-        resolve = res;
-        reject = rej;
-      });
-      return { promise, resolve, reject };
-    }
-
-    /** An upload client whose every request stays in flight until the test settles it. */
-    function heldUploads() {
-      const inFlight: {
-        file: File;
-        request: ReturnType<typeof deferred<Record<string, unknown>>>;
-      }[] = [];
-      const uploadDocument = vi.fn().mockImplementation((_notebookId: string, file: File) => {
-        const request = deferred<Record<string, unknown>>();
-        inFlight.push({ file, request });
-        return request.promise;
-      });
-      const sentNames = () => inFlight.map(({ file }) => file.name);
-      const land = (filename: string) =>
-        inFlight.find(({ file }) => file.name === filename)!.request.resolve(documentFor(filename));
-      const fail = (filename: string) =>
-        inFlight
-          .find(({ file }) => file.name === filename)!
-          .request.reject({ error: { message: 'Storage is unavailable.' } });
-      return { uploadDocument, inFlight, sentNames, land, fail };
-    }
-
-    async function renderWithUpload(
-      uploadDocument: ReturnType<typeof vi.fn>,
-      existing: Record<string, unknown>[] = [],
-    ) {
-      const listNotebooks = vi.fn().mockResolvedValue([]);
-      const listDocuments = vi.fn().mockResolvedValue(existing);
-      const result = await render(NotebookDetailPage, {
-        providers: [
-          activatedRouteFor(NOTEBOOK_ID),
-          { provide: NotebooksService, useValue: { listNotebooks } },
-          { provide: DocumentsService, useValue: { listDocuments } },
-          chatServiceStub(),
-          { provide: DocumentTransferService, useValue: { uploadDocument } },
-          appEventsStub().provider,
-        ],
-      });
-      if (existing.length === 0) await screen.findByText('No Documents yet.');
-      else await screen.findByText(String(existing[0]['filename']));
-      return result;
-    }
-
-    function pick(names: string[]) {
-      const input = screen.getByLabelText('Upload Documents') as HTMLInputElement;
-      fireEvent.change(input, { target: { files: names.map((name) => new File(['x'], name)) } });
-      return input;
-    }
-
-    function panelRow(filename: string) {
-      const panel = screen.getByRole('list', { name: 'Upload progress' });
-      return within(panel)
-        .getAllByRole('listitem')
-        .find((row) => within(row).queryByText(filename) !== null)!;
-    }
-
     it('re-sends only the failed files on Retry failed, three at a time, leaving the rest alone', async () => {
       const uploads = heldUploads();
       await renderWithUpload(uploads.uploadDocument);
 
-      pick(['good.txt', 'photo.png', 'bad1.txt', 'bad2.txt', 'bad3.txt', 'bad4.txt']);
+      pick(
+        ['good.txt', 'photo.png', 'bad1.txt', 'bad2.txt', 'bad3.txt', 'bad4.txt'].map(fileNamed),
+      );
       await waitFor(() => expect(uploads.uploadDocument).toHaveBeenCalledTimes(3));
       uploads.land('good.txt');
       for (const name of ['bad1.txt', 'bad2.txt', 'bad3.txt', 'bad4.txt']) {
@@ -628,7 +575,7 @@ describe('NotebookDetailPage', () => {
       const uploads = heldUploads();
       await renderWithUpload(uploads.uploadDocument);
 
-      pick(['1.txt', '2.txt', '3.txt', '4.txt', '5.txt']);
+      pick(['1.txt', '2.txt', '3.txt', '4.txt', '5.txt'].map(fileNamed));
       await waitFor(() => expect(uploads.uploadDocument).toHaveBeenCalledTimes(3));
       await screen.findByText('5.txt');
 
@@ -660,7 +607,7 @@ describe('NotebookDetailPage', () => {
       await renderWithUpload(uploads.uploadDocument);
 
       expect((screen.getByLabelText('Upload Documents') as HTMLInputElement).disabled).toBe(false);
-      const input = pick(['1.txt', '2.txt']);
+      const input = pick(['1.txt', '2.txt'].map(fileNamed));
       await screen.findByText('2.txt');
       await waitFor(() => expect(input.disabled).toBe(true));
 
@@ -681,14 +628,14 @@ describe('NotebookDetailPage', () => {
       const uploads = heldUploads();
       await renderWithUpload(uploads.uploadDocument, [documentFor('report.txt')]);
 
-      const input = pick(['1.txt', '2.txt', '3.txt', 'report.txt']);
+      const input = pick(['1.txt', '2.txt', '3.txt', 'report.txt'].map(fileNamed));
       const open = await screen.findByRole('dialog', { name: 'Document already exists' });
       await waitFor(() => expect(uploads.uploadDocument).toHaveBeenCalledTimes(3));
       expect(input.disabled).toBe(true);
 
       // Past the disabled picker, as a stale page or a script could be.
       input.disabled = false;
-      pick(['later.txt']);
+      pick([fileNamed('later.txt')]);
 
       expect(await screen.findByText('An upload is already running.')).toBeTruthy();
       const panel = screen.getByRole('list', { name: 'Upload progress' });
@@ -726,7 +673,7 @@ describe('NotebookDetailPage', () => {
 
       expect(closingTab()).toEqual({ prevented: false, returnValue: undefined });
 
-      pick(['1.txt', '2.txt']);
+      pick(['1.txt', '2.txt'].map(fileNamed));
       await screen.findByText('2.txt');
       expect(closingTab()).toEqual({ prevented: true, returnValue: '' });
 
@@ -770,7 +717,7 @@ describe('NotebookDetailPage', () => {
       await navigate(`/notebooks/${NOTEBOOK_ID}`);
       await screen.findByText('No Documents yet.');
 
-      pick(['1.txt', '2.txt']);
+      pick(['1.txt', '2.txt'].map(fileNamed));
       await waitFor(() => expect(uploads.uploadDocument).toHaveBeenCalledTimes(2));
       await screen.findByText('2.txt');
 
@@ -837,7 +784,7 @@ describe('NotebookDetailPage', () => {
       await navigate(`/notebooks/${NOTEBOOK_ID}`);
       await screen.findByText('No Documents yet.');
 
-      pick(['1.txt', '2.txt', '3.txt', 'notes.txt']);
+      pick(['1.txt', '2.txt', '3.txt', 'notes.txt'].map(fileNamed));
       await waitFor(() => expect(uploads.uploadDocument).toHaveBeenCalledTimes(3));
       expect(within(panelRow('notes.txt')).getByText('waiting')).toBeTruthy();
 
@@ -883,7 +830,7 @@ describe('NotebookDetailPage', () => {
       const uploads = heldUploads();
       await renderWithUpload(uploads.uploadDocument);
 
-      pick(['1.txt']);
+      pick([fileNamed('1.txt')]);
       await screen.findByText('1.txt');
       expect(screen.queryByRole('button', { name: 'Dismiss' })).toBeNull();
 
@@ -909,7 +856,7 @@ describe('NotebookDetailPage', () => {
       const uploads = heldUploads();
       await renderWithUpload(uploads.uploadDocument, [documentFor('report.txt')]);
 
-      pick(['1.txt', '2.txt', '3.txt', 'report.txt', '4.txt']);
+      pick(['1.txt', '2.txt', '3.txt', 'report.txt', '4.txt'].map(fileNamed));
       const open = await screen.findByRole('dialog', { name: 'Document already exists' });
       expect(within(open).getByText(/"report\.txt" already exists/)).toBeTruthy();
       await waitFor(() => expect(uploads.uploadDocument).toHaveBeenCalledTimes(3));
@@ -947,40 +894,6 @@ describe('NotebookDetailPage', () => {
   // says whether the entry is a directory — the same thing the page reads
   // from a real drop.
   describe('NBK-18: drag and drop', () => {
-    function documentFor(filename: string) {
-      return {
-        id: `doc-${filename}`,
-        notebookId: NOTEBOOK_ID,
-        filename,
-        status: 'queued',
-        abstract: null,
-        createdAt: '2026-01-01T00:00:00.000Z',
-        latestVersion: {
-          id: `v-${filename}-1`,
-          versionNumber: 1,
-          mimeType: 'text/plain',
-          sizeBytes: 1,
-          createdAt: '2026-01-01T00:00:00.000Z',
-        },
-      };
-    }
-
-    async function renderWithUpload(uploadDocument: ReturnType<typeof vi.fn>) {
-      const listNotebooks = vi.fn().mockResolvedValue([]);
-      const listDocuments = vi.fn().mockResolvedValue([]);
-      await render(NotebookDetailPage, {
-        providers: [
-          activatedRouteFor(NOTEBOOK_ID),
-          { provide: NotebooksService, useValue: { listNotebooks } },
-          { provide: DocumentsService, useValue: { listDocuments } },
-          chatServiceStub(),
-          { provide: DocumentTransferService, useValue: { uploadDocument } },
-          appEventsStub().provider,
-        ],
-      });
-      await screen.findByText('No Documents yet.');
-    }
-
     /** A dropped folder: what a file manager hands over for a directory. */
     interface Folder {
       folder: string;
@@ -1011,22 +924,6 @@ describe('NotebookDetailPage', () => {
         dropEffect: 'none',
         effectAllowed: 'all',
       };
-    }
-
-    function panelRow(filename: string) {
-      const panel = screen.getByRole('list', { name: 'Upload progress' });
-      return within(panel)
-        .getAllByRole('listitem')
-        .find((row) => within(row).queryByText(filename) !== null)!;
-    }
-
-    /** A promise the test resolves by hand, to hold a request "in flight". */
-    function deferred<T>() {
-      let resolve!: (value: T) => void;
-      const promise = new Promise<T>((res) => {
-        resolve = res;
-      });
-      return { promise, resolve };
     }
 
     /** Somewhere inside the page; drag events bubble up to the page itself. */
@@ -1155,25 +1052,6 @@ describe('NotebookDetailPage', () => {
   // against the Document list the page already holds; the dialog offers New
   // Version or Skip, one file at a time, while the other files keep going.
   describe('NBK-19: conflict dialog', () => {
-    function documentFor(filename: string, overrides: Partial<Record<string, unknown>> = {}) {
-      return {
-        id: `doc-${filename}`,
-        notebookId: NOTEBOOK_ID,
-        filename,
-        status: 'queued',
-        abstract: null,
-        createdAt: '2026-01-01T00:00:00.000Z',
-        latestVersion: {
-          id: `v-${filename}-1`,
-          versionNumber: 1,
-          mimeType: 'text/plain',
-          sizeBytes: 1,
-          createdAt: '2026-01-01T00:00:00.000Z',
-        },
-        ...overrides,
-      };
-    }
-
     /** What the backend returns for a re-upload: the same Document, one Version up. */
     function newVersionOf(existing: ReturnType<typeof documentFor>) {
       return {
@@ -1186,50 +1064,9 @@ describe('NotebookDetailPage', () => {
       };
     }
 
-    /** A promise the test resolves by hand, to hold a request "in flight". */
-    function deferred<T>() {
-      let resolve!: (value: T) => void;
-      const promise = new Promise<T>((res) => {
-        resolve = res;
-      });
-      return { promise, resolve };
-    }
-
-    async function renderWithUpload(
-      uploadDocument: ReturnType<typeof vi.fn>,
-      existing: Record<string, unknown>[] = [],
-    ) {
-      const listNotebooks = vi.fn().mockResolvedValue([]);
-      const listDocuments = vi.fn().mockResolvedValue(existing);
-      await render(NotebookDetailPage, {
-        providers: [
-          activatedRouteFor(NOTEBOOK_ID),
-          { provide: NotebooksService, useValue: { listNotebooks } },
-          { provide: DocumentsService, useValue: { listDocuments } },
-          chatServiceStub(),
-          { provide: DocumentTransferService, useValue: { uploadDocument } },
-          appEventsStub().provider,
-        ],
-      });
-      if (existing.length === 0) await screen.findByText('No Documents yet.');
-      else await screen.findByText(String(existing[0]['filename']));
-    }
-
-    function pick(files: File[]) {
-      const input = screen.getByLabelText('Upload Documents') as HTMLInputElement;
-      fireEvent.change(input, { target: { files } });
-    }
-
-    function panelRow(filename: string) {
-      const panel = screen.getByRole('list', { name: 'Upload progress' });
-      return within(panel)
-        .getAllByRole('listitem')
-        .find((row) => within(row).queryByText(filename) !== null)!;
-    }
-
     const dialog = () => screen.queryByRole('dialog', { name: 'Document already exists' });
     const findDialog = () => screen.findByRole('dialog', { name: 'Document already exists' });
-    const findDialogSync = () => screen.getByRole('dialog', { name: 'Document already exists' });
+    const getDialog = () => screen.getByRole('dialog', { name: 'Document already exists' });
     const sentNames = (uploadDocument: ReturnType<typeof vi.fn>) =>
       uploadDocument.mock.calls.map(([, file]) => (file as File).name);
 
@@ -1300,7 +1137,7 @@ describe('NotebookDetailPage', () => {
         );
       await renderWithUpload(uploadDocument, existing);
 
-      pick(['a.txt', 'fresh.txt', 'b.txt', 'c.txt'].map((name) => new File(['x'], name)));
+      pick(['a.txt', 'fresh.txt', 'b.txt', 'c.txt'].map(fileNamed));
 
       // The first conflict is asked about...
       const open = await findDialog();
@@ -1329,7 +1166,7 @@ describe('NotebookDetailPage', () => {
         );
       await renderWithUpload(uploadDocument, existing);
 
-      pick(['a.txt', 'b.txt'].map((name) => new File(['x'], name)));
+      pick(['a.txt', 'b.txt'].map(fileNamed));
 
       const open = await findDialog();
       fireEvent.click(
@@ -1356,9 +1193,7 @@ describe('NotebookDetailPage', () => {
       await renderWithUpload(uploadDocument, existing);
 
       // Two conflicts first in selection order, then four plain files.
-      pick(
-        ['a.txt', 'b.txt', '1.txt', '2.txt', '3.txt', '4.txt'].map((name) => new File(['x'], name)),
-      );
+      pick(['a.txt', 'b.txt', '1.txt', '2.txt', '3.txt', '4.txt'].map(fileNamed));
 
       // The dialog is about the first conflict only, and while it is open
       // the plain files fill all 3 slots — the two files awaiting an answer
@@ -1380,7 +1215,7 @@ describe('NotebookDetailPage', () => {
       // Answering the first conflict brings up the second — still one dialog.
       fireEvent.click(within(first).getByRole('button', { name: 'New Version' }));
       await waitFor(() =>
-        expect(within(findDialogSync()).getByText(/"b\.txt" already exists/)).toBeTruthy(),
+        expect(within(getDialog()).getByText(/"b\.txt" already exists/)).toBeTruthy(),
       );
       expect(screen.getAllByRole('dialog')).toHaveLength(1);
       // a.txt is now sendable, but every slot is taken; it goes out once one
@@ -1390,7 +1225,7 @@ describe('NotebookDetailPage', () => {
       await waitFor(() => expect(uploadDocument).toHaveBeenCalledTimes(5));
       expect(sentNames(uploadDocument)[4]).toBe('a.txt');
 
-      fireEvent.click(within(findDialogSync()).getByRole('button', { name: 'Skip' }));
+      fireEvent.click(within(getDialog()).getByRole('button', { name: 'Skip' }));
       await waitFor(() => expect(dialog()).toBeNull());
       inFlight.get('a.txt')!.resolve(newVersionOf(existing[0]));
       for (const name of ['3.txt', '4.txt']) inFlight.get(name)!.resolve(documentFor(name));
