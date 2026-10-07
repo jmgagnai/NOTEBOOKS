@@ -200,4 +200,20 @@
     color: var(--mat-sys-on-surface-variant);
     font: var(--mat-sys-body-small);
   }
+
+  // The chat panel's two columns — the Thread navigator and the Thread view —
+  // collapsing to one on a narrow viewport (NBK-1 scopes the frontend to
+  // "standard Material responsive layout only"). Moved here from the panel
+  // when NBK-34 split it, with its values unchanged; the workspace frame
+  // (NBK-35) replaces it with the page's own cards.
+  &__chat {
+    display: grid;
+    grid-template-columns: minmax(12rem, 16rem) 1fr;
+    gap: 1.5rem;
+    align-items: start;
+
+    @media (max-width: 40rem) {
+      grid-template-columns: 1fr;
+    }
+  }
 }

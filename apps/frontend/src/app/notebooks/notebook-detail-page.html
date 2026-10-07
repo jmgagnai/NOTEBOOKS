@@ -212,8 +212,15 @@
       The chat panel (NBK-10): this Notebook's Chat Threads and the open
       Thread, asked against the Documents above. Per NBK-1 the
       Notebook detail page is composed of a sources panel and a chat panel.
+      Two components since NBK-34 — the navigator, which also owns the chat
+      store's loading and live stream, and the view, which only reads it —
+      so the workspace frame (NBK-35) can give each its own card. Until then
+      this wrapper keeps them in the panel's two columns.
     -->
     <h2>Chat</h2>
-    <app-chat-panel [notebookId]="notebookId" />
+    <div class="notebook-detail-page__chat">
+      <app-thread-navigator [notebookId]="notebookId" />
+      <app-thread-view [notebookId]="notebookId" />
+    </div>
   </mat-card-content>
 </mat-card>
