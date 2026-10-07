@@ -1,9 +1,20 @@
-import { Component, computed, inject, OnDestroy, OnInit, signal } from '@angular/core';
+import {
+  Component,
+  computed,
+  effect,
+  ElementRef,
+  inject,
+  OnDestroy,
+  OnInit,
+  signal,
+  viewChild,
+} from '@angular/core';
+import { Title } from '@angular/platform-browser';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
-import { MatCardModule } from '@angular/material/card';
 import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { MatTooltipModule } from '@angular/material/tooltip';
 import { ThreadNavigator } from '../chat/thread-navigator';
 import { ThreadView } from '../chat/thread-view';
 import {
@@ -56,12 +67,20 @@ function droppedEntries(dataTransfer: DataTransfer | null): {
 }
 
 /**
- * A Notebook's detail view (NBK-5): shows its Documents as cards, with
- * upload, open, delete, restore, and download actions. Notebooks have no
- * dedicated `GET /notebooks/:id` endpoint, so the Notebook itself (just its
- * title, for the page heading) is looked up from `NotebooksStore`'s
- * already-loaded list by route id, the same list the top-level Notebooks page
- * uses.
+ * The app's name as the browser tab shows it. Spec 06 brings the app-name
+ * constant and its own title handling; until then this is the literal
+ * index.html carries (NBK-35).
+ */
+const APP_NAME = 'RAG Notebook';
+
+/**
+ * A Notebook's workspace (NBK-5, framed in NBK-35): a slim header, then
+ * three cards side by side — the Chat Threads navigator, the open Thread and
+ * the Documents panel with its cards and their upload, open, delete, restore
+ * and download actions. Notebooks have no dedicated `GET /notebooks/:id`
+ * endpoint, so the Notebook itself (its title, for the header and the browser
+ * tab) is looked up from `NotebooksStore`'s already-loaded list by route id,
+ * the same list the top-level Notebooks page uses.
  *
  * Each card carries that Document's Abstract (NBK-7) — the summary
  * GLOSSARY.md writes "to be skimmed in a list" — and links to the Document
@@ -70,19 +89,19 @@ function droppedEntries(dataTransfer: DataTransfer | null): {
  * While open, it also follows this Notebook's live app events (NBK-6) so a
  * Document's status badge tracks the background pipeline without a refresh.
  *
- * Below the Documents sits the chat panel (NBK-10) — the Notebook's Chat
- * Threads and the open Thread. Per NBK-1 a Notebook's detail page is
- * "composed of a sources panel ... [and] a chat panel", so the two live on
- * one page; the chat panel owns its own store and data loading.
+ * The chat cards (NBK-10, split in NBK-34) are the Notebook's Chat Threads
+ * and the open Thread. Per NBK-1 a Notebook's detail page is "composed of a
+ * sources panel ... [and] a chat panel", so the two live on one page; the
+ * Thread navigator owns the chat store's loading and live stream.
  */
 @Component({
   selector: 'app-notebook-detail-page',
   standalone: true,
   imports: [
     MatButtonModule,
-    MatCardModule,
     MatCheckboxModule,
     MatProgressSpinnerModule,
+    MatTooltipModule,
     RouterLink,
     ThreadNavigator,
     ThreadView,
@@ -90,7 +109,8 @@ function droppedEntries(dataTransfer: DataTransfer | null): {
   templateUrl: './notebook-detail-page.html',
   styleUrl: './notebook-detail-page.scss',
   // The whole page is the drop target (NBK-18), so the drag events are
-  // listened for on the host rather than on one box inside it.
+  // listened for on the host rather than on one box inside it. NBK-36 moves
+  // them to the Documents panel.
   host: {
     '(dragenter)': 'onDragEnter($event)',
     '(dragover)': 'onDragOver($event)',
@@ -100,6 +120,7 @@ function droppedEntries(dataTransfer: DataTransfer | null): {
 })
 export class NotebookDetailPage implements OnInit, OnDestroy {
   private readonly route = inject(ActivatedRoute);
+  private readonly title = inject(Title);
 
   protected readonly notebooksStore = inject(NotebooksStore);
   protected readonly store = inject(DocumentsStore);
@@ -108,6 +129,20 @@ export class NotebookDetailPage implements OnInit, OnDestroy {
   protected readonly notebook = computed(
     () => this.notebooksStore.notebooks().find((n) => n.id === this.notebookId) ?? null,
   );
+
+  /**
+   * The browser tab reads "<Notebook title> – <app name>" while the page is
+   * open (NBK-35), so several open Notebooks are distinguishable; the title
+   * found on arrival is what leaving restores. The Notebook arrives after the
+   * list loads and changes on a rename, hence an effect rather than a
+   * one-off in `ngOnInit`.
+   */
+  private readonly titleOnArrival = this.title.getTitle();
+
+  private readonly tabTitle = effect(() => {
+    const notebook = this.notebook();
+    if (notebook) this.title.setTitle(`${notebook.title} – ${APP_NAME}`);
+  });
 
   ngOnInit(): void {
     void this.notebooksStore.loadNotebooks();
@@ -120,6 +155,45 @@ export class NotebookDetailPage implements OnInit, OnDestroy {
     // connection has to be closed explicitly or it would leak across
     // navigations.
     this.store.stopWatching();
+    this.title.setTitle(this.titleOnArrival);
+  }
+
+  /**
+   * Renaming in place (NBK-35): the header title is a button that swaps to a
+   * text box holding `titleDraft`. Page state, like the Notebooks page's own
+   * rename form: nothing is sent until the draft is committed.
+   */
+  protected readonly renaming = signal(false);
+  protected readonly titleDraft = signal('');
+  private readonly titleInput = viewChild<ElementRef<HTMLInputElement>>('titleInput');
+
+  // The box appears on demand, so it is focused when it does — otherwise a
+  // click on the title would leave the keyboard nowhere.
+  private readonly focusTitleInput = effect(() => {
+    this.titleInput()?.nativeElement.select();
+  });
+
+  protected startRename(): void {
+    this.titleDraft.set(this.notebook()?.title ?? '');
+    this.renaming.set(true);
+  }
+
+  /**
+   * Enter and leaving the box both commit. Commit is a no-op once the box is
+   * gone: Enter closes it, and some browsers then fire the blur of the
+   * removed element, which must not rename a second time.
+   */
+  protected commitRename(): void {
+    if (!this.renaming()) return;
+    this.renaming.set(false);
+    const title = this.titleDraft().trim();
+    const notebook = this.notebook();
+    if (!notebook || !title || title === notebook.title) return;
+    void this.notebooksStore.renameNotebook(notebook.id, title);
+  }
+
+  protected cancelRename(): void {
+    this.renaming.set(false);
   }
 
   /** The picker only offers the accepted document types (NBK-16). */

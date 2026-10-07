@@ -1,50 +1,59 @@
 <div class="thread-navigator">
-  <h3>Chat Threads</h3>
+  <!--
+    The card's header row (NBK-35): the title and, until spec 04 replaces it
+    with its "New Chat Thread" control, the start-a-Thread box moved up here
+    from the list so the list alone scrolls in the body.
+  -->
+  <div class="thread-navigator__head">
+    <h2 class="thread-navigator__title">Chat Threads</h2>
 
-  <div class="thread-navigator__new-thread">
-    <label class="thread-navigator__field">
-      <span class="thread-navigator__field-label">New Chat Thread title</span>
-      <input
-        type="text"
-        aria-label="New Chat Thread title"
-        [value]="newThreadTitle()"
-        (input)="newThreadTitle.set($any($event.target).value)"
-      />
-    </label>
-    <button mat-button type="button" (click)="startThread()">Start Chat Thread</button>
+    <div class="thread-navigator__new-thread">
+      <label class="thread-navigator__field">
+        <span class="thread-navigator__field-label">New Chat Thread title</span>
+        <input
+          type="text"
+          aria-label="New Chat Thread title"
+          [value]="newThreadTitle()"
+          (input)="newThreadTitle.set($any($event.target).value)"
+        />
+      </label>
+      <button mat-button type="button" (click)="startThread()">Start Chat Thread</button>
+    </div>
   </div>
 
-  @if (store.threadsLoading()) {
-    <mat-progress-spinner mode="indeterminate" diameter="24" />
-  } @else if (store.threads().length === 0) {
-    <p class="thread-navigator__empty">No Chat Threads yet.</p>
-  } @else {
-    <!--
+  <div class="thread-navigator__body">
+    @if (store.threadsLoading()) {
+      <mat-progress-spinner mode="indeterminate" diameter="24" />
+    } @else if (store.threads().length === 0) {
+      <p class="thread-navigator__empty">No Chat Threads yet.</p>
+    } @else {
+      <!--
       Every Thread in the Notebook, whoever started it (GLOSSARY.md,
       ADR-0001) — so each entry has to say whose it is, and none of them
       is hidden or disabled for not being yours.
     -->
-    <ul class="thread-navigator__thread-list">
-      @for (thread of store.threads(); track thread.id) {
-        <li
-          [class]="
-            'thread-navigator__thread' +
-            (thread.id === store.activeThreadId() ? ' thread-navigator__thread--active' : '')
-          "
-        >
-          <button
-            type="button"
-            class="thread-navigator__thread-open"
-            [attr.aria-label]="'Open ' + thread.title"
-            (click)="openThread(thread)"
+      <ul class="thread-navigator__thread-list">
+        @for (thread of store.threads(); track thread.id) {
+          <li
+            [class]="
+              'thread-navigator__thread' +
+              (thread.id === store.activeThreadId() ? ' thread-navigator__thread--active' : '')
+            "
           >
-            <span class="thread-navigator__thread-title">{{ thread.title }}</span>
-            <span class="thread-navigator__thread-author"
-              >Started by {{ thread.author.email }}</span
+            <button
+              type="button"
+              class="thread-navigator__thread-open"
+              [attr.aria-label]="'Open ' + thread.title"
+              (click)="openThread(thread)"
             >
-          </button>
-        </li>
-      }
-    </ul>
-  }
+              <span class="thread-navigator__thread-title">{{ thread.title }}</span>
+              <span class="thread-navigator__thread-author"
+                >Started by {{ thread.author.email }}</span
+              >
+            </button>
+          </li>
+        }
+      </ul>
+    }
+  </div>
 </div>
