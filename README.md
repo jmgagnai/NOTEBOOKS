@@ -71,6 +71,11 @@ OPENROUTER_API_KEY=sk-or-...
 pnpm backend:dev     # tsx watch src/server.ts
 ```
 
+Once it is up, http://localhost:3000/documentation shows the API contract
+as an interactive Swagger UI page, and `/documentation/json` serves the
+same OpenAPI document that `pnpm run openapi:generate` writes to
+`apps/backend/openapi.json`.
+
 The backend reads the repo-root `.env` at startup (variables already in your
 environment take precedence). On startup it also runs the database migrations
 and creates the `rag-notebook-documents` bucket itself, so you don't need to
