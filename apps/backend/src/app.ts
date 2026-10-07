@@ -14,6 +14,7 @@ import { registerAuthRoutes } from './auth/routes.js';
 import type { ChatDeps } from './chat/answer-question.js';
 import { registerChatRoutes } from './chat/routes.js';
 import { registerDocumentRoutes } from './documents/routes.js';
+import { MAX_UPLOAD_FILE_BYTES } from './documents/upload-limit.js';
 import type { AppEventSubscriber } from './events/bus.js';
 import { registerEventRoutes } from './events/routes.js';
 import type { JobQueue } from './jobs/queue.js';
@@ -74,7 +75,20 @@ export async function buildApp({
 
   await app.register(cors, { origin: true, credentials: true });
   await app.register(cookie);
-  await app.register(multipart);
+  // Which setting governs a multipart upload's size (NBK-15): only the
+  // plugin's `limits.fileSize`. Fastify's `bodyLimit` is enforced in its
+  // content-type parser's `rawBody()`, which runs solely for parsers
+  // registered with `parseAs: 'string' | 'buffer'`; @fastify/multipart
+  // registers a stream parser (no `parseAs`), so Fastify hands it the raw
+  // request and never counts its bytes. The plugin only *defaults*
+  // `limits.fileSize` to `fastify.initialConfig.bodyLimit` (1 MiB) when none
+  // is given — which is what refused every real PDF before this. Setting
+  // `limits.fileSize` is therefore sufficient, and `bodyLimit` stays at its
+  // default for the JSON routes it does govern. Past the limit busboy
+  // truncates the stream and `file.toBuffer()` throws the plugin's
+  // `RequestFileTooLargeError` (statusCode 413), which the upload route maps
+  // to a message naming the limit.
+  await app.register(multipart, { limits: { fileSize: MAX_UPLOAD_FILE_BYTES } });
   await app.register(swagger, {
     openapi: {
       openapi: '3.0.3',
