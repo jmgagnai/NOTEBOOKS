@@ -394,6 +394,77 @@ describe('NotebookDetailPage', () => {
       expect(uploadDocument).toHaveBeenCalledTimes(1);
       expect(uploadDocument).toHaveBeenCalledWith(NOTEBOOK_ID, first);
     });
+
+    it('refuses a selection of more than 100 uploadable files, naming the cap and the count', async () => {
+      const uploadDocument = vi.fn();
+      await renderWithUpload(uploadDocument);
+
+      // Skipped files do not count toward the cap, so this is 101 uploadable
+      // files plus one that would be skipped anyway.
+      const files = Array.from({ length: 101 }, (_, i) => new File(['x'], `f${i}.txt`));
+      files.push(new File(['x'], 'photo.png'));
+      pick(files);
+
+      expect(
+        await screen.findByText(
+          'Too many files: 101 uploadable files selected, but one upload takes at most 100. Split the selection and try again.',
+        ),
+      ).toBeTruthy();
+      expect(uploadDocument).not.toHaveBeenCalled();
+      expect(screen.queryByRole('list', { name: 'Upload progress' })).toBeNull();
+    });
+
+    it('marks a failed request as failed with its reason and counts it in the summary', async () => {
+      const uploadDocument = vi
+        .fn()
+        .mockImplementation((_notebookId: string, file: File) =>
+          file.name === 'bad.txt'
+            ? Promise.reject({ error: { message: 'Storage is unavailable.' } })
+            : Promise.resolve(documentFor(file.name)),
+        );
+      await renderWithUpload(uploadDocument);
+
+      pick([new File(['x'], 'good.txt'), new File(['x'], 'bad.txt')]);
+
+      expect(await screen.findByText('1 uploaded, 0 skipped, 1 failed')).toBeTruthy();
+      const bad = panelRow('bad.txt');
+      expect(within(bad).getByText('failed')).toBeTruthy();
+      expect(within(bad).getByText('Storage is unavailable.')).toBeTruthy();
+      // The failure stays in the panel; it does not replace the Document list
+      // with an error banner, and the other file still landed.
+      const cards = screen.getByRole('list', { name: 'Documents' });
+      expect(within(cards).getByText('good.txt')).toBeTruthy();
+      expect(within(cards).queryByText('bad.txt')).toBeNull();
+    });
+
+    it('lands a re-uploaded filename as a new Version, replacing its card and counted in the summary', async () => {
+      const existing = documentFor('report.txt', { id: 'doc-existing' });
+      const uploadDocument = vi.fn().mockImplementation((_notebookId: string, file: File) =>
+        Promise.resolve(
+          file.name === 'report.txt'
+            ? documentFor('report.txt', {
+                id: 'doc-existing',
+                latestVersion: { ...existing.latestVersion, id: 'v-report-2', versionNumber: 2 },
+              })
+            : documentFor(file.name),
+        ),
+      );
+      await renderWithUpload(uploadDocument, [existing]);
+
+      pick([new File(['x'], 'report.txt'), new File(['x'], 'fresh.txt')]);
+
+      expect(
+        await screen.findByText('2 uploaded (1 as new Versions), 0 skipped, 0 failed'),
+      ).toBeTruthy();
+      expect(within(panelRow('report.txt')).getByText('new version')).toBeTruthy();
+      expect(within(panelRow('fresh.txt')).getByText('uploaded')).toBeTruthy();
+
+      const cards = screen.getByRole('list', { name: 'Documents' });
+      // One card for report.txt, now at v2 — not a duplicate.
+      expect(within(cards).getAllByText('report.txt')).toHaveLength(1);
+      expect(within(cards).getByText('v2')).toBeTruthy();
+      expect(within(cards).getByText('fresh.txt')).toBeTruthy();
+    });
   });
 
   it('deletes a Document, removing it from the list, then restores it via Undo', async () => {

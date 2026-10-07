@@ -114,8 +114,13 @@
     // the neutral default. "converted" and "summarized" are *stage*
     // boundaries, not the end of ingestion, so they share a finished-a-step
     // look.
+    // The upload panel (NBK-16) reuses the badge: a landed file (uploaded,
+    // or as a new Version) reads as a finished step, a failed request as a
+    // failure, and waiting/uploading/skipped keep the neutral default.
     &--converted,
-    &--summarized {
+    &--summarized,
+    &--uploaded,
+    &--new-version {
       background: var(--mat-sys-tertiary-container, #d7f0d7);
       color: var(--mat-sys-on-tertiary-container, #1b4d1b);
     }

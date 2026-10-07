@@ -42,6 +42,10 @@
       is done. It replaces the single spinner, which could not say which of
       forty files was the slow one.
     -->
+    @if (store.uploadRefused(); as refused) {
+      <p class="notebook-detail-page__error">{{ refused }}</p>
+    }
+
     @if (batch(); as batch) {
       <section class="notebook-detail-page__batch" aria-label="Upload batch">
         @if (store.batchRunning()) {

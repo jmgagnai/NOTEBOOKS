@@ -33,6 +33,20 @@ const ACCEPTED_TYPES_DESCRIPTION = 'text, Markdown, DOCX, Excel (.xlsx), CSV, an
 export const MAX_UPLOAD_FILE_BYTES = 50 * 1024 * 1024;
 
 /**
+ * How many uploadable files one batch may hold. Skipped files do not count:
+ * the cap is about what would be sent, not what was picked.
+ */
+export const MAX_UPLOAD_BATCH_FILES = 100;
+
+/** The message that refuses a whole selection over the cap. */
+export function uploadCapExceededMessage(uploadableCount: number): string {
+  return (
+    `Too many files: ${uploadableCount} uploadable files selected, but one upload takes at most ` +
+    `${MAX_UPLOAD_BATCH_FILES}. Split the selection and try again.`
+  );
+}
+
+/**
  * Extensions a user has a specific reason to expect, with the reason they are
  * nonetheless refused — the same explanation the backend gives for `.xls`
  * (see apps/backend/src/documents/file-types.ts for why the converter cannot

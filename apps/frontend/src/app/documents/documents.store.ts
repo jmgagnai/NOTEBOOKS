@@ -5,7 +5,7 @@ import { DocumentsService } from '../api/services/documents.service';
 import { AppEvent, AppEventsService } from '../events/app-events.service';
 import { errorMessage } from '../shared/error-message';
 import { DocumentTransferService } from './document-transfer.service';
-import { uploadSkipReason } from './upload-rules';
+import { MAX_UPLOAD_BATCH_FILES, uploadCapExceededMessage, uploadSkipReason } from './upload-rules';
 
 export interface DocumentVersion {
   id: string;
@@ -237,6 +237,9 @@ interface DocumentsState {
   documents: Document[];
   loading: boolean;
   batch: UploadBatch | null;
+  // Why the last selection was refused outright (over the file cap), if it
+  // was. Separate from `error` because it is about a selection, not a call.
+  uploadRefused: string | null;
   error: string | null;
   // The currently open Document, and its content once expanded.
   openDocument: OpenDocument | null;
@@ -254,6 +257,7 @@ const initialState: DocumentsState = {
   documents: [],
   loading: false,
   batch: null,
+  uploadRefused: null,
   error: null,
   openDocument: null,
   openDocumentLoading: false,
@@ -332,14 +336,17 @@ export const DocumentsStore = signalStore(
           // A re-upload of an existing filename comes back as a new Version
           // of the same Document (same id, incremented versionNumber) rather
           // than a new Document — replace the existing card instead of
-          // appending a duplicate.
+          // appending a duplicate, and say so in the panel.
           const existing = store.documents().some((d) => d.id === document.id);
           patchState(store, {
             documents: existing
               ? store.documents().map((d) => (d.id === document.id ? document : d))
               : [...store.documents(), document],
           });
-          patchItem(item.id, { status: 'uploaded' });
+          patchItem(item.id, {
+            status:
+              existing || document.latestVersion.versionNumber > 1 ? 'new-version' : 'uploaded',
+          });
         } catch (err) {
           patchItem(item.id, {
             status: 'failed',
@@ -509,7 +516,17 @@ export const DocumentsStore = signalStore(
               reason,
             };
           });
-          patchState(store, { batch: { notebookId, items }, error: null });
+          const uploadable = accepted.size;
+          if (uploadable > MAX_UPLOAD_BATCH_FILES) {
+            // The whole selection is refused, not trimmed: silently sending
+            // the first 100 would leave the user guessing which ones went.
+            patchState(store, {
+              batch: null,
+              uploadRefused: uploadCapExceededMessage(uploadable),
+            });
+            return;
+          }
+          patchState(store, { batch: { notebookId, items }, uploadRefused: null, error: null });
           await drainBatch();
         },
 
