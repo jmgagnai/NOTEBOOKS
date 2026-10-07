@@ -233,6 +233,12 @@ export interface UploadItem {
 /** What the user chose in the conflict dialog (NBK-19). */
 export type ConflictChoice = 'new-version' | 'skip';
 
+/** The conflict dialog's whole answer: the choice, and whether it settles the rest of the batch. */
+export interface ConflictAnswer {
+  choice: ConflictChoice;
+  applyToAll: boolean;
+}
+
 /** The conflict dialog currently open, if any (NBK-19). */
 export interface UploadConflict {
   itemId: string;
@@ -361,16 +367,16 @@ export const DocumentsStore = signalStore(
         watching = null;
       }
 
-      /** Rewrites one item of the current batch. */
-      function patchItem(id: string, change: Partial<UploadItem>): void {
+      /** Rewrites every item of the current batch through `mapper`. */
+      function patchItems(mapper: (item: UploadItem) => UploadItem): void {
         const batch = store.batch();
         if (!batch) return;
-        patchState(store, {
-          batch: {
-            ...batch,
-            items: batch.items.map((item) => (item.id === id ? { ...item, ...change } : item)),
-          },
-        });
+        patchState(store, { batch: { ...batch, items: batch.items.map(mapper) } });
+      }
+
+      /** Rewrites one item of the current batch. */
+      function patchItem(id: string, change: Partial<UploadItem>): void {
+        patchItems((item) => (item.id === id ? { ...item, ...change } : item));
       }
 
       // The filenames the current batch's files are checked against for a
@@ -482,8 +488,7 @@ export const DocumentsStore = signalStore(
       // The open dialog's answer is delivered through here (NBK-19); null
       // while no dialog is open. Only one asker runs at a time, hence only
       // one dialog.
-      let deliverAnswer:
-        ((answer: { choice: ConflictChoice; applyToAll: boolean }) => void) | null = null;
+      let deliverAnswer: ((answer: ConflictAnswer) => void) | null = null;
       let asking = false;
 
       /**
@@ -506,7 +511,7 @@ export const DocumentsStore = signalStore(
             let choice = store.batch()?.conflictAnswer;
             if (!choice) {
               patchState(store, { conflict: { itemId: next.id, filename: next.file.name } });
-              const answer = await new Promise<{ choice: ConflictChoice; applyToAll: boolean }>(
+              const answer = await new Promise<ConflictAnswer>(
                 (resolve) => (deliverAnswer = resolve),
               );
               deliverAnswer = null;
@@ -738,16 +743,10 @@ export const DocumentsStore = signalStore(
          * untouched. Resolves when the batch is no longer running.
          */
         async retryFailed(): Promise<void> {
-          const batch = store.batch();
-          if (!batch) return;
-          patchState(store, {
-            batch: {
-              ...batch,
-              items: batch.items.map((item): UploadItem =>
-                item.status === 'failed' ? { ...item, status: 'waiting', reason: null } : item,
-              ),
-            },
-          });
+          if (!store.batch()) return;
+          patchItems((item) =>
+            item.status === 'failed' ? { ...item, status: 'waiting', reason: null } : item,
+          );
           await drainBatch();
         },
 
@@ -765,19 +764,13 @@ export const DocumentsStore = signalStore(
          * that answer, so settling it is what lets the batch finish.
          */
         cancelBatch(): void {
-          const batch = store.batch();
-          if (!batch) return;
-          patchState(store, {
-            batch: {
-              ...batch,
-              items: batch.items.map((item): UploadItem =>
-                item.status === 'waiting'
-                  ? { ...item, status: 'skipped', reason: 'Cancelled before it was sent.' }
-                  : item,
-              ),
-            },
-            conflict: null,
-          });
+          if (!store.batch()) return;
+          patchItems((item) =>
+            item.status === 'waiting'
+              ? { ...item, status: 'skipped', reason: 'Cancelled before it was sent.' }
+              : item,
+          );
+          patchState(store, { conflict: null });
           // After the items above are cancelled, so the asker finds the
           // dialog's item no longer waiting and nothing further to ask.
           deliverAnswer?.({ choice: 'skip', applyToAll: false });
