@@ -933,9 +933,18 @@ describe('NotebookDetailPage', () => {
       };
     }
 
-    /** Somewhere inside the page; drag events bubble up to the page itself. */
+    /**
+     * Somewhere inside the page; drag events bubble up to the page itself.
+     * The Documents panel since NBK-35 took the headings out — and it is
+     * where NBK-36 moves the drop target to.
+     */
     function somewhereOnThePage() {
-      return screen.getByRole('heading', { name: 'Documents' });
+      return screen.getByRole('complementary', { name: 'Documents' });
+    }
+
+    /** Somewhere else on the page, for a drag moving between its elements. */
+    function elsewhereOnThePage() {
+      return screen.getByRole('region', { name: 'Chat' });
     }
 
     const DROP_HINT = 'Drop files to upload them into this Notebook';
@@ -952,12 +961,12 @@ describe('NotebookDetailPage', () => {
 
       // Moving between elements of the page fires leave/enter pairs that must
       // not flicker the state off...
-      fireEvent.dragEnter(screen.getByRole('heading', { name: 'Chat' }), { dataTransfer });
+      fireEvent.dragEnter(elsewhereOnThePage(), { dataTransfer });
       fireEvent.dragLeave(somewhereOnThePage(), { dataTransfer });
       expect(screen.getByText(DROP_HINT)).toBeTruthy();
 
       // ...while leaving the page clears it.
-      fireEvent.dragLeave(screen.getByRole('heading', { name: 'Chat' }), { dataTransfer });
+      fireEvent.dragLeave(elsewhereOnThePage(), { dataTransfer });
       expect(screen.queryByText(DROP_HINT)).toBeNull();
     });
 
@@ -1747,5 +1756,162 @@ describe('NotebookDetailPage', () => {
 
     const link = await screen.findByLabelText('Search this Notebook');
     expect(link.getAttribute('href')).toBe(`/notebooks/${NOTEBOOK_ID}/search`);
+  });
+
+  // NBK-35: the Notebook is a full-height workspace of three cards — the
+  // Chat Threads navigator, the open Thread and the Documents panel — each a
+  // labelled landmark so a keyboard user can jump between them, under a slim
+  // header that carries the way back, the title and the Notebook's actions.
+  describe('NBK-35: workspace frame', () => {
+    it('lays the Notebook out as three labelled regions', async () => {
+      await renderWithUpload(vi.fn());
+
+      const navigator = screen.getByRole('navigation', { name: 'Chat Threads' });
+      const chat = screen.getByRole('region', { name: 'Chat' });
+      const documents = screen.getByRole('complementary', { name: 'Documents' });
+
+      expect(within(navigator).getByRole('button', { name: 'Start Chat Thread' })).toBeTruthy();
+      expect(
+        within(chat).getByText('Open a Chat Thread, or start one, to ask a question.'),
+      ).toBeTruthy();
+      expect(within(documents).getByText('No Documents yet.')).toBeTruthy();
+    });
+
+    const RESEARCH = { id: NOTEBOOK_ID, title: 'Research', createdAt: '2026-01-01T00:00:00.000Z' };
+
+    /** The page on the "Research" Notebook, with `renameNotebook` as the rename client. */
+    async function renderResearch(renameNotebook = vi.fn()) {
+      const listNotebooks = vi.fn().mockResolvedValue([RESEARCH]);
+      const listDocuments = vi.fn().mockResolvedValue([]);
+      await render(NotebookDetailPage, {
+        providers: [
+          activatedRouteFor(NOTEBOOK_ID),
+          { provide: NotebooksService, useValue: { listNotebooks, renameNotebook } },
+          { provide: DocumentsService, useValue: { listDocuments } },
+          chatServiceStub(),
+          { provide: DocumentTransferService, useValue: {} },
+          appEventsStub().provider,
+        ],
+      });
+      return screen.findByRole('button', { name: 'Research' });
+    }
+
+    /** Opens the title for editing and types `title` into it. */
+    async function typeTitle(title: string) {
+      fireEvent.click(await screen.findByRole('button', { name: 'Research' }));
+      const input = screen.getByLabelText('Notebook title') as HTMLInputElement;
+      expect(input.value).toBe('Research');
+      fireEvent.input(input, { target: { value: title } });
+      return input;
+    }
+
+    it('renames the Notebook from its title on Enter', async () => {
+      const renameNotebook = vi.fn().mockResolvedValue({ ...RESEARCH, title: 'Research 2026' });
+      await renderResearch(renameNotebook);
+
+      fireEvent.keyDown(await typeTitle('Research 2026'), { key: 'Enter' });
+
+      expect(renameNotebook).toHaveBeenCalledWith({
+        id: NOTEBOOK_ID,
+        body: { title: 'Research 2026' },
+      });
+      expect(await screen.findByRole('button', { name: 'Research 2026' })).toBeTruthy();
+      expect(screen.queryByLabelText('Notebook title')).toBeNull();
+    });
+
+    it('commits the rename when the title box loses focus', async () => {
+      const renameNotebook = vi.fn().mockResolvedValue({ ...RESEARCH, title: 'Archive' });
+      await renderResearch(renameNotebook);
+
+      fireEvent.blur(await typeTitle('Archive'));
+
+      expect(renameNotebook).toHaveBeenCalledWith({ id: NOTEBOOK_ID, body: { title: 'Archive' } });
+      expect(await screen.findByRole('button', { name: 'Archive' })).toBeTruthy();
+    });
+
+    it('discards the edit on Escape and sends nothing', async () => {
+      const renameNotebook = vi.fn();
+      await renderResearch(renameNotebook);
+
+      fireEvent.keyDown(await typeTitle('Mistake'), { key: 'Escape' });
+
+      expect(renameNotebook).not.toHaveBeenCalled();
+      expect(screen.getByRole('button', { name: 'Research' })).toBeTruthy();
+      expect(screen.queryByLabelText('Notebook title')).toBeNull();
+    });
+
+    it('"Back to Notebooks" takes the user to the Notebooks list', async () => {
+      const listNotebooks = vi.fn().mockResolvedValue([RESEARCH]);
+      const listDocuments = vi.fn().mockResolvedValue([]);
+      const { navigate } = await render(RouterShell, {
+        routes: [
+          { path: 'notebooks/:notebookId', component: NotebookDetailPage },
+          { path: '', component: Elsewhere },
+        ],
+        providers: [
+          { provide: NotebooksService, useValue: { listNotebooks } },
+          { provide: DocumentsService, useValue: { listDocuments } },
+          chatServiceStub(),
+          { provide: DocumentTransferService, useValue: {} },
+          appEventsStub().provider,
+        ],
+      });
+      await navigate(`/notebooks/${NOTEBOOK_ID}`);
+      await screen.findByText('No Documents yet.');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Back to Notebooks' }));
+
+      expect(await screen.findByText('Somewhere else')).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'Back to Notebooks' })).toBeNull();
+    });
+
+    it('"Add Documents" opens the picker, and is disabled with it while a batch runs', async () => {
+      const request = deferred<Record<string, unknown>>();
+      await renderWithUpload(vi.fn().mockReturnValue(request.promise));
+      const input = screen.getByLabelText('Upload Documents') as HTMLInputElement;
+      const open = vi.spyOn(input, 'click');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Add Documents' }));
+      expect(open).toHaveBeenCalledTimes(1);
+
+      pick([fileNamed('a.txt')]);
+      await screen.findByText('a.txt');
+      expect(
+        (screen.getByRole('button', { name: 'Add Documents' }) as HTMLButtonElement).disabled,
+      ).toBe(true);
+      expect(input.disabled).toBe(true);
+
+      request.resolve(documentFor('a.txt'));
+      await screen.findByText('1 uploaded, 0 skipped, 0 failed');
+      expect(
+        (screen.getByRole('button', { name: 'Add Documents' }) as HTMLButtonElement).disabled,
+      ).toBe(false);
+    });
+
+    it('puts the Notebook title in the browser tab while open, and restores it on leaving', async () => {
+      document.title = 'RAG Notebook';
+      const listNotebooks = vi.fn().mockResolvedValue([RESEARCH]);
+      const listDocuments = vi.fn().mockResolvedValue([]);
+      const { navigate } = await render(RouterShell, {
+        routes: [
+          { path: 'notebooks/:notebookId', component: NotebookDetailPage },
+          { path: 'elsewhere', component: Elsewhere },
+        ],
+        providers: [
+          { provide: NotebooksService, useValue: { listNotebooks } },
+          { provide: DocumentsService, useValue: { listDocuments } },
+          chatServiceStub(),
+          { provide: DocumentTransferService, useValue: {} },
+          appEventsStub().provider,
+        ],
+      });
+
+      await navigate(`/notebooks/${NOTEBOOK_ID}`);
+      await waitFor(() => expect(document.title).toBe('Research – RAG Notebook'));
+
+      await navigate('/elsewhere');
+      await screen.findByText('Somewhere else');
+      expect(document.title).toBe('RAG Notebook');
+    });
   });
 });

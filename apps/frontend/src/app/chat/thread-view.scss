@@ -1,8 +1,22 @@
 @use './controls';
 
 // The open Chat Thread of a Notebook (NBK-10, split out of the chat panel in
-// NBK-34). The column it sits in is the page's to lay out.
+// NBK-34). The card it sits in is the page's (NBK-35); this fills it as a
+// column whose message list is the scrolling part and whose composer is the
+// fixed last row, so the question box stays in view however long the Thread.
+:host {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
 .thread-view {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+
   &__field {
     @include controls.field;
   }
@@ -17,16 +31,22 @@
 
   &__empty {
     @include controls.empty;
+    flex: 1 1 auto;
+    padding: 8px 12px;
   }
 
   &__error {
+    flex: none;
+    padding: 0 12px;
     color: var(--mat-sys-error);
   }
 
   &__head {
+    flex: none;
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
+    padding: 8px 12px 0;
 
     h3 {
       margin: 0 0 0.5rem;
@@ -34,9 +54,12 @@
   }
 
   &__messages {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
     list-style: none;
-    margin: 0 0 1rem;
-    padding: 0;
+    margin: 0;
+    padding: 8px 12px;
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
@@ -44,20 +67,20 @@
 
   &__message {
     padding: 0.6rem 0.75rem;
-    border-radius: 0.5rem;
-    background: var(--mat-sys-surface-container-low, #f4f4f4);
+    border-radius: var(--mat-sys-corner-extra-large);
+    background: var(--mat-sys-surface-container-low);
 
     // Questions and answers are visually distinct, so a long Chat Thread
     // can be skimmed for where each exchange starts.
     &--user {
-      background: var(--mat-sys-surface-container-high, #e7e7e7);
+      background: var(--mat-sys-surface-container-high);
     }
 
     // The answer still being written (NBK-11). Marked as provisional because
     // it is: it is not a message yet, and it can still be withdrawn if the
     // stream fails.
     &--streaming {
-      border: 1px dashed var(--mat-sys-outline-variant, #ddd);
+      border: 1px dashed var(--mat-sys-outline-variant);
 
       // Each chunk is its own paragraph element, so they need the spacing a
       // single pre-wrapped block got from its blank lines.
@@ -69,7 +92,7 @@
 
   &__message-author {
     display: block;
-    font-size: 0.75rem;
+    font-size: var(--mat-sys-body-small-size);
     opacity: 0.7;
     margin-bottom: 0.25rem;
   }
@@ -87,8 +110,8 @@
   // unobtrusive: it has to be reachable without interrupting the sentence it
   // sits in.
   &__marker {
-    color: var(--mat-sys-primary, #6750a4);
-    font-size: 0.8em;
+    color: var(--mat-sys-primary);
+    font-size: var(--mat-sys-body-small-size);
     vertical-align: super;
     text-decoration: none;
     font-weight: 600;
@@ -103,11 +126,11 @@
     list-style: none;
     margin: 0.5rem 0 0;
     padding: 0.5rem 0 0;
-    border-top: 1px dashed var(--mat-sys-outline-variant, #ddd);
+    border-top: 1px dashed var(--mat-sys-outline-variant);
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
-    font-size: 0.8rem;
+    font-size: var(--mat-sys-body-small-size);
   }
 
   &__citation a {
@@ -124,7 +147,7 @@
   }
 
   &__citation-marker {
-    color: var(--mat-sys-primary, #6750a4);
+    color: var(--mat-sys-primary);
     font-weight: 600;
   }
 
@@ -132,13 +155,18 @@
   // ones, so "v1" next to a Document now on v3 reads as information rather
   // than as a bug.
   &__citation-version {
-    color: var(--mat-sys-on-surface-variant, #666);
+    color: var(--mat-sys-on-surface-variant);
     font-variant-numeric: tabular-nums;
   }
 
+  // Pinned as the last row of the column (NBK-35), set off from the
+  // messages scrolling above it.
   &__composer {
+    flex: none;
     display: flex;
     align-items: flex-end;
     gap: 0.5rem;
+    padding: 8px 12px 12px;
+    border-top: 1px solid var(--mat-sys-surface-container-high);
   }
 }
