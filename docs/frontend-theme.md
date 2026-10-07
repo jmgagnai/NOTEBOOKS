@@ -143,8 +143,10 @@ element; nothing asserts a colour.
   bottom border.
 - `mat-card`: white, 8 px, 1 px border, no shadow.
 - Menus (`.mat-mdc-menu-panel`): white, 8 px, 1 px border, `level3` shadow.
-- Tooltips and the snack bar: dark `inverse-surface` on light, via the system
-  tokens alone.
+- Tooltips: dark `inverse-surface` on light, via the system tokens alone.
+- Snack bar (the undo offer after a delete, `shared/undo-snack-bar.ts`):
+  the same inverse tokens through `mat.snack-bar-overrides`, with a 13 px
+  line — spec 01's one size between the body and caption steps.
 
 ## Adding a token
 

@@ -1316,9 +1316,64 @@ describe('NotebookDetailPage', () => {
     expect(deleteDocument).toHaveBeenCalledWith({ notebookId: NOTEBOOK_ID, documentId: 'doc-3' });
     await screen.findByText('No Documents yet.');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    // The offer is a snack bar (NBK-33), which only becomes visible to
+    // assistive technology once Material has announced it.
+    fireEvent.click(await screen.findByRole('button', { name: 'Undo' }));
     expect(restoreDocument).toHaveBeenCalledWith({ notebookId: NOTEBOOK_ID, documentId: 'doc-3' });
     expect(await screen.findByText('contract.pdf')).toBeTruthy();
+  });
+
+  // NBK-33: the undo offer is a snack bar, not a line in the page, so the
+  // cards no longer jump when a Document is deleted.
+  it('announces a deleted Document in a snack bar instead of an inline line', async () => {
+    const listNotebooks = vi.fn().mockResolvedValue([]);
+    const listDocuments = vi.fn().mockResolvedValue([documentFor('contract.pdf')]);
+    const deleteDocument = vi.fn().mockResolvedValue(null);
+
+    await render(NotebookDetailPage, {
+      providers: [
+        activatedRouteFor(NOTEBOOK_ID),
+        { provide: NotebooksService, useValue: { listNotebooks } },
+        { provide: DocumentsService, useValue: { listDocuments, deleteDocument } },
+        chatServiceStub(),
+        { provide: DocumentTransferService, useValue: {} },
+        appEventsStub().provider,
+      ],
+    });
+
+    await screen.findByText('contract.pdf');
+    fireEvent.click(screen.getByRole('button', { name: 'Delete contract.pdf' }));
+
+    expect(await screen.findByText('contract.pdf deleted')).toBeTruthy();
+    expect(screen.queryByText(/"contract\.pdf" deleted\./)).toBeNull();
+  });
+
+  it('replaces the undo offer when a second Document is deleted', async () => {
+    const listNotebooks = vi.fn().mockResolvedValue([]);
+    const listDocuments = vi
+      .fn()
+      .mockResolvedValue([documentFor('contract.pdf'), documentFor('report.txt')]);
+    const deleteDocument = vi.fn().mockResolvedValue(null);
+
+    await render(NotebookDetailPage, {
+      providers: [
+        activatedRouteFor(NOTEBOOK_ID),
+        { provide: NotebooksService, useValue: { listNotebooks } },
+        { provide: DocumentsService, useValue: { listDocuments, deleteDocument } },
+        chatServiceStub(),
+        { provide: DocumentTransferService, useValue: {} },
+        appEventsStub().provider,
+      ],
+    });
+
+    await screen.findByText('contract.pdf');
+    fireEvent.click(screen.getByRole('button', { name: 'Delete contract.pdf' }));
+    await screen.findByText('contract.pdf deleted');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete report.txt' }));
+
+    expect(await screen.findByText('report.txt deleted')).toBeTruthy();
+    await waitFor(() => expect(screen.queryByText('contract.pdf deleted')).toBeNull());
   });
 
   // NBK-6: the status badge must follow the background conversion with no

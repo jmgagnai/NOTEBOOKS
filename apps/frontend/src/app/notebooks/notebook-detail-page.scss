@@ -106,12 +106,6 @@
     margin-top: 0.5rem;
   }
 
-  &__undo {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
   // Document cards (NBK-7): each entry has to hold an Abstract, so it is a
   // stacked card rather than a single-line list row.
   &__cards {
