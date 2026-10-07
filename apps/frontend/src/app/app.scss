@@ -1,7 +1,33 @@
+// The bar's chrome (48 px, white, bottom border) is the toolbar override in
+// styles.scss; this file only lays out what sits in it (NBK-30).
+.app-shell__toolbar {
+  gap: 8px;
+  padding: 0 12px 0 16px;
+}
+
+// Spec 01: the name reads at the section size (16/600), not the toolbar's
+// title size, until spec 06 brings the brand mark. It is the one element
+// allowed to shrink so a 360 px window still shows the avatar.
+.app-shell__brand {
+  min-width: 0;
+  overflow: hidden;
+  font: var(--mat-sys-title-medium);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 .app-shell__spacer {
   flex: 1 1 auto;
 }
 
-.app-shell__user {
-  margin-right: 0.75rem;
+// The avatar is the button: no Material button chrome, so the round focus
+// ring from styles.scss hugs the circle.
+.app-shell__account {
+  display: inline-flex;
+  flex: none;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
 }
