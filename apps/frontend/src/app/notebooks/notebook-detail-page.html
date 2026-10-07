@@ -72,6 +72,23 @@
       Add Documents
     </button>
     <!--
+      Only while the Documents panel is hidden (NBK-37): the way back, named
+      for what it does, reading the count so the user knows what they are
+      bringing back.
+    -->
+    @if (documentsHidden()) {
+      <button
+        mat-stroked-button
+        type="button"
+        aria-label="Show Documents"
+        matTooltip="Show Documents"
+        (click)="showDocuments()"
+      >
+        <mat-icon svgIcon="panel-right-expand" />
+        Documents <span class="notebook-detail-page__count">{{ store.documents().length }}</span>
+      </button>
+    }
+    <!--
       Disabled while a batch runs (NBK-17): a second batch behind the
       first is out of scope, so the picker cannot start one mid-way.
     -->
@@ -95,7 +112,10 @@
     Documents panel's content is the page's own, moved here from the old
     single card unchanged (specs 03 and 04 redesign what the panels show).
   -->
-  <div class="notebook-detail-page__workspace">
+  <div
+    class="notebook-detail-page__workspace"
+    [class.notebook-detail-page__workspace--documents-hidden]="documentsHidden()"
+  >
     <nav
       class="notebook-detail-page__panel notebook-detail-page__panel--threads"
       aria-label="Chat Threads"
@@ -116,9 +136,16 @@
       it is the Documents panel that lights up and says so, since that is
       where the upload shows up.
     -->
+    <!--
+      Hidden (NBK-37) means out of the accessibility tree and the tab order,
+      not just slid out of view: `inert` for the keyboard and pointer,
+      `aria-hidden` for screen readers that predate it.
+    -->
     <aside
       class="notebook-detail-page__panel notebook-detail-page__panel--documents"
       [class.notebook-detail-page__panel--drag-over]="dragOver()"
+      [attr.inert]="documentsHidden() ? '' : null"
+      [attr.aria-hidden]="documentsHidden() || null"
       aria-label="Documents"
     >
       @if (dragOver()) {
@@ -126,6 +153,17 @@
       }
       <div class="notebook-detail-page__panel-head">
         <h2 class="notebook-detail-page__panel-title">Documents</h2>
+        <span class="notebook-detail-page__spacer"></span>
+        <button
+          #hideDocumentsButton
+          mat-icon-button
+          type="button"
+          aria-label="Hide Documents"
+          matTooltip="Hide Documents"
+          (click)="hideDocuments()"
+        >
+          <mat-icon svgIcon="panel-right-contract" />
+        </button>
       </div>
       <div class="notebook-detail-page__panel-body">
         <!--

@@ -899,6 +899,73 @@ describe('NotebookDetailPage', () => {
     });
   });
 
+  // Drag-and-drop helpers (NBK-18, NBK-36), shared with NBK-37 whose hidden panel
+  // has to come back for a drag.
+  /** A dropped folder: what a file manager hands over for a directory. */
+  interface Folder {
+    folder: string;
+  }
+
+  /**
+   * A DataTransfer as a drop of `entries` would carry it. A folder arrives
+   * as an item whose entry `isDirectory`, backed by a size-0 File named
+   * after it — which is what Chromium and Firefox actually put in `files`.
+   */
+  function dataTransferOf(entries: (File | Folder)[]) {
+    const files = entries.map((entry) =>
+      entry instanceof File ? entry : new File([], entry.folder),
+    );
+    return {
+      types: ['Files'],
+      files,
+      items: entries.map((entry, index) => ({
+        kind: 'file',
+        type: files[index].type,
+        getAsFile: () => files[index],
+        webkitGetAsEntry: () => ({
+          name: files[index].name,
+          isFile: entry instanceof File,
+          isDirectory: !(entry instanceof File),
+        }),
+      })),
+      dropEffect: 'none',
+      effectAllowed: 'all',
+    };
+  }
+
+  /**
+   * Somewhere inside the page; drag events bubble up to the page itself.
+   * The Documents panel since NBK-35 took the headings out — and it is
+   * where NBK-36 moves the drop target to.
+   */
+  function somewhereOnThePage() {
+    return screen.getByRole('complementary', { name: 'Documents' });
+  }
+
+  /** Somewhere else on the page, for a drag moving between its elements. */
+  function elsewhereOnThePage() {
+    return screen.getByRole('region', { name: 'Chat' });
+  }
+
+  const DROP_HINT = 'Drop files to upload them into this Notebook';
+  const DRAG_OVER = 'notebook-detail-page__panel--drag-over';
+
+  /** The Documents panel: the drop target since NBK-36. */
+  function documentsPanel() {
+    return screen.getByRole('complementary', { name: 'Documents' });
+  }
+
+  /** Whether files dragged over the page light up the Documents panel, and only it. */
+  function highlightsDocumentsPanel() {
+    const litUp = document.querySelectorAll(`.${DRAG_OVER}`);
+    const hintInPanel = within(documentsPanel()).queryByText(DROP_HINT) !== null;
+    expect(litUp.length).toBe(hintInPanel ? 1 : 0);
+    if (hintInPanel) expect(litUp[0]).toBe(documentsPanel());
+    // Nothing outside the panel lights up or carries the hint.
+    expect(screen.queryAllByText(DROP_HINT).length).toBe(hintInPanel ? 1 : 0);
+    return hintInPanel;
+  }
+
   // NBK-18: files dragged from a file manager onto the Notebook page upload
   // as the same batch a picker selection would. jsdom has no DataTransfer or
   // DragEvent, so each drag event carries a constructed object shaped like a
@@ -906,71 +973,6 @@ describe('NotebookDetailPage', () => {
   // says whether the entry is a directory — the same thing the page reads
   // from a real drop.
   describe('NBK-18: drag and drop', () => {
-    /** A dropped folder: what a file manager hands over for a directory. */
-    interface Folder {
-      folder: string;
-    }
-
-    /**
-     * A DataTransfer as a drop of `entries` would carry it. A folder arrives
-     * as an item whose entry `isDirectory`, backed by a size-0 File named
-     * after it — which is what Chromium and Firefox actually put in `files`.
-     */
-    function dataTransferOf(entries: (File | Folder)[]) {
-      const files = entries.map((entry) =>
-        entry instanceof File ? entry : new File([], entry.folder),
-      );
-      return {
-        types: ['Files'],
-        files,
-        items: entries.map((entry, index) => ({
-          kind: 'file',
-          type: files[index].type,
-          getAsFile: () => files[index],
-          webkitGetAsEntry: () => ({
-            name: files[index].name,
-            isFile: entry instanceof File,
-            isDirectory: !(entry instanceof File),
-          }),
-        })),
-        dropEffect: 'none',
-        effectAllowed: 'all',
-      };
-    }
-
-    /**
-     * Somewhere inside the page; drag events bubble up to the page itself.
-     * The Documents panel since NBK-35 took the headings out — and it is
-     * where NBK-36 moves the drop target to.
-     */
-    function somewhereOnThePage() {
-      return screen.getByRole('complementary', { name: 'Documents' });
-    }
-
-    /** Somewhere else on the page, for a drag moving between its elements. */
-    function elsewhereOnThePage() {
-      return screen.getByRole('region', { name: 'Chat' });
-    }
-
-    const DROP_HINT = 'Drop files to upload them into this Notebook';
-    const DRAG_OVER = 'notebook-detail-page__panel--drag-over';
-
-    /** The Documents panel: the drop target since NBK-36. */
-    function documentsPanel() {
-      return screen.getByRole('complementary', { name: 'Documents' });
-    }
-
-    /** Whether files dragged over the page light up the Documents panel, and only it. */
-    function highlightsDocumentsPanel() {
-      const litUp = document.querySelectorAll(`.${DRAG_OVER}`);
-      const hintInPanel = within(documentsPanel()).queryByText(DROP_HINT) !== null;
-      expect(litUp.length).toBe(hintInPanel ? 1 : 0);
-      if (hintInPanel) expect(litUp[0]).toBe(documentsPanel());
-      // Nothing outside the panel lights up or carries the hint.
-      expect(screen.queryAllByText(DROP_HINT).length).toBe(hintInPanel ? 1 : 0);
-      return hintInPanel;
-    }
-
     it('highlights the Documents panel, and only it, while files are dragged over the page', async () => {
       await renderWithUpload(vi.fn());
       expect(highlightsDocumentsPanel()).toBe(false);
@@ -1956,6 +1958,81 @@ describe('NotebookDetailPage', () => {
       await navigate('/elsewhere');
       await screen.findByText('Somewhere else');
       expect(document.title).toBe('RAG Notebook');
+    });
+  });
+
+  // NBK-37: a user reading answers can hide the Documents panel and get it
+  // back from the page header. Hidden means gone for assistive technology and
+  // the keyboard too, not just out of sight, so the tests ask the
+  // accessibility tree (role queries skip hidden content) rather than styles.
+  describe('NBK-37: hiding the Documents panel', () => {
+    const THREE = [documentFor('a.txt'), documentFor('b.txt'), documentFor('c.txt')];
+
+    function hideDocuments() {
+      return within(documentsPanel()).getByRole('button', { name: 'Hide Documents' });
+    }
+
+    function showDocuments() {
+      return screen.queryByRole('button', { name: 'Show Documents' });
+    }
+
+    it('offers "Hide Documents" in the panel and no "Show Documents" while the panel is visible', async () => {
+      await renderWithUpload(vi.fn(), THREE);
+
+      expect(hideDocuments()).toBeTruthy();
+      expect(showDocuments()).toBeNull();
+    });
+
+    it('"Hide Documents" hides the panel and offers "Show Documents" with the Document count', async () => {
+      await renderWithUpload(vi.fn(), THREE);
+
+      fireEvent.click(hideDocuments());
+
+      expect(screen.queryByRole('complementary', { name: 'Documents' })).toBeNull();
+      expect(screen.queryByRole('list', { name: 'Documents' })).toBeNull();
+      // The navigator and the Thread are untouched.
+      expect(screen.getByRole('navigation', { name: 'Chat Threads' })).toBeTruthy();
+      expect(screen.getByRole('region', { name: 'Chat' })).toBeTruthy();
+      const show = showDocuments()!;
+      expect(show).toBeTruthy();
+      expect(show.textContent?.replace(/\s+/g, ' ').trim()).toBe('Documents 3');
+    });
+
+    it('"Show Documents" restores the panel, goes away, and focuses "Hide Documents"', async () => {
+      await renderWithUpload(vi.fn(), THREE);
+      fireEvent.click(hideDocuments());
+
+      fireEvent.click(showDocuments()!);
+
+      expect(screen.getByRole('complementary', { name: 'Documents' })).toBeTruthy();
+      expect(
+        within(screen.getByRole('list', { name: 'Documents' })).getByText('a.txt'),
+      ).toBeTruthy();
+      expect(showDocuments()).toBeNull();
+      // The keyboard has somewhere to be: the control that undoes what it just did.
+      await waitFor(() => expect(document.activeElement).toBe(hideDocuments()));
+    });
+
+    it('a drag carrying files while hidden brings the panel back as the drop target', async () => {
+      const uploadDocument = vi
+        .fn()
+        .mockImplementation((_notebookId: string, file: File) =>
+          Promise.resolve(documentFor(file.name)),
+        );
+      await renderWithUpload(uploadDocument);
+      fireEvent.click(hideDocuments());
+      expect(screen.queryByRole('complementary', { name: 'Documents' })).toBeNull();
+
+      const report = new File(['x'], 'report.txt');
+      const dataTransfer = dataTransferOf([report]);
+      fireEvent.dragEnter(elsewhereOnThePage(), { dataTransfer });
+
+      expect(highlightsDocumentsPanel()).toBe(true);
+      expect(showDocuments()).toBeNull();
+      // ...and the drop then behaves as it always did.
+      fireEvent.drop(documentsPanel(), { dataTransfer });
+      expect(await screen.findByText('1 uploaded, 0 skipped, 0 failed')).toBeTruthy();
+      expect(uploadDocument).toHaveBeenCalledWith(NOTEBOOK_ID, report);
     });
   });
 });
