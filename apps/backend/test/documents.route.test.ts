@@ -80,16 +80,18 @@ describe('Document routes', () => {
   /** Builds a `multipart/form-data` payload containing a single file field. */
   function multipartUpload(
     filename: string,
-    content: string,
+    content: string | Buffer,
   ): { payload: Buffer; contentType: string } {
     const boundary = '----nbk5TestBoundary';
-    const payload = Buffer.from(
-      `--${boundary}\r\n` +
-        `Content-Disposition: form-data; name="file"; filename="${filename}"\r\n` +
-        `Content-Type: application/octet-stream\r\n\r\n` +
-        `${content}\r\n` +
-        `--${boundary}--\r\n`,
-    );
+    const payload = Buffer.concat([
+      Buffer.from(
+        `--${boundary}\r\n` +
+          `Content-Disposition: form-data; name="file"; filename="${filename}"\r\n` +
+          `Content-Type: application/octet-stream\r\n\r\n`,
+      ),
+      Buffer.isBuffer(content) ? content : Buffer.from(content),
+      Buffer.from(`\r\n--${boundary}--\r\n`),
+    ]);
     return { payload, contentType: `multipart/form-data; boundary=${boundary}` };
   }
 
@@ -97,7 +99,7 @@ describe('Document routes', () => {
     session: string,
     notebookId: string,
     filename: string,
-    content: string,
+    content: string | Buffer,
   ) {
     const { payload, contentType } = multipartUpload(filename, content);
     return app.inject({
@@ -300,6 +302,50 @@ describe('Document routes', () => {
       });
       const documents = listResponse.json() as Array<{ filename: string }>;
       expect(documents.filter((d) => d.filename === 'contract.pdf')).toHaveLength(1);
+    });
+
+    // NBK-15: the per-file limit is 50 MiB, not the 1 MiB that
+    // @fastify/multipart falls back to when none is configured — most real
+    // PDFs exceed 1 MiB, and the batch upload (NBK-14) checks the same 50 MiB
+    // figure in the browser before sending anything.
+    describe('size limit', () => {
+      const MIB = 1024 * 1024;
+
+      it('accepts a file just under 50 MiB, creating a Version awaiting conversion', async () => {
+        const session = await loginAsNewUser('size-limit-under@example.com');
+        const notebookId = await createNotebook(session, 'Large uploads');
+        const bytes = Buffer.alloc(50 * MIB - 1, 'a');
+
+        const response = await uploadFile(session, notebookId, 'big.pdf', bytes);
+
+        expect(response.statusCode).toBe(201);
+        const body = response.json() as { status: string; latestVersion: { sizeBytes: number } };
+        expect(body.status).toBe('queued');
+        expect(body.latestVersion.sizeBytes).toBe(50 * MIB - 1);
+      });
+
+      it('refuses a file over 50 MiB with 413 and a message naming the limit', async () => {
+        const session = await loginAsNewUser('size-limit-over@example.com');
+        const notebookId = await createNotebook(session, 'Too large uploads');
+        const bytes = Buffer.alloc(50 * MIB + 1, 'a');
+
+        const response = await uploadFile(session, notebookId, 'huge.pdf', bytes);
+
+        expect(response.statusCode).toBe(413);
+        // The limit itself, in the message: an API client that bypassed the
+        // browser-side check still learns what to do, not just "too large".
+        const { message } = response.json() as { message: string };
+        expect(message).toContain('50 MiB');
+        expect(message).toContain('huge.pdf');
+
+        // Refused means nothing was stored: no Document, no Version.
+        const listResponse = await app.inject({
+          method: 'GET',
+          url: `/notebooks/${notebookId}/documents`,
+          cookies: { session },
+        });
+        expect(listResponse.json()).toEqual([]);
+      });
     });
   });
 
