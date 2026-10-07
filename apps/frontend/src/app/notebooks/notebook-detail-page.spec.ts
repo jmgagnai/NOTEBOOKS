@@ -74,6 +74,36 @@ function appEventsStub() {
   };
 }
 
+/**
+ * The page's providers, one set for every render: the route, the icon
+ * registry (NBK-31) and the four clients the page reaches, each stubbed to
+ * what the test hands over. A render through `RouterShell` says so: its real
+ * router supplies the route the stub otherwise stands in for.
+ */
+function pageProviders({
+  notebooks = { listNotebooks: vi.fn().mockResolvedValue([]) },
+  documents,
+  transfer = {},
+  appEvents = appEventsStub(),
+  inRouterShell = false,
+}: {
+  notebooks?: Record<string, unknown>;
+  documents: Record<string, unknown>;
+  transfer?: Record<string, unknown>;
+  appEvents?: ReturnType<typeof appEventsStub>;
+  inRouterShell?: boolean;
+}) {
+  return [
+    ...(inRouterShell ? [] : [activatedRouteFor(NOTEBOOK_ID)]),
+    provideAppIcons(),
+    { provide: NotebooksService, useValue: notebooks },
+    { provide: DocumentsService, useValue: documents },
+    chatServiceStub(),
+    { provide: DocumentTransferService, useValue: transfer },
+    appEvents.provider,
+  ];
+}
+
 // Shared by the upload blocks (NBK-16..19): a Document as the API returns
 // it, a request the test settles by hand, the page rendered with an upload
 // client, and the picker and the progress panel as a user reaches them.
@@ -119,37 +149,54 @@ function heldUploads() {
     inFlight.push({ file, request });
     return request.promise;
   });
-  const sentNames = () => inFlight.map(({ file }) => file.name);
   const land = (filename: string) =>
     inFlight.find(({ file }) => file.name === filename)!.request.resolve(documentFor(filename));
   const fail = (filename: string) =>
     inFlight
       .find(({ file }) => file.name === filename)!
       .request.reject({ error: { message: 'Storage is unavailable.' } });
-  return { uploadDocument, inFlight, sentNames, land, fail };
+  return { uploadDocument, inFlight, sentNames: () => sentNames(uploadDocument), land, fail };
 }
 
-/** The page on its Notebook, listing `existing`, with `uploadDocument` as the upload client. */
+/** The Notebook the header tests open (NBK-35), under its own title. */
+const RESEARCH = { id: NOTEBOOK_ID, title: 'Research', createdAt: '2026-01-01T00:00:00.000Z' };
+
+/**
+ * The page on its Notebook, listing `existing`, with `uploadDocument` as the
+ * upload client. The header tests (NBK-35) name the `notebook` so the title
+ * shows, and hand over `renameNotebook` as the rename client; both are
+ * waited for, since the title lands after the Document list.
+ */
 async function renderWithUpload(
   uploadDocument: ReturnType<typeof vi.fn>,
   existing: Record<string, unknown>[] = [],
+  {
+    notebook,
+    renameNotebook,
+  }: { notebook?: typeof RESEARCH; renameNotebook?: ReturnType<typeof vi.fn> } = {},
 ) {
-  const listNotebooks = vi.fn().mockResolvedValue([]);
+  const listNotebooks = vi.fn().mockResolvedValue(notebook ? [notebook] : []);
   const listDocuments = vi.fn().mockResolvedValue(existing);
   const result = await render(NotebookDetailPage, {
-    providers: [
-      activatedRouteFor(NOTEBOOK_ID),
-      provideAppIcons(),
-      { provide: NotebooksService, useValue: { listNotebooks } },
-      { provide: DocumentsService, useValue: { listDocuments } },
-      chatServiceStub(),
-      { provide: DocumentTransferService, useValue: { uploadDocument } },
-      appEventsStub().provider,
-    ],
+    providers: pageProviders({
+      notebooks: { listNotebooks, renameNotebook },
+      documents: { listDocuments },
+      transfer: { uploadDocument },
+    }),
   });
   if (existing.length === 0) await screen.findByText('No Documents yet.');
   else await screen.findByText(String(existing[0]['filename']));
+  if (notebook) await screen.findByRole('button', { name: notebook.title });
   return result;
+}
+
+/** Opens the "Research" title for editing and types `title` into it. */
+async function typeTitle(title: string) {
+  fireEvent.click(await screen.findByRole('button', { name: RESEARCH.title }));
+  const input = screen.getByLabelText('Notebook title') as HTMLInputElement;
+  expect(input.value).toBe(RESEARCH.title);
+  fireEvent.input(input, { target: { value: title } });
+  return input;
 }
 
 /** A one-byte file, when only its name matters. */
@@ -164,12 +211,78 @@ function pick(files: File[]) {
   return input;
 }
 
+/** The filenames `uploadDocument` was asked to send, in order. */
+function sentNames(uploadDocument: ReturnType<typeof vi.fn>) {
+  return uploadDocument.mock.calls.map(([, file]) => (file as File).name);
+}
+
 /** The progress panel's row for `filename`. */
 function panelRow(filename: string) {
   const panel = screen.getByRole('list', { name: 'Upload progress' });
   return within(panel)
     .getAllByRole('listitem')
     .find((row) => within(row).queryByText(filename) !== null)!;
+}
+
+// Drag-and-drop helpers (NBK-18, NBK-36), at module scope because NBK-37's
+// hidden panel has to come back for a drag too.
+/** A dropped folder: what a file manager hands over for a directory. */
+interface Folder {
+  folder: string;
+}
+
+/**
+ * A DataTransfer as a drop of `entries` would carry it. A folder arrives
+ * as an item whose entry `isDirectory`, backed by a size-0 File named
+ * after it — which is what Chromium and Firefox actually put in `files`.
+ */
+function dataTransferOf(entries: (File | Folder)[]) {
+  const files = entries.map((entry) =>
+    entry instanceof File ? entry : new File([], entry.folder),
+  );
+  return {
+    types: ['Files'],
+    files,
+    items: entries.map((entry, index) => ({
+      kind: 'file',
+      type: files[index].type,
+      getAsFile: () => files[index],
+      webkitGetAsEntry: () => ({
+        name: files[index].name,
+        isFile: entry instanceof File,
+        isDirectory: !(entry instanceof File),
+      }),
+    })),
+    dropEffect: 'none',
+    effectAllowed: 'all',
+  };
+}
+
+/**
+ * The Documents panel: the drop target since NBK-36. Drag events bubble up
+ * to the page, so it also serves as "somewhere on the page" for a drag.
+ */
+function documentsPanel() {
+  return screen.getByRole('complementary', { name: 'Documents' });
+}
+
+/** Somewhere else on the page, for a drag moving between its elements. */
+function elsewhereOnThePage() {
+  return screen.getByRole('region', { name: 'Chat' });
+}
+
+const DROP_HINT = 'Drop files to upload them into this Notebook';
+const DRAG_OVER = 'notebook-detail-page__panel--drag-over';
+
+/** Whether files dragged over the page light up the Documents panel, and only it. */
+function highlightsDocumentsPanel() {
+  const litUp = document.querySelectorAll(`.${DRAG_OVER}`);
+  const hintInPanel = within(documentsPanel()).queryByText(DROP_HINT) !== null;
+  expect(litUp.length).toBe(hintInPanel ? 1 : 0);
+  if (hintInPanel) expect(litUp[0]).toBe(documentsPanel());
+  // Nothing outside the panel lights up or carries the hint.
+  expect(screen.queryAllByText(DROP_HINT).length).toBe(hintInPanel ? 1 : 0);
+  return hintInPanel;
 }
 
 // Seam-3 test (per NBK-1's testing decisions, and explicitly called for by
@@ -203,15 +316,10 @@ describe('NotebookDetailPage', () => {
     ]);
 
     await render(NotebookDetailPage, {
-      providers: [
-        activatedRouteFor(NOTEBOOK_ID),
-        provideAppIcons(),
-        { provide: NotebooksService, useValue: { listNotebooks } },
-        { provide: DocumentsService, useValue: { listDocuments } },
-        chatServiceStub(),
-        { provide: DocumentTransferService, useValue: {} },
-        appEventsStub().provider,
-      ],
+      providers: pageProviders({
+        notebooks: { listNotebooks },
+        documents: { listDocuments },
+      }),
     });
 
     expect(await screen.findByText('Research')).toBeTruthy();
@@ -221,26 +329,18 @@ describe('NotebookDetailPage', () => {
   });
 
   it('shows an empty state when there are no Documents', async () => {
-    const listNotebooks = vi.fn().mockResolvedValue([]);
     const listDocuments = vi.fn().mockResolvedValue([]);
 
     await render(NotebookDetailPage, {
-      providers: [
-        activatedRouteFor(NOTEBOOK_ID),
-        provideAppIcons(),
-        { provide: NotebooksService, useValue: { listNotebooks } },
-        { provide: DocumentsService, useValue: { listDocuments } },
-        chatServiceStub(),
-        { provide: DocumentTransferService, useValue: {} },
-        appEventsStub().provider,
-      ],
+      providers: pageProviders({
+        documents: { listDocuments },
+      }),
     });
 
     expect(await screen.findByText('No Documents yet.')).toBeTruthy();
   });
 
   it('uploads a file through the file input', async () => {
-    const listNotebooks = vi.fn().mockResolvedValue([]);
     const listDocuments = vi.fn().mockResolvedValue([]);
     const uploadedDocument = {
       id: 'doc-2',
@@ -259,15 +359,10 @@ describe('NotebookDetailPage', () => {
     const uploadDocument = vi.fn().mockResolvedValue(uploadedDocument);
 
     await render(NotebookDetailPage, {
-      providers: [
-        activatedRouteFor(NOTEBOOK_ID),
-        provideAppIcons(),
-        { provide: NotebooksService, useValue: { listNotebooks } },
-        { provide: DocumentsService, useValue: { listDocuments } },
-        chatServiceStub(),
-        { provide: DocumentTransferService, useValue: { uploadDocument } },
-        appEventsStub().provider,
-      ],
+      providers: pageProviders({
+        documents: { listDocuments },
+        transfer: { uploadDocument },
+      }),
     });
 
     await screen.findByText('No Documents yet.');
@@ -309,10 +404,7 @@ describe('NotebookDetailPage', () => {
       expect(await within(cards).findByText('a.txt')).toBeTruthy();
       expect(await within(cards).findByText('b.md')).toBeTruthy();
       expect(uploadDocument).toHaveBeenCalledTimes(2);
-      expect(uploadDocument.mock.calls.map(([, file]) => (file as File).name)).toEqual([
-        'a.txt',
-        'b.md',
-      ]);
+      expect(sentNames(uploadDocument)).toEqual(['a.txt', 'b.md']);
     });
 
     it('keeps at most 3 requests in flight, taking files in selection order', async () => {
@@ -326,9 +418,8 @@ describe('NotebookDetailPage', () => {
 
       pick(['1.txt', '2.txt', '3.txt', '4.txt', '5.txt'].map(fileNamed));
 
-      const sentNames = () => uploadDocument.mock.calls.map(([, file]) => (file as File).name);
       await waitFor(() => expect(uploadDocument).toHaveBeenCalledTimes(3));
-      expect(sentNames()).toEqual(['1.txt', '2.txt', '3.txt']);
+      expect(sentNames(uploadDocument)).toEqual(['1.txt', '2.txt', '3.txt']);
 
       // Nothing more goes out until a slot frees up...
       await screen.findByText('5.txt');
@@ -337,11 +428,11 @@ describe('NotebookDetailPage', () => {
       // ...and when one does, the next file in selection order takes it.
       inFlight[1].resolve(documentFor('2.txt'));
       await waitFor(() => expect(uploadDocument).toHaveBeenCalledTimes(4));
-      expect(sentNames()[3]).toBe('4.txt');
+      expect(sentNames(uploadDocument)[3]).toBe('4.txt');
 
       inFlight[0].resolve(documentFor('1.txt'));
       await waitFor(() => expect(uploadDocument).toHaveBeenCalledTimes(5));
-      expect(sentNames()[4]).toBe('5.txt');
+      expect(sentNames(uploadDocument)[4]).toBe('5.txt');
 
       for (const [index, request] of inFlight.slice(2).entries()) {
         request.resolve(documentFor(`${index + 3}.txt`));
@@ -703,7 +794,6 @@ describe('NotebookDetailPage', () => {
     // for "navigating away and back" to mean anything.
     it('keeps the batch going, and shows it again, across in-app navigation away and back', async () => {
       const uploads = heldUploads();
-      const listNotebooks = vi.fn().mockResolvedValue([]);
       // The second visit re-reads the list, and by then the first file is
       // stored — as the real backend would report.
       const listDocuments = vi
@@ -715,16 +805,11 @@ describe('NotebookDetailPage', () => {
           { path: 'notebooks/:notebookId', component: NotebookDetailPage },
           { path: 'elsewhere', component: Elsewhere },
         ],
-        providers: [
-          { provide: NotebooksService, useValue: { listNotebooks } },
-          { provide: DocumentsService, useValue: { listDocuments } },
-          chatServiceStub(),
-          {
-            provide: DocumentTransferService,
-            useValue: { uploadDocument: uploads.uploadDocument },
-          },
-          appEventsStub().provider,
-        ],
+        providers: pageProviders({
+          documents: { listDocuments },
+          transfer: { uploadDocument: uploads.uploadDocument },
+          inRouterShell: true,
+        }),
       });
       await navigate(`/notebooks/${NOTEBOOK_ID}`);
       await screen.findByText('No Documents yet.');
@@ -764,7 +849,6 @@ describe('NotebookDetailPage', () => {
     it('keeps a file landing while another Notebook is open out of its list, and judges conflicts by its own Notebook', async () => {
       const OTHER_NOTEBOOK_ID = '22222222-2222-2222-2222-222222222222';
       const uploads = heldUploads();
-      const listNotebooks = vi.fn().mockResolvedValue([]);
       // The other Notebook already has a notes.txt; this one does not — and
       // this one's list is what the backend reports at each visit.
       let thisNotebooksDocuments: Record<string, unknown>[] = [];
@@ -782,16 +866,11 @@ describe('NotebookDetailPage', () => {
           { path: 'notebooks/:notebookId', component: NotebookDetailPage },
           { path: 'elsewhere', component: Elsewhere },
         ],
-        providers: [
-          { provide: NotebooksService, useValue: { listNotebooks } },
-          { provide: DocumentsService, useValue: { listDocuments } },
-          chatServiceStub(),
-          {
-            provide: DocumentTransferService,
-            useValue: { uploadDocument: uploads.uploadDocument },
-          },
-          appEventsStub().provider,
-        ],
+        providers: pageProviders({
+          documents: { listDocuments },
+          transfer: { uploadDocument: uploads.uploadDocument },
+          inRouterShell: true,
+        }),
       });
       await navigate(`/notebooks/${NOTEBOOK_ID}`);
       await screen.findByText('No Documents yet.');
@@ -899,73 +978,6 @@ describe('NotebookDetailPage', () => {
     });
   });
 
-  // Drag-and-drop helpers (NBK-18, NBK-36), shared with NBK-37 whose hidden panel
-  // has to come back for a drag.
-  /** A dropped folder: what a file manager hands over for a directory. */
-  interface Folder {
-    folder: string;
-  }
-
-  /**
-   * A DataTransfer as a drop of `entries` would carry it. A folder arrives
-   * as an item whose entry `isDirectory`, backed by a size-0 File named
-   * after it — which is what Chromium and Firefox actually put in `files`.
-   */
-  function dataTransferOf(entries: (File | Folder)[]) {
-    const files = entries.map((entry) =>
-      entry instanceof File ? entry : new File([], entry.folder),
-    );
-    return {
-      types: ['Files'],
-      files,
-      items: entries.map((entry, index) => ({
-        kind: 'file',
-        type: files[index].type,
-        getAsFile: () => files[index],
-        webkitGetAsEntry: () => ({
-          name: files[index].name,
-          isFile: entry instanceof File,
-          isDirectory: !(entry instanceof File),
-        }),
-      })),
-      dropEffect: 'none',
-      effectAllowed: 'all',
-    };
-  }
-
-  /**
-   * Somewhere inside the page; drag events bubble up to the page itself.
-   * The Documents panel since NBK-35 took the headings out — and it is
-   * where NBK-36 moves the drop target to.
-   */
-  function somewhereOnThePage() {
-    return screen.getByRole('complementary', { name: 'Documents' });
-  }
-
-  /** Somewhere else on the page, for a drag moving between its elements. */
-  function elsewhereOnThePage() {
-    return screen.getByRole('region', { name: 'Chat' });
-  }
-
-  const DROP_HINT = 'Drop files to upload them into this Notebook';
-  const DRAG_OVER = 'notebook-detail-page__panel--drag-over';
-
-  /** The Documents panel: the drop target since NBK-36. */
-  function documentsPanel() {
-    return screen.getByRole('complementary', { name: 'Documents' });
-  }
-
-  /** Whether files dragged over the page light up the Documents panel, and only it. */
-  function highlightsDocumentsPanel() {
-    const litUp = document.querySelectorAll(`.${DRAG_OVER}`);
-    const hintInPanel = within(documentsPanel()).queryByText(DROP_HINT) !== null;
-    expect(litUp.length).toBe(hintInPanel ? 1 : 0);
-    if (hintInPanel) expect(litUp[0]).toBe(documentsPanel());
-    // Nothing outside the panel lights up or carries the hint.
-    expect(screen.queryAllByText(DROP_HINT).length).toBe(hintInPanel ? 1 : 0);
-    return hintInPanel;
-  }
-
   // NBK-18: files dragged from a file manager onto the Notebook page upload
   // as the same batch a picker selection would. jsdom has no DataTransfer or
   // DragEvent, so each drag event carries a constructed object shaped like a
@@ -986,12 +998,12 @@ describe('NotebookDetailPage', () => {
 
       // Moving between elements of the page fires leave/enter pairs that must
       // not flicker the state off...
-      fireEvent.dragEnter(somewhereOnThePage(), { dataTransfer });
+      fireEvent.dragEnter(documentsPanel(), { dataTransfer });
       fireEvent.dragLeave(elsewhereOnThePage(), { dataTransfer });
       expect(highlightsDocumentsPanel()).toBe(true);
 
       // ...while leaving the page clears it.
-      fireEvent.dragLeave(somewhereOnThePage(), { dataTransfer });
+      fireEvent.dragLeave(documentsPanel(), { dataTransfer });
       expect(highlightsDocumentsPanel()).toBe(false);
     });
 
@@ -999,8 +1011,8 @@ describe('NotebookDetailPage', () => {
       await renderWithUpload(vi.fn());
 
       const dataTransfer = { ...dataTransferOf([]), types: ['text/plain'] };
-      fireEvent.dragEnter(somewhereOnThePage(), { dataTransfer });
-      fireEvent.dragOver(somewhereOnThePage(), { dataTransfer });
+      fireEvent.dragEnter(documentsPanel(), { dataTransfer });
+      fireEvent.dragOver(documentsPanel(), { dataTransfer });
       expect(highlightsDocumentsPanel()).toBe(false);
     });
 
@@ -1015,10 +1027,10 @@ describe('NotebookDetailPage', () => {
       const a = new File(['a'], 'a.txt');
       const b = new File(['b'], 'b.md');
       const dataTransfer = dataTransferOf([a, b, new File(['x'], 'photo.png')]);
-      fireEvent.dragEnter(somewhereOnThePage(), { dataTransfer });
+      fireEvent.dragEnter(documentsPanel(), { dataTransfer });
       expect(screen.getByText(DROP_HINT)).toBeTruthy();
       // Cancelled, or the browser would open the dropped file instead.
-      expect(fireEvent.drop(somewhereOnThePage(), { dataTransfer })).toBe(false);
+      expect(fireEvent.drop(documentsPanel(), { dataTransfer })).toBe(false);
       expect(screen.queryByText(DROP_HINT)).toBeNull();
 
       expect(await screen.findByText('2 uploaded, 1 skipped, 0 failed')).toBeTruthy();
@@ -1041,7 +1053,7 @@ describe('NotebookDetailPage', () => {
       await renderWithUpload(uploadDocument);
 
       const report = new File(['x'], 'report.txt');
-      fireEvent.drop(somewhereOnThePage(), {
+      fireEvent.drop(documentsPanel(), {
         dataTransfer: dataTransferOf([{ folder: 'photos' }, report]),
       });
 
@@ -1062,7 +1074,7 @@ describe('NotebookDetailPage', () => {
       const uploadDocument = vi.fn().mockReturnValue(request.promise);
       await renderWithUpload(uploadDocument);
 
-      fireEvent.drop(somewhereOnThePage(), {
+      fireEvent.drop(documentsPanel(), {
         dataTransfer: dataTransferOf([new File(['x'], 'first.txt')]),
       });
       await screen.findByText('first.txt');
@@ -1070,18 +1082,18 @@ describe('NotebookDetailPage', () => {
 
       // With first.txt still in flight, a second drag gets no welcome...
       const second = dataTransferOf([new File(['x'], 'second.txt')]);
-      fireEvent.dragEnter(somewhereOnThePage(), { dataTransfer: second });
-      fireEvent.dragOver(somewhereOnThePage(), { dataTransfer: second });
+      fireEvent.dragEnter(documentsPanel(), { dataTransfer: second });
+      fireEvent.dragOver(documentsPanel(), { dataTransfer: second });
       expect(screen.queryByText(DROP_HINT)).toBeNull();
       // ...and its drop changes nothing: the running batch is untouched.
-      fireEvent.drop(somewhereOnThePage(), { dataTransfer: second });
+      fireEvent.drop(documentsPanel(), { dataTransfer: second });
       expect(screen.queryByText('second.txt')).toBeNull();
       expect(uploadDocument).toHaveBeenCalledTimes(1);
 
       // Once the batch is done, dropping works again.
       request.resolve(documentFor('first.txt'));
       await screen.findByText('1 uploaded, 0 skipped, 0 failed');
-      fireEvent.drop(somewhereOnThePage(), { dataTransfer: second });
+      fireEvent.drop(documentsPanel(), { dataTransfer: second });
       expect(await screen.findByText('second.txt')).toBeTruthy();
     });
 
@@ -1090,7 +1102,7 @@ describe('NotebookDetailPage', () => {
       await renderWithUpload(uploadDocument);
 
       const files = Array.from({ length: 101 }, (_, i) => new File(['x'], `f${i}.txt`));
-      fireEvent.drop(somewhereOnThePage(), { dataTransfer: dataTransferOf(files) });
+      fireEvent.drop(documentsPanel(), { dataTransfer: dataTransferOf(files) });
 
       expect(await screen.findByText(/Too many files: 101 uploadable files/)).toBeTruthy();
       expect(uploadDocument).not.toHaveBeenCalled();
@@ -1117,8 +1129,6 @@ describe('NotebookDetailPage', () => {
     const dialog = () => screen.queryByRole('dialog', { name: 'Document already exists' });
     const findDialog = () => screen.findByRole('dialog', { name: 'Document already exists' });
     const getDialog = () => screen.getByRole('dialog', { name: 'Document already exists' });
-    const sentNames = (uploadDocument: ReturnType<typeof vi.fn>) =>
-      uploadDocument.mock.calls.map(([, file]) => (file as File).name);
 
     it('asks before sending a file whose name is an existing Document, and sends it on New Version', async () => {
       const existing = documentFor('report.txt');
@@ -1323,7 +1333,6 @@ describe('NotebookDetailPage', () => {
   });
 
   it('deletes a Document, removing it from the list, then restores it via Undo', async () => {
-    const listNotebooks = vi.fn().mockResolvedValue([]);
     const existingDocument = {
       id: 'doc-3',
       notebookId: NOTEBOOK_ID,
@@ -1343,15 +1352,9 @@ describe('NotebookDetailPage', () => {
     const restoreDocument = vi.fn().mockResolvedValue(existingDocument);
 
     await render(NotebookDetailPage, {
-      providers: [
-        activatedRouteFor(NOTEBOOK_ID),
-        provideAppIcons(),
-        { provide: NotebooksService, useValue: { listNotebooks } },
-        { provide: DocumentsService, useValue: { listDocuments, deleteDocument, restoreDocument } },
-        chatServiceStub(),
-        { provide: DocumentTransferService, useValue: {} },
-        appEventsStub().provider,
-      ],
+      providers: pageProviders({
+        documents: { listDocuments, deleteDocument, restoreDocument },
+      }),
     });
 
     await screen.findByText('contract.pdf');
@@ -1370,20 +1373,13 @@ describe('NotebookDetailPage', () => {
   // NBK-33: the undo offer is a snack bar, not a line in the page, so the
   // cards no longer jump when a Document is deleted.
   it('announces a deleted Document in a snack bar instead of an inline line', async () => {
-    const listNotebooks = vi.fn().mockResolvedValue([]);
     const listDocuments = vi.fn().mockResolvedValue([documentFor('contract.pdf')]);
     const deleteDocument = vi.fn().mockResolvedValue(null);
 
     await render(NotebookDetailPage, {
-      providers: [
-        activatedRouteFor(NOTEBOOK_ID),
-        provideAppIcons(),
-        { provide: NotebooksService, useValue: { listNotebooks } },
-        { provide: DocumentsService, useValue: { listDocuments, deleteDocument } },
-        chatServiceStub(),
-        { provide: DocumentTransferService, useValue: {} },
-        appEventsStub().provider,
-      ],
+      providers: pageProviders({
+        documents: { listDocuments, deleteDocument },
+      }),
     });
 
     await screen.findByText('contract.pdf');
@@ -1394,22 +1390,15 @@ describe('NotebookDetailPage', () => {
   });
 
   it('replaces the undo offer when a second Document is deleted', async () => {
-    const listNotebooks = vi.fn().mockResolvedValue([]);
     const listDocuments = vi
       .fn()
       .mockResolvedValue([documentFor('contract.pdf'), documentFor('report.txt')]);
     const deleteDocument = vi.fn().mockResolvedValue(null);
 
     await render(NotebookDetailPage, {
-      providers: [
-        activatedRouteFor(NOTEBOOK_ID),
-        provideAppIcons(),
-        { provide: NotebooksService, useValue: { listNotebooks } },
-        { provide: DocumentsService, useValue: { listDocuments, deleteDocument } },
-        chatServiceStub(),
-        { provide: DocumentTransferService, useValue: {} },
-        appEventsStub().provider,
-      ],
+      providers: pageProviders({
+        documents: { listDocuments, deleteDocument },
+      }),
     });
 
     await screen.findByText('contract.pdf');
@@ -1426,7 +1415,6 @@ describe('NotebookDetailPage', () => {
   // page refresh. Nothing is re-fetched here — the only new information is
   // the app event, which is the whole point.
   it('updates a Document status badge live from an app event', async () => {
-    const listNotebooks = vi.fn().mockResolvedValue([]);
     const listDocuments = vi.fn().mockResolvedValue([
       {
         id: 'doc-5',
@@ -1446,15 +1434,10 @@ describe('NotebookDetailPage', () => {
     const appEvents = appEventsStub();
 
     await render(NotebookDetailPage, {
-      providers: [
-        activatedRouteFor(NOTEBOOK_ID),
-        provideAppIcons(),
-        { provide: NotebooksService, useValue: { listNotebooks } },
-        { provide: DocumentsService, useValue: { listDocuments } },
-        chatServiceStub(),
-        { provide: DocumentTransferService, useValue: {} },
-        appEvents.provider,
-      ],
+      providers: pageProviders({
+        documents: { listDocuments },
+        appEvents,
+      }),
     });
 
     await screen.findByText('thesis.pdf');
@@ -1498,7 +1481,6 @@ describe('NotebookDetailPage', () => {
   // to rely on it for chat". So the badge has to reach "ready" live, and
   // "ready" has to look different from a mid-pipeline stage boundary.
   it('follows a Document through stage 3 to the "ready" badge', async () => {
-    const listNotebooks = vi.fn().mockResolvedValue([]);
     const listDocuments = vi.fn().mockResolvedValue([
       {
         id: 'doc-9',
@@ -1519,15 +1501,10 @@ describe('NotebookDetailPage', () => {
     const appEvents = appEventsStub();
 
     await render(NotebookDetailPage, {
-      providers: [
-        activatedRouteFor(NOTEBOOK_ID),
-        provideAppIcons(),
-        { provide: NotebooksService, useValue: { listNotebooks } },
-        { provide: DocumentsService, useValue: { listDocuments } },
-        chatServiceStub(),
-        { provide: DocumentTransferService, useValue: {} },
-        appEvents.provider,
-      ],
+      providers: pageProviders({
+        documents: { listDocuments },
+        appEvents,
+      }),
     });
 
     await screen.findByText('report.pdf');
@@ -1555,7 +1532,6 @@ describe('NotebookDetailPage', () => {
   });
 
   it('ignores a status event for a Version that is no longer the latest', async () => {
-    const listNotebooks = vi.fn().mockResolvedValue([]);
     const listDocuments = vi.fn().mockResolvedValue([
       {
         id: 'doc-6',
@@ -1575,15 +1551,10 @@ describe('NotebookDetailPage', () => {
     const appEvents = appEventsStub();
 
     await render(NotebookDetailPage, {
-      providers: [
-        activatedRouteFor(NOTEBOOK_ID),
-        provideAppIcons(),
-        { provide: NotebooksService, useValue: { listNotebooks } },
-        { provide: DocumentsService, useValue: { listDocuments } },
-        chatServiceStub(),
-        { provide: DocumentTransferService, useValue: {} },
-        appEvents.provider,
-      ],
+      providers: pageProviders({
+        documents: { listDocuments },
+        appEvents,
+      }),
     });
 
     await screen.findByText('superseded.txt');
@@ -1629,19 +1600,12 @@ describe('NotebookDetailPage', () => {
     }
 
     it("shows the Abstract on the Document's card, and links to the Document", async () => {
-      const listNotebooks = vi.fn().mockResolvedValue([]);
       const listDocuments = vi.fn().mockResolvedValue([summarizedDocument()]);
 
       await render(NotebookDetailPage, {
-        providers: [
-          activatedRouteFor(NOTEBOOK_ID),
-          provideAppIcons(),
-          { provide: NotebooksService, useValue: { listNotebooks } },
-          { provide: DocumentsService, useValue: { listDocuments } },
-          chatServiceStub(),
-          { provide: DocumentTransferService, useValue: {} },
-          appEventsStub().provider,
-        ],
+        providers: pageProviders({
+          documents: { listDocuments },
+        }),
       });
 
       expect(await screen.findByText('quarterly.pdf')).toBeTruthy();
@@ -1658,21 +1622,14 @@ describe('NotebookDetailPage', () => {
     });
 
     it('says the Abstract is still being generated while ingestion has not produced one', async () => {
-      const listNotebooks = vi.fn().mockResolvedValue([]);
       const listDocuments = vi
         .fn()
         .mockResolvedValue([summarizedDocument({ status: 'converting', abstract: null })]);
 
       await render(NotebookDetailPage, {
-        providers: [
-          activatedRouteFor(NOTEBOOK_ID),
-          provideAppIcons(),
-          { provide: NotebooksService, useValue: { listNotebooks } },
-          { provide: DocumentsService, useValue: { listDocuments } },
-          chatServiceStub(),
-          { provide: DocumentTransferService, useValue: {} },
-          appEventsStub().provider,
-        ],
+        providers: pageProviders({
+          documents: { listDocuments },
+        }),
       });
 
       await screen.findByText('quarterly.pdf');
@@ -1688,7 +1645,6 @@ describe('NotebookDetailPage', () => {
     // "summarized" is the cue to re-read that one Document over the normal
     // API, which is the ADR's "an event is a hint" contract made concrete.
     it('tracks the stage-2 statuses live, then re-reads the Document to pick up its Abstract', async () => {
-      const listNotebooks = vi.fn().mockResolvedValue([]);
       const listDocuments = vi
         .fn()
         .mockResolvedValue([summarizedDocument({ status: 'converted', abstract: null })]);
@@ -1700,15 +1656,10 @@ describe('NotebookDetailPage', () => {
       const appEvents = appEventsStub();
 
       await render(NotebookDetailPage, {
-        providers: [
-          activatedRouteFor(NOTEBOOK_ID),
-          provideAppIcons(),
-          { provide: NotebooksService, useValue: { listNotebooks } },
-          { provide: DocumentsService, useValue: { listDocuments, getDocument } },
-          chatServiceStub(),
-          { provide: DocumentTransferService, useValue: {} },
-          appEvents.provider,
-        ],
+        providers: pageProviders({
+          documents: { listDocuments, getDocument },
+          appEvents,
+        }),
       });
 
       await screen.findByText('quarterly.pdf');
@@ -1746,7 +1697,6 @@ describe('NotebookDetailPage', () => {
   });
 
   it('downloads a Document Version through the transfer service', async () => {
-    const listNotebooks = vi.fn().mockResolvedValue([]);
     const existingDocument = {
       id: 'doc-4',
       notebookId: NOTEBOOK_ID,
@@ -1765,15 +1715,10 @@ describe('NotebookDetailPage', () => {
     const downloadDocumentVersion = vi.fn().mockResolvedValue(undefined);
 
     await render(NotebookDetailPage, {
-      providers: [
-        activatedRouteFor(NOTEBOOK_ID),
-        provideAppIcons(),
-        { provide: NotebooksService, useValue: { listNotebooks } },
-        { provide: DocumentsService, useValue: { listDocuments } },
-        chatServiceStub(),
-        { provide: DocumentTransferService, useValue: { downloadDocumentVersion } },
-        appEventsStub().provider,
-      ],
+      providers: pageProviders({
+        documents: { listDocuments },
+        transfer: { downloadDocumentVersion },
+      }),
     });
 
     await screen.findByText('sheet.xlsx');
@@ -1782,21 +1727,16 @@ describe('NotebookDetailPage', () => {
     expect(downloadDocumentVersion).toHaveBeenCalledWith(NOTEBOOK_ID, 'doc-4', 'v-9', 'sheet.xlsx');
   });
 
-  // NBK-9: search is how a user finds a source without opening a chat, so it
-  // has to be reachable from the Notebook they are already looking at.
+  // NBK-9: search is how a user looks something up in the Documents without
+  // opening a chat, so it has to be reachable from the Notebook they are
+  // already looking at.
   it("links to this Notebook's search page", async () => {
-    const listNotebooks = vi.fn().mockResolvedValue([]);
     const listDocuments = vi.fn().mockResolvedValue([]);
 
     await render(NotebookDetailPage, {
-      providers: [
-        activatedRouteFor(NOTEBOOK_ID),
-        provideAppIcons(),
-        { provide: NotebooksService, useValue: { listNotebooks } },
-        { provide: DocumentsService, useValue: { listDocuments } },
-        { provide: DocumentTransferService, useValue: {} },
-        appEventsStub().provider,
-      ],
+      providers: pageProviders({
+        documents: { listDocuments },
+      }),
     });
 
     const link = await screen.findByLabelText('Search this Notebook');
@@ -1822,38 +1762,9 @@ describe('NotebookDetailPage', () => {
       expect(within(documents).getByText('No Documents yet.')).toBeTruthy();
     });
 
-    const RESEARCH = { id: NOTEBOOK_ID, title: 'Research', createdAt: '2026-01-01T00:00:00.000Z' };
-
-    /** The page on the "Research" Notebook, with `renameNotebook` as the rename client. */
-    async function renderResearch(renameNotebook = vi.fn()) {
-      const listNotebooks = vi.fn().mockResolvedValue([RESEARCH]);
-      const listDocuments = vi.fn().mockResolvedValue([]);
-      await render(NotebookDetailPage, {
-        providers: [
-          activatedRouteFor(NOTEBOOK_ID),
-          provideAppIcons(),
-          { provide: NotebooksService, useValue: { listNotebooks, renameNotebook } },
-          { provide: DocumentsService, useValue: { listDocuments } },
-          chatServiceStub(),
-          { provide: DocumentTransferService, useValue: {} },
-          appEventsStub().provider,
-        ],
-      });
-      return screen.findByRole('button', { name: 'Research' });
-    }
-
-    /** Opens the title for editing and types `title` into it. */
-    async function typeTitle(title: string) {
-      fireEvent.click(await screen.findByRole('button', { name: 'Research' }));
-      const input = screen.getByLabelText('Notebook title') as HTMLInputElement;
-      expect(input.value).toBe('Research');
-      fireEvent.input(input, { target: { value: title } });
-      return input;
-    }
-
     it('renames the Notebook from its title on Enter', async () => {
       const renameNotebook = vi.fn().mockResolvedValue({ ...RESEARCH, title: 'Research 2026' });
-      await renderResearch(renameNotebook);
+      await renderWithUpload(vi.fn(), [], { notebook: RESEARCH, renameNotebook });
 
       fireEvent.keyDown(await typeTitle('Research 2026'), { key: 'Enter' });
 
@@ -1867,7 +1778,7 @@ describe('NotebookDetailPage', () => {
 
     it('commits the rename when the title box loses focus', async () => {
       const renameNotebook = vi.fn().mockResolvedValue({ ...RESEARCH, title: 'Archive' });
-      await renderResearch(renameNotebook);
+      await renderWithUpload(vi.fn(), [], { notebook: RESEARCH, renameNotebook });
 
       fireEvent.blur(await typeTitle('Archive'));
 
@@ -1877,7 +1788,7 @@ describe('NotebookDetailPage', () => {
 
     it('discards the edit on Escape and sends nothing', async () => {
       const renameNotebook = vi.fn();
-      await renderResearch(renameNotebook);
+      await renderWithUpload(vi.fn(), [], { notebook: RESEARCH, renameNotebook });
 
       fireEvent.keyDown(await typeTitle('Mistake'), { key: 'Escape' });
 
@@ -1894,13 +1805,11 @@ describe('NotebookDetailPage', () => {
           { path: 'notebooks/:notebookId', component: NotebookDetailPage },
           { path: '', component: Elsewhere },
         ],
-        providers: [
-          { provide: NotebooksService, useValue: { listNotebooks } },
-          { provide: DocumentsService, useValue: { listDocuments } },
-          chatServiceStub(),
-          { provide: DocumentTransferService, useValue: {} },
-          appEventsStub().provider,
-        ],
+        providers: pageProviders({
+          notebooks: { listNotebooks },
+          documents: { listDocuments },
+          inRouterShell: true,
+        }),
       });
       await navigate(`/notebooks/${NOTEBOOK_ID}`);
       await screen.findByText('No Documents yet.');
@@ -1943,13 +1852,11 @@ describe('NotebookDetailPage', () => {
           { path: 'notebooks/:notebookId', component: NotebookDetailPage },
           { path: 'elsewhere', component: Elsewhere },
         ],
-        providers: [
-          { provide: NotebooksService, useValue: { listNotebooks } },
-          { provide: DocumentsService, useValue: { listDocuments } },
-          chatServiceStub(),
-          { provide: DocumentTransferService, useValue: {} },
-          appEventsStub().provider,
-        ],
+        providers: pageProviders({
+          notebooks: { listNotebooks },
+          documents: { listDocuments },
+          inRouterShell: true,
+        }),
       });
 
       await navigate(`/notebooks/${NOTEBOOK_ID}`);
@@ -1968,49 +1875,49 @@ describe('NotebookDetailPage', () => {
   describe('NBK-37: hiding the Documents panel', () => {
     const THREE = [documentFor('a.txt'), documentFor('b.txt'), documentFor('c.txt')];
 
-    function hideDocuments() {
+    function hideDocumentsButton() {
       return within(documentsPanel()).getByRole('button', { name: 'Hide Documents' });
     }
 
-    function showDocuments() {
+    function showDocumentsButton() {
       return screen.queryByRole('button', { name: 'Show Documents' });
     }
 
     it('offers "Hide Documents" in the panel and no "Show Documents" while the panel is visible', async () => {
       await renderWithUpload(vi.fn(), THREE);
 
-      expect(hideDocuments()).toBeTruthy();
-      expect(showDocuments()).toBeNull();
+      expect(hideDocumentsButton()).toBeTruthy();
+      expect(showDocumentsButton()).toBeNull();
     });
 
     it('"Hide Documents" hides the panel and offers "Show Documents" with the Document count', async () => {
       await renderWithUpload(vi.fn(), THREE);
 
-      fireEvent.click(hideDocuments());
+      fireEvent.click(hideDocumentsButton());
 
       expect(screen.queryByRole('complementary', { name: 'Documents' })).toBeNull();
       expect(screen.queryByRole('list', { name: 'Documents' })).toBeNull();
-      // The navigator and the Thread are untouched.
+      // Only the panel goes: the reader hid it to make room for these two.
       expect(screen.getByRole('navigation', { name: 'Chat Threads' })).toBeTruthy();
       expect(screen.getByRole('region', { name: 'Chat' })).toBeTruthy();
-      const show = showDocuments()!;
+      const show = showDocumentsButton()!;
       expect(show).toBeTruthy();
       expect(show.textContent?.replace(/\s+/g, ' ').trim()).toBe('Documents 3');
     });
 
     it('"Show Documents" restores the panel, goes away, and focuses "Hide Documents"', async () => {
       await renderWithUpload(vi.fn(), THREE);
-      fireEvent.click(hideDocuments());
+      fireEvent.click(hideDocumentsButton());
 
-      fireEvent.click(showDocuments()!);
+      fireEvent.click(showDocumentsButton()!);
 
       expect(screen.getByRole('complementary', { name: 'Documents' })).toBeTruthy();
       expect(
         within(screen.getByRole('list', { name: 'Documents' })).getByText('a.txt'),
       ).toBeTruthy();
-      expect(showDocuments()).toBeNull();
+      expect(showDocumentsButton()).toBeNull();
       // The keyboard has somewhere to be: the control that undoes what it just did.
-      await waitFor(() => expect(document.activeElement).toBe(hideDocuments()));
+      await waitFor(() => expect(document.activeElement).toBe(hideDocumentsButton()));
     });
 
     it('a drag carrying files while hidden brings the panel back as the drop target', async () => {
@@ -2020,7 +1927,7 @@ describe('NotebookDetailPage', () => {
           Promise.resolve(documentFor(file.name)),
         );
       await renderWithUpload(uploadDocument);
-      fireEvent.click(hideDocuments());
+      fireEvent.click(hideDocumentsButton());
       expect(screen.queryByRole('complementary', { name: 'Documents' })).toBeNull();
 
       const report = new File(['x'], 'report.txt');
@@ -2028,7 +1935,7 @@ describe('NotebookDetailPage', () => {
       fireEvent.dragEnter(elsewhereOnThePage(), { dataTransfer });
 
       expect(highlightsDocumentsPanel()).toBe(true);
-      expect(showDocuments()).toBeNull();
+      expect(showDocumentsButton()).toBeNull();
       // ...and the drop then behaves as it always did.
       fireEvent.drop(documentsPanel(), { dataTransfer });
       expect(await screen.findByText('1 uploaded, 0 skipped, 0 failed')).toBeTruthy();
