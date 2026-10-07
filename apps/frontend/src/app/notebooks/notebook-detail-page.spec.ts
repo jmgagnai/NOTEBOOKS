@@ -467,6 +467,216 @@ describe('NotebookDetailPage', () => {
     });
   });
 
+  // NBK-18: files dragged from a file manager onto the Notebook page upload
+  // as the same batch a picker selection would. jsdom has no DataTransfer or
+  // DragEvent, so each drag event carries a constructed object shaped like a
+  // DataTransfer: `types`, `files`, and `items` whose `webkitGetAsEntry()`
+  // says whether the entry is a directory — the same thing the page reads
+  // from a real drop.
+  describe('NBK-18: drag and drop', () => {
+    function documentFor(filename: string) {
+      return {
+        id: `doc-${filename}`,
+        notebookId: NOTEBOOK_ID,
+        filename,
+        status: 'queued',
+        abstract: null,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        latestVersion: {
+          id: `v-${filename}-1`,
+          versionNumber: 1,
+          mimeType: 'text/plain',
+          sizeBytes: 1,
+          createdAt: '2026-01-01T00:00:00.000Z',
+        },
+      };
+    }
+
+    async function renderWithUpload(uploadDocument: ReturnType<typeof vi.fn>) {
+      const listNotebooks = vi.fn().mockResolvedValue([]);
+      const listDocuments = vi.fn().mockResolvedValue([]);
+      await render(NotebookDetailPage, {
+        providers: [
+          activatedRouteFor(NOTEBOOK_ID),
+          { provide: NotebooksService, useValue: { listNotebooks } },
+          { provide: DocumentsService, useValue: { listDocuments } },
+          chatServiceStub(),
+          { provide: DocumentTransferService, useValue: { uploadDocument } },
+          appEventsStub().provider,
+        ],
+      });
+      await screen.findByText('No Documents yet.');
+    }
+
+    /** A dropped folder: what a file manager hands over for a directory. */
+    interface Folder {
+      folder: string;
+    }
+
+    /**
+     * A DataTransfer as a drop of `entries` would carry it. A folder arrives
+     * as an item whose entry `isDirectory`, backed by a size-0 File named
+     * after it — which is what Chromium and Firefox actually put in `files`.
+     */
+    function dataTransferOf(entries: (File | Folder)[]) {
+      const files = entries.map((entry) =>
+        entry instanceof File ? entry : new File([], entry.folder),
+      );
+      return {
+        types: ['Files'],
+        files,
+        items: entries.map((entry, index) => ({
+          kind: 'file',
+          type: files[index].type,
+          getAsFile: () => files[index],
+          webkitGetAsEntry: () => ({
+            name: files[index].name,
+            isFile: entry instanceof File,
+            isDirectory: !(entry instanceof File),
+          }),
+        })),
+        dropEffect: 'none',
+        effectAllowed: 'all',
+      };
+    }
+
+    function panelRow(filename: string) {
+      const panel = screen.getByRole('list', { name: 'Upload progress' });
+      return within(panel)
+        .getAllByRole('listitem')
+        .find((row) => within(row).queryByText(filename) !== null)!;
+    }
+
+    /** A promise the test resolves by hand, to hold a request "in flight". */
+    function deferred<T>() {
+      let resolve!: (value: T) => void;
+      const promise = new Promise<T>((res) => {
+        resolve = res;
+      });
+      return { promise, resolve };
+    }
+
+    /** Somewhere inside the page; drag events bubble up to the page itself. */
+    function somewhereOnThePage() {
+      return screen.getByRole('heading', { name: 'Documents' });
+    }
+
+    const DROP_HINT = 'Drop files to upload them into this Notebook';
+
+    it('highlights the whole page while files are dragged over it, until they leave', async () => {
+      await renderWithUpload(vi.fn());
+      expect(screen.queryByText(DROP_HINT)).toBeNull();
+
+      const dataTransfer = dataTransferOf([new File(['x'], 'a.txt')]);
+      fireEvent.dragEnter(somewhereOnThePage(), { dataTransfer });
+      // `dragover` has to be cancelled or the browser refuses the drop.
+      expect(fireEvent.dragOver(somewhereOnThePage(), { dataTransfer })).toBe(false);
+      expect(screen.getByText(DROP_HINT)).toBeTruthy();
+
+      // Moving between elements of the page fires leave/enter pairs that must
+      // not flicker the state off...
+      fireEvent.dragEnter(screen.getByRole('heading', { name: 'Chat' }), { dataTransfer });
+      fireEvent.dragLeave(somewhereOnThePage(), { dataTransfer });
+      expect(screen.getByText(DROP_HINT)).toBeTruthy();
+
+      // ...while leaving the page clears it.
+      fireEvent.dragLeave(screen.getByRole('heading', { name: 'Chat' }), { dataTransfer });
+      expect(screen.queryByText(DROP_HINT)).toBeNull();
+    });
+
+    it('uploads dropped files as the same batch the picker would start, skipping included', async () => {
+      const uploadDocument = vi
+        .fn()
+        .mockImplementation((_notebookId: string, file: File) =>
+          Promise.resolve(documentFor(file.name)),
+        );
+      await renderWithUpload(uploadDocument);
+
+      const a = new File(['a'], 'a.txt');
+      const b = new File(['b'], 'b.md');
+      const dataTransfer = dataTransferOf([a, b, new File(['x'], 'photo.png')]);
+      fireEvent.dragEnter(somewhereOnThePage(), { dataTransfer });
+      expect(screen.getByText(DROP_HINT)).toBeTruthy();
+      // Cancelled, or the browser would open the dropped file instead.
+      expect(fireEvent.drop(somewhereOnThePage(), { dataTransfer })).toBe(false);
+      expect(screen.queryByText(DROP_HINT)).toBeNull();
+
+      expect(await screen.findByText('2 uploaded, 1 skipped, 0 failed')).toBeTruthy();
+      expect(within(panelRow('photo.png')).getByText(/Unsupported file type/)).toBeTruthy();
+      const cards = screen.getByRole('list', { name: 'Documents' });
+      expect(within(cards).getByText('a.txt')).toBeTruthy();
+      expect(within(cards).getByText('b.md')).toBeTruthy();
+      expect(uploadDocument.mock.calls).toEqual([
+        [NOTEBOOK_ID, a],
+        [NOTEBOOK_ID, b],
+      ]);
+    });
+
+    it('lists a dropped folder as skipped with the folder message, and uploads the files beside it', async () => {
+      const uploadDocument = vi
+        .fn()
+        .mockImplementation((_notebookId: string, file: File) =>
+          Promise.resolve(documentFor(file.name)),
+        );
+      await renderWithUpload(uploadDocument);
+
+      const report = new File(['x'], 'report.txt');
+      fireEvent.drop(somewhereOnThePage(), {
+        dataTransfer: dataTransferOf([{ folder: 'photos' }, report]),
+      });
+
+      expect(await screen.findByText('1 uploaded, 1 skipped, 0 failed')).toBeTruthy();
+      const folder = panelRow('photos');
+      expect(within(folder).getByText('skipped')).toBeTruthy();
+      expect(
+        within(folder).getByText(
+          "Folders can't be uploaded. Open the folder and select its files instead.",
+        ),
+      ).toBeTruthy();
+      expect(within(panelRow('report.txt')).getByText('uploaded')).toBeTruthy();
+      expect(uploadDocument.mock.calls).toEqual([[NOTEBOOK_ID, report]]);
+    });
+
+    it('ignores a drop while a batch is running, and shows no drag-over state', async () => {
+      const request = deferred<Record<string, unknown>>();
+      const uploadDocument = vi.fn().mockReturnValue(request.promise);
+      await renderWithUpload(uploadDocument);
+
+      fireEvent.drop(somewhereOnThePage(), {
+        dataTransfer: dataTransferOf([new File(['x'], 'first.txt')]),
+      });
+      await screen.findByText('first.txt');
+      expect(within(panelRow('first.txt')).getByText('uploading')).toBeTruthy();
+
+      // With first.txt still in flight, a second drag gets no welcome...
+      const second = dataTransferOf([new File(['x'], 'second.txt')]);
+      fireEvent.dragEnter(somewhereOnThePage(), { dataTransfer: second });
+      fireEvent.dragOver(somewhereOnThePage(), { dataTransfer: second });
+      expect(screen.queryByText(DROP_HINT)).toBeNull();
+      // ...and its drop changes nothing: the running batch is untouched.
+      fireEvent.drop(somewhereOnThePage(), { dataTransfer: second });
+      expect(screen.queryByText('second.txt')).toBeNull();
+      expect(uploadDocument).toHaveBeenCalledTimes(1);
+
+      // Once the batch is done, dropping works again.
+      request.resolve(documentFor('first.txt'));
+      await screen.findByText('1 uploaded, 0 skipped, 0 failed');
+      fireEvent.drop(somewhereOnThePage(), { dataTransfer: second });
+      expect(await screen.findByText('second.txt')).toBeTruthy();
+    });
+
+    it('applies the 100-file cap to a drop', async () => {
+      const uploadDocument = vi.fn();
+      await renderWithUpload(uploadDocument);
+
+      const files = Array.from({ length: 101 }, (_, i) => new File(['x'], `f${i}.txt`));
+      fireEvent.drop(somewhereOnThePage(), { dataTransfer: dataTransferOf(files) });
+
+      expect(await screen.findByText(/Too many files: 101 uploadable files/)).toBeTruthy();
+      expect(uploadDocument).not.toHaveBeenCalled();
+    });
+  });
+
   it('deletes a Document, removing it from the list, then restores it via Undo', async () => {
     const listNotebooks = vi.fn().mockResolvedValue([]);
     const existingDocument = {

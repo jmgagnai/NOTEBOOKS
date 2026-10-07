@@ -60,6 +60,14 @@ const EXPLAINED_REJECTIONS: Record<string, string> = {
     '.xlsx (Excel: File › Save As › Excel Workbook) and upload that.',
 };
 
+/**
+ * Why a dropped folder is skipped (NBK-18). Folders are out of scope for a
+ * Notebook altogether — no flattening, no subfolder concept — so the message
+ * says what to do instead rather than hinting it might work another way.
+ */
+export const FOLDER_SKIP_REASON =
+  "Folders can't be uploaded. Open the folder and select its files instead.";
+
 function extensionOf(filename: string): string {
   const dotIndex = filename.lastIndexOf('.');
   return dotIndex === -1 ? '' : filename.slice(dotIndex).toLowerCase();
