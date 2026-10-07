@@ -6,8 +6,11 @@ import type { StartedTestContainer } from 'testcontainers';
 import type { Pool } from 'pg';
 import { runMigrations } from '../src/db/migrate.js';
 import { createPool } from '../src/db/pool.js';
-import { startJobQueue, type JobQueue } from '../src/jobs/queue.js';
-import type { MarkdownConverter } from '../src/ingestion/docling.js';
+import { jobExpirySeconds, startJobQueue, type JobQueue } from '../src/jobs/queue.js';
+import { resolveDoclingTimeoutMs, type MarkdownConverter } from '../src/ingestion/docling.js';
+import { CONVERT_TO_MARKDOWN_QUEUE } from '../src/ingestion/convert-to-markdown.js';
+import { SUMMARIZE_DOCUMENT_QUEUE } from '../src/ingestion/summarize-document.js';
+import { EMBED_CHUNKS_QUEUE } from '../src/ingestion/embed-chunks.js';
 import type { ChatCompleter } from '../src/llm/openrouter.js';
 import type { Embedder } from '../src/llm/embeddings.js';
 import { EMBEDDING_DIMENSIONS } from '../src/llm/models.js';
@@ -151,6 +154,24 @@ describe('job queue', () => {
     // artifact triggers a corrective rewrite.
     return Array.from({ length: 600 }, (_, i) => `w${i}`).join(' ');
   };
+
+  it('lets a job stay active for longer than a conversion may take', async () => {
+    // pg_boss expires a job still active after the queue's limit — 15
+    // minutes unless told otherwise — and retries it while the handler, which
+    // is never cancelled, runs on. A book-length PDF takes longer than that,
+    // so every stage queue's expiry has to sit above the Docling timeout
+    // (NBK-22). Asserted on what pg_boss stored, not on what was passed.
+    await start({ schema: 'pgboss_expiry' });
+    const { rows } = await pool.query<{ name: string; expire_seconds: number | null }>(
+      'SELECT name, expire_seconds FROM pgboss_expiry.queue WHERE name = ANY($1) ORDER BY name',
+      [[CONVERT_TO_MARKDOWN_QUEUE, SUMMARIZE_DOCUMENT_QUEUE, EMBED_CHUNKS_QUEUE]],
+    );
+    expect(rows).toHaveLength(3);
+    for (const row of rows) {
+      expect(row.expire_seconds).toBe(jobExpirySeconds());
+      expect(row.expire_seconds).toBeGreaterThan(resolveDoclingTimeoutMs() / 1000);
+    }
+  });
 
   it('runs a convert job enqueued through the queue', async () => {
     const seeded = await seedUploadedVersion('queued.txt', 'pipeline bytes');

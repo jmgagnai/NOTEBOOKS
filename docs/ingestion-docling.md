@@ -176,6 +176,14 @@ four-core Docker Desktop, and conversions run one at a time. Expect a batch
 of book-length PDFs to take hours; a Document is "converting" for as long
 as its container runs, and the ones behind it are "queued".
 
+The job queue's expiry follows this timeout (`jobExpirySeconds` in
+`jobs/queue.ts`: the timeout plus five minutes, on every stage queue).
+pg_boss expires a job still active after that and schedules a retry, and
+its default of 15 minutes meant a book was converted again while its first
+container was still running (NBK-22). Change the timeout through
+`DOCLING_TIMEOUT_MS` and the expiry moves with it; never set one without
+the other.
+
 ## Tests
 
 `MarkdownConverter` (a `({ inputPath, outputPath }) => Promise<void>`
