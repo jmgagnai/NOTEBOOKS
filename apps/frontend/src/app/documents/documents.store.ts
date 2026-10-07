@@ -270,6 +270,11 @@ const UPLOAD_CONCURRENCY = 3;
 
 interface DocumentsState {
   documents: Document[];
+  // Which Notebook `documents` is the list of, once a load has landed. The
+  // store is root-provided and holds one list, but an upload batch outlives
+  // the page that started it (NBK-17), so a file can land while another
+  // Notebook's list is in here — and must not be added to it.
+  documentsNotebookId: string | null;
   loading: boolean;
   batch: UploadBatch | null;
   // The conflict dialog currently open for a file of `batch` (NBK-19); at
@@ -293,6 +298,7 @@ interface DocumentsState {
 
 const initialState: DocumentsState = {
   documents: [],
+  documentsNotebookId: null,
   loading: false,
   batch: null,
   conflict: null,
@@ -367,21 +373,36 @@ export const DocumentsStore = signalStore(
         });
       }
 
+      // The filenames the current batch's files are checked against for a
+      // conflict (NBK-19): the Notebook's undeleted Documents as they were
+      // when the batch started, plus the batch's own files as they land.
+      // Snapshotted per batch rather than read from `documents`, because
+      // that list is whichever Notebook was opened last while the batch
+      // kept running (NBK-17) — another Notebook's names are no conflict.
+      let batchNames = new Set<string>();
+
       /** Sends one item's file and records how it landed. */
       async function uploadItem(notebookId: string, item: UploadItem): Promise<void> {
         patchItem(item.id, { status: 'uploading' });
         try {
           const document = await transferService.uploadDocument(notebookId, item.file);
+          batchNames.add(document.filename);
           // A re-upload of an existing filename comes back as a new Version
           // of the same Document (same id, incremented versionNumber) rather
           // than a new Document — replace the existing card instead of
-          // appending a duplicate, and say so in the panel.
-          const existing = store.documents().some((d) => d.id === document.id);
-          patchState(store, {
-            documents: existing
-              ? store.documents().map((d) => (d.id === document.id ? document : d))
-              : [...store.documents(), document],
-          });
+          // appending a duplicate, and say so in the panel. Only this
+          // Notebook's list is touched: while another Notebook is open the
+          // landed Document is left for its next load to bring in.
+          const listIsThisNotebooks = store.documentsNotebookId() === notebookId;
+          const existing =
+            listIsThisNotebooks && store.documents().some((d) => d.id === document.id);
+          if (listIsThisNotebooks) {
+            patchState(store, {
+              documents: existing
+                ? store.documents().map((d) => (d.id === document.id ? document : d))
+                : [...store.documents(), document],
+            });
+          }
           patchItem(item.id, {
             status:
               existing || document.latestVersion.versionNumber > 1 ? 'new-version' : 'uploaded',
@@ -396,14 +417,14 @@ export const DocumentsStore = signalStore(
 
       /**
        * Whether sending `item` now would make a new Version of an existing
-       * Document (NBK-19). Decided in the browser against the Document list
-       * this store holds — `GET .../documents` never returns soft-deleted
-       * Documents, so a name that only a deleted Document had is no conflict.
-       * The race with another user's concurrent upload is accepted: the
-       * backend versions silently in that case.
+       * Document (NBK-19). Decided in the browser against `batchNames` —
+       * taken from the Document list, which `GET .../documents` fills
+       * without soft-deleted Documents, so a name that only a deleted
+       * Document had is no conflict. The race with another user's concurrent
+       * upload is accepted: the backend versions silently in that case.
        */
       function conflicts(item: UploadItem): boolean {
-        return store.documents().some((document) => document.filename === item.file.name);
+        return batchNames.has(item.file.name);
       }
 
       /** A `waiting` item an upload worker may take: no conflict, or one the user answered. */
@@ -529,7 +550,7 @@ export const DocumentsStore = signalStore(
           patchState(store, { loading: true, error: null });
           try {
             const documents = await documentsService.listDocuments({ notebookId });
-            patchState(store, { documents, loading: false });
+            patchState(store, { documents, documentsNotebookId: notebookId, loading: false });
           } catch (err) {
             patchState(store, {
               loading: false,
@@ -687,6 +708,14 @@ export const DocumentsStore = signalStore(
             });
             return;
           }
+          // The names conflicts are judged against, fixed now: the list is
+          // this Notebook's unless a load is still on its way, in which case
+          // there is nothing known to conflict with yet.
+          batchNames = new Set(
+            store.documentsNotebookId() === notebookId
+              ? store.documents().map((document) => document.filename)
+              : [],
+          );
           patchState(store, { batch: { notebookId, items }, uploadRefused: null, error: null });
           await drainBatch();
         },

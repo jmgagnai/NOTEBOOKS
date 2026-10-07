@@ -759,6 +759,87 @@ describe('NotebookDetailPage', () => {
       expect(uploads.uploadDocument).toHaveBeenCalledTimes(2);
     });
 
+    // The batch outlives the page, but the Document list in the same store
+    // is whichever Notebook was opened last. A file landing while another
+    // Notebook is open must neither show up in that Notebook's list nor be
+    // judged a conflict against that Notebook's names.
+    it('keeps a file landing while another Notebook is open out of its list, and judges conflicts by its own Notebook', async () => {
+      const OTHER_NOTEBOOK_ID = '22222222-2222-2222-2222-222222222222';
+      const uploads = heldUploads();
+      const listNotebooks = vi.fn().mockResolvedValue([]);
+      // The other Notebook already has a notes.txt; this one does not — and
+      // this one's list is what the backend reports at each visit.
+      let thisNotebooksDocuments: Record<string, unknown>[] = [];
+      const listDocuments = vi
+        .fn()
+        .mockImplementation(({ notebookId }: { notebookId: string }) =>
+          Promise.resolve(
+            notebookId === OTHER_NOTEBOOK_ID
+              ? [{ ...documentFor('notes.txt'), notebookId: OTHER_NOTEBOOK_ID }]
+              : thisNotebooksDocuments,
+          ),
+        );
+      const { navigate } = await render(RouterShell, {
+        routes: [
+          { path: 'notebooks/:notebookId', component: NotebookDetailPage },
+          { path: 'elsewhere', component: Elsewhere },
+        ],
+        providers: [
+          { provide: NotebooksService, useValue: { listNotebooks } },
+          { provide: DocumentsService, useValue: { listDocuments } },
+          chatServiceStub(),
+          {
+            provide: DocumentTransferService,
+            useValue: { uploadDocument: uploads.uploadDocument },
+          },
+          appEventsStub().provider,
+        ],
+      });
+      await navigate(`/notebooks/${NOTEBOOK_ID}`);
+      await screen.findByText('No Documents yet.');
+
+      pick(['1.txt', '2.txt', '3.txt', 'notes.txt']);
+      await waitFor(() => expect(uploads.uploadDocument).toHaveBeenCalledTimes(3));
+      expect(within(panelRow('notes.txt')).getByText('waiting')).toBeTruthy();
+
+      // Through another page, as the app goes through the Notebooks list: the
+      // router reuses the page between two Notebooks on the same route.
+      await navigate('/elsewhere');
+      await navigate(`/notebooks/${OTHER_NOTEBOOK_ID}`);
+      const otherCards = await screen.findByRole('list', { name: 'Documents' });
+      expect(within(otherCards).getByText('notes.txt')).toBeTruthy();
+      expect(screen.queryByRole('list', { name: 'Upload progress' })).toBeNull();
+
+      // A slot frees up while the other Notebook is open: the file that lands
+      // stays out of its list, and the batch's notes.txt goes out — the other
+      // Notebook's notes.txt is no conflict for it.
+      uploads.land('1.txt');
+      await waitFor(() => expect(uploads.uploadDocument).toHaveBeenCalledTimes(4));
+      expect(uploads.sentNames()[3]).toBe('notes.txt');
+      expect(within(otherCards).queryByText('1.txt')).toBeNull();
+      expect(within(otherCards).getAllByRole('listitem')).toHaveLength(1);
+
+      // Back on the first Notebook, its list is re-read and shows what landed.
+      thisNotebooksDocuments = [documentFor('1.txt')];
+      await navigate('/elsewhere');
+      await navigate(`/notebooks/${NOTEBOOK_ID}`);
+      const cards = await screen.findByRole('list', { name: 'Documents' });
+      expect(await within(cards).findByText('1.txt')).toBeTruthy();
+      expect(listDocuments).toHaveBeenCalledWith({ notebookId: NOTEBOOK_ID });
+      expect(
+        listDocuments.mock.calls.filter(([args]) => args.notebookId === NOTEBOOK_ID),
+      ).toHaveLength(2);
+      expect(within(panelRow('1.txt')).getByText('uploaded')).toBeTruthy();
+      expect(within(panelRow('notes.txt')).getByText('uploading')).toBeTruthy();
+      expect(screen.queryByRole('dialog', { name: 'Document already exists' })).toBeNull();
+
+      for (const name of ['2.txt', '3.txt', 'notes.txt']) uploads.land(name);
+      expect(await screen.findByText('4 uploaded, 0 skipped, 0 failed')).toBeTruthy();
+      expect(within(panelRow('notes.txt')).getByText('uploaded')).toBeTruthy();
+      expect(within(cards).getAllByText('notes.txt')).toHaveLength(1);
+      expect(within(cards).getAllByText('1.txt')).toHaveLength(1);
+    });
+
     it('offers to dismiss the panel once the batch has finished, and not before', async () => {
       const uploads = heldUploads();
       await renderWithUpload(uploads.uploadDocument);
