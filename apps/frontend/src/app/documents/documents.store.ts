@@ -1,5 +1,12 @@
 import { computed, inject } from '@angular/core';
-import { patchState, signalStore, withComputed, withMethods, withState } from '@ngrx/signals';
+import {
+  patchState,
+  signalStore,
+  withComputed,
+  withHooks,
+  withMethods,
+  withState,
+} from '@ngrx/signals';
 import { Subscription } from 'rxjs';
 import { DocumentsService } from '../api/services/documents.service';
 import { AppEvent, AppEventsService } from '../events/app-events.service';
@@ -679,4 +686,23 @@ export const DocumentsStore = signalStore(
       };
     },
   ),
+  // The tab-close warning (NBK-17). It lives here, on the root-provided
+  // store, and not on the Notebook page: a batch keeps running while the
+  // user browses to another page of the app, and closing the tab from there
+  // would lose it just the same. The browser shows its leave-page dialog
+  // only when `beforeunload` is cancelled, so cancelling it while the batch
+  // runs is the whole mechanism — the wording is the browser's, not ours.
+  withHooks((store) => {
+    const warnBeforeUnload = (event: Event): void => {
+      if (store.batchRunning()) event.preventDefault();
+    };
+    return {
+      onInit() {
+        window.addEventListener('beforeunload', warnBeforeUnload);
+      },
+      onDestroy() {
+        window.removeEventListener('beforeunload', warnBeforeUnload);
+      },
+    };
+  }),
 );

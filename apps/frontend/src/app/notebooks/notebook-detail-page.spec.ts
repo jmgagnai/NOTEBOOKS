@@ -647,6 +647,32 @@ describe('NotebookDetailPage', () => {
       await screen.findByText('2 uploaded, 0 skipped, 0 failed');
       await waitFor(() => expect(input.disabled).toBe(false));
     });
+
+    it("asks the browser to warn before the tab closes while the batch runs, and not once it's done", async () => {
+      const uploads = heldUploads();
+      await renderWithUpload(uploads.uploadDocument);
+      // The browser only shows its leave-page dialog when the event is
+      // cancelled, so "prevented" is the whole contract.
+      const closingTab = () => {
+        const event = new Event('beforeunload', { cancelable: true });
+        window.dispatchEvent(event);
+        return event.defaultPrevented;
+      };
+
+      expect(closingTab()).toBe(false);
+
+      pick(['1.txt', '2.txt']);
+      await screen.findByText('2.txt');
+      expect(closingTab()).toBe(true);
+
+      uploads.land('1.txt');
+      await within(panelRow('1.txt')).findByText('uploaded');
+      expect(closingTab()).toBe(true);
+
+      uploads.land('2.txt');
+      await screen.findByText('2 uploaded, 0 skipped, 0 failed');
+      expect(closingTab()).toBe(false);
+    });
   });
 
   it('deletes a Document, removing it from the list, then restores it via Undo', async () => {
