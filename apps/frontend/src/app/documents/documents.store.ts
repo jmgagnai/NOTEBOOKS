@@ -222,7 +222,25 @@ export interface UploadItem {
   status: UploadItemStatus;
   /** Why it was skipped or failed; null otherwise. */
   reason: string | null;
+  /**
+   * Set once the user has answered this file's conflict dialog with New
+   * Version (NBK-19). Until then a `waiting` file whose name is an existing
+   * Document is not taken by an upload worker.
+   */
+  confirmedNewVersion?: boolean;
 }
+
+/** What the user chose in the conflict dialog (NBK-19). */
+export type ConflictChoice = 'new-version' | 'skip';
+
+/** The conflict dialog currently open, if any (NBK-19). */
+export interface UploadConflict {
+  itemId: string;
+  filename: string;
+}
+
+/** The reason on a file skipped from the conflict dialog (NBK-19). */
+export const NAME_ALREADY_EXISTS_REASON = 'Name already exists in this Notebook; not uploaded.';
 
 /**
  * One multi-file upload (NBK-16). Held in this root-provided store rather
@@ -232,6 +250,11 @@ export interface UploadItem {
 export interface UploadBatch {
   notebookId: string;
   items: UploadItem[];
+  /**
+   * The answer to apply to every later conflict in this batch without
+   * asking, once the user ticked "apply to all remaining conflicts" (NBK-19).
+   */
+  conflictAnswer?: ConflictChoice;
 }
 
 /** The counts the end-of-batch summary line reports. */
@@ -249,6 +272,9 @@ interface DocumentsState {
   documents: Document[];
   loading: boolean;
   batch: UploadBatch | null;
+  // The conflict dialog currently open for a file of `batch` (NBK-19); at
+  // most one at a time.
+  conflict: UploadConflict | null;
   // Why the last selection was refused outright (over the file cap), if it
   // was. Separate from `error` because it is about a selection, not a call.
   uploadRefused: string | null;
@@ -269,6 +295,7 @@ const initialState: DocumentsState = {
   documents: [],
   loading: false,
   batch: null,
+  conflict: null,
   uploadRefused: null,
   error: null,
   openDocument: null,
@@ -368,23 +395,128 @@ export const DocumentsStore = signalStore(
       }
 
       /**
-       * Keeps `UPLOAD_CONCURRENCY` requests in flight from the current batch's
-       * `waiting` items, in order, until none is left. Each worker takes the
-       * next waiting item as soon as its own request settles, so a slow file
-       * never holds the others back. Resolves when the batch is no longer
-       * running.
+       * Whether sending `item` now would make a new Version of an existing
+       * Document (NBK-19). Decided in the browser against the Document list
+       * this store holds — `GET .../documents` never returns soft-deleted
+       * Documents, so a name that only a deleted Document had is no conflict.
+       * The race with another user's concurrent upload is accepted: the
+       * backend versions silently in that case.
        */
-      async function drainBatch(): Promise<void> {
+      function conflicts(item: UploadItem): boolean {
+        return store.documents().some((document) => document.filename === item.file.name);
+      }
+
+      /** A `waiting` item an upload worker may take: no conflict, or one the user answered. */
+      function nextSendable(): UploadItem | undefined {
+        return store
+          .batch()
+          ?.items.find(
+            (item) => item.status === 'waiting' && (item.confirmedNewVersion || !conflicts(item)),
+          );
+      }
+
+      /** A `waiting` item that still needs an answer before it can be sent. */
+      function nextUnanswered(): UploadItem | undefined {
+        return store
+          .batch()
+          ?.items.find(
+            (item) => item.status === 'waiting' && !item.confirmedNewVersion && conflicts(item),
+          );
+      }
+
+      // How many upload workers are running right now, across every call to
+      // `runWorkers` — so an answered conflict can start a worker without
+      // ever exceeding `UPLOAD_CONCURRENCY`.
+      let activeWorkers = 0;
+
+      /**
+       * Starts upload workers, up to `UPLOAD_CONCURRENCY` running at once, as
+       * long as there is a sendable item for each. Each worker takes the next
+       * sendable item, in selection order, as soon as its own request
+       * settles, so a slow file never holds the others back. Resolves when
+       * the workers it started are done.
+       */
+      async function runWorkers(): Promise<void> {
         const notebookId = store.batch()?.notebookId;
         if (!notebookId) return;
         async function worker(): Promise<void> {
-          for (;;) {
-            const next = store.batch()?.items.find((item) => item.status === 'waiting');
-            if (!next) return;
-            await uploadItem(notebookId!, next);
+          activeWorkers += 1;
+          try {
+            for (;;) {
+              const next = nextSendable();
+              if (!next) return;
+              await uploadItem(notebookId!, next);
+            }
+          } finally {
+            activeWorkers -= 1;
           }
         }
-        await Promise.all(Array.from({ length: UPLOAD_CONCURRENCY }, worker));
+        const started: Promise<void>[] = [];
+        while (activeWorkers < UPLOAD_CONCURRENCY && nextSendable()) {
+          started.push(worker());
+        }
+        await Promise.all(started);
+      }
+
+      // The open dialog's answer is delivered through here (NBK-19); null
+      // while no dialog is open. Only one asker runs at a time, hence only
+      // one dialog.
+      let deliverAnswer:
+        ((answer: { choice: ConflictChoice; applyToAll: boolean }) => void) | null = null;
+      let asking = false;
+
+      /**
+       * Walks the batch's unanswered conflicts one at a time (NBK-19): opens
+       * the dialog for the next one, waits for the answer, applies it, and
+       * moves on. It is not an upload worker — a file waiting on its dialog
+       * holds no upload slot, and the workers keep sending the other files
+       * meanwhile. A New Version answer makes the file sendable and starts a
+       * worker for it if a slot is free; once "apply to all" is ticked the
+       * rest of the batch's conflicts are answered without a dialog.
+       */
+      async function askConflicts(): Promise<void> {
+        if (asking) return;
+        asking = true;
+        const followUps: Promise<void>[] = [];
+        try {
+          for (;;) {
+            const next = nextUnanswered();
+            if (!next) return;
+            let choice = store.batch()?.conflictAnswer;
+            if (!choice) {
+              patchState(store, { conflict: { itemId: next.id, filename: next.file.name } });
+              const answer = await new Promise<{ choice: ConflictChoice; applyToAll: boolean }>(
+                (resolve) => (deliverAnswer = resolve),
+              );
+              deliverAnswer = null;
+              patchState(store, { conflict: null });
+              choice = answer.choice;
+              const batch = store.batch();
+              if (answer.applyToAll && batch) {
+                patchState(store, { batch: { ...batch, conflictAnswer: choice } });
+              }
+            }
+            if (choice === 'skip') {
+              patchItem(next.id, { status: 'skipped', reason: NAME_ALREADY_EXISTS_REASON });
+            } else {
+              patchItem(next.id, { confirmedNewVersion: true });
+              followUps.push(runWorkers());
+            }
+          }
+        } finally {
+          asking = false;
+          await Promise.all(followUps);
+        }
+      }
+
+      /**
+       * Sends the current batch: `UPLOAD_CONCURRENCY` upload workers over the
+       * sendable items, and beside them the conflict dialogs, one at a time
+       * (NBK-19). Resolves when the batch is no longer running.
+       */
+      async function drainBatch(): Promise<void> {
+        if (!store.batch()) return;
+        await Promise.all([runWorkers(), askConflicts()]);
       }
 
       return {
@@ -605,6 +737,16 @@ export const DocumentsStore = signalStore(
         dismissBatch(): void {
           if (store.batchRunning()) return;
           patchState(store, { batch: null });
+        },
+
+        /**
+         * Answers the open conflict dialog (NBK-19): New Version sends the
+         * file as a new Version of the existing Document, Skip lists it as
+         * skipped. With `applyToAll`, the same answer settles every later
+         * conflict of this batch without asking.
+         */
+        answerConflict(choice: ConflictChoice, applyToAll = false): void {
+          deliverAnswer?.({ choice, applyToAll });
         },
 
         async deleteDocument(notebookId: string, documentId: string): Promise<void> {
