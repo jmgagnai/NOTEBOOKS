@@ -55,22 +55,19 @@ function textPdf(text: string): Buffer {
 
 /**
  * A stand-in for the `docker` binary: records each invocation's arguments
- * and writes `<stem>.md` into the host directory mounted at `/work/out`,
- * with one text for a `--no-ocr` run and another for an `--ocr` run.
+ * and writes `output` as `<stem>.md` into the host directory mounted at
+ * `/work/out`.
  *
- * This is what lets the OCR decision — off first, on again only for a PDF
- * that came back without text — be tested without the 4.5GB image, and
- * without a scanned PDF fixture that OCR would read non-deterministically.
+ * This is what lets the argument list and the scanned-PDF refusal be tested
+ * without the 4.5GB image, and without a scanned PDF fixture.
  */
 async function fakeDocker(
   directory: string,
-  outputs: { noOcr: string; ocr: string },
+  output: string,
 ): Promise<{ docker: string; invocations: () => Promise<string[][]> }> {
-  const noOcrFile = join(directory, 'no-ocr.md');
-  const ocrFile = join(directory, 'ocr.md');
+  const outputFile = join(directory, 'canned.md');
   const log = join(directory, 'invocations.log');
-  await writeFile(noOcrFile, outputs.noOcr, 'utf8');
-  await writeFile(ocrFile, outputs.ocr, 'utf8');
+  await writeFile(outputFile, output, 'utf8');
   await writeFile(log, '', 'utf8');
 
   const script = join(directory, 'docker');
@@ -89,11 +86,7 @@ last=''
 for a in "$@"; do last="$a"; done
 stem=$(basename "$last")
 stem="\${stem%.*}"
-if printf '%s\\n' "$@" | grep -qx -- '--no-ocr'; then
-  cp '${noOcrFile}' "$out/$stem.md"
-else
-  cp '${ocrFile}' "$out/$stem.md"
-fi
+cp '${outputFile}' "$out/$stem.md"
 `,
     'utf8',
   );
@@ -111,16 +104,13 @@ fi
   };
 }
 
-describe('Docling converter: OCR policy (fake docker)', () => {
+describe('Docling converter: arguments and OCR policy (fake docker)', () => {
   it('converts a text PDF without OCR, pointing the CLI at the models in the image', async () => {
     const workDir = await mkdtemp(join(tmpdir(), 'nbk-docling-fake-'));
     const inputPath = join(workDir, 'report.pdf');
     const outputPath = markdownOutputPath(workDir);
     await writeFile(inputPath, textPdf('Quarterly report'));
-    const fake = await fakeDocker(workDir, {
-      noOcr: '# Quarterly report\n\nRevenue grew in every region.\n',
-      ocr: 'should not be produced',
-    });
+    const fake = await fakeDocker(workDir, '# Quarterly report\n\nRevenue grew in every region.\n');
 
     await createDoclingConverter({ docker: fake.docker })({ inputPath, outputPath });
 
@@ -137,32 +127,32 @@ describe('Docling converter: OCR policy (fake docker)', () => {
     expect(await readFile(outputPath, 'utf8')).toContain('Revenue grew in every region.');
   });
 
-  it('converts a PDF a second time with OCR when it came back without a text layer', async () => {
+  it('refuses a PDF that came back without a text layer instead of OCRing it', async () => {
     const workDir = await mkdtemp(join(tmpdir(), 'nbk-docling-fake-'));
     const inputPath = join(workDir, 'scan.pdf');
     const outputPath = markdownOutputPath(workDir);
     await writeFile(inputPath, textPdf('irrelevant'));
-    const fake = await fakeDocker(workDir, {
-      noOcr: '<!-- image -->\n\n<!-- image -->\n\n<!-- image -->\n',
-      ocr: '# Scanned minutes\n\nThe meeting opened at nine.\n',
-    });
+    const fake = await fakeDocker(workDir, '<!-- image -->\n\n<!-- image -->\n\n<!-- image -->\n');
 
-    await createDoclingConverter({ docker: fake.docker })({ inputPath, outputPath });
+    // OCR is never run: it costs a model load per conversion and more memory
+    // than a book-length PDF leaves. A scan is a clear failure the user can
+    // act on, not an empty Document for stage 2 to summarise.
+    await expect(
+      createDoclingConverter({ docker: fake.docker })({ inputPath, outputPath }),
+    ).rejects.toThrow(/no text layer/);
 
     const invocations = await fake.invocations();
-    expect(invocations).toHaveLength(2);
+    expect(invocations).toHaveLength(1);
     expect(invocations[0]).toContain('--no-ocr');
-    expect(invocations[1]).toContain('--ocr');
-    expect(invocations[1]).not.toContain('--no-ocr');
-    expect(await readFile(outputPath, 'utf8')).toContain('The meeting opened at nine.');
+    expect(invocations[0]).not.toContain('--ocr');
   });
 
-  it('never OCRs anything but a PDF, however little text it has', async () => {
+  it('accepts an empty non-PDF, since only a PDF can be a scan', async () => {
     const workDir = await mkdtemp(join(tmpdir(), 'nbk-docling-fake-'));
     const inputPath = join(workDir, 'empty.md');
     const outputPath = markdownOutputPath(workDir);
     await writeFile(inputPath, '', 'utf8');
-    const fake = await fakeDocker(workDir, { noOcr: '', ocr: 'should not be produced' });
+    const fake = await fakeDocker(workDir, '');
 
     await createDoclingConverter({ docker: fake.docker })({ inputPath, outputPath });
 
