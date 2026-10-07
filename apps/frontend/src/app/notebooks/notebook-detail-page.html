@@ -151,12 +151,7 @@
               @for (item of batch.items; track item.id) {
                 <li class="notebook-detail-page__batch-item">
                   <span class="notebook-detail-page__filename">{{ item.file.name }}</span>
-                  <span
-                    [class]="
-                      'notebook-detail-page__badge notebook-detail-page__badge--' + item.status
-                    "
-                    >{{ statusLabel(item.status) }}</span
-                  >
+                  <app-status-badge [status]="item.status" />
                   @if (item.reason) {
                     <span class="notebook-detail-page__batch-reason">{{ item.reason }}</span>
                   }
@@ -216,13 +211,6 @@
           </section>
         }
 
-        @if (store.lastDeleted(); as deleted) {
-          <p class="notebook-detail-page__undo">
-            "{{ deleted.filename }}" deleted.
-            <button mat-button type="button" (click)="restore(deleted)">Undo</button>
-          </p>
-        }
-
         @if (store.loading()) {
           <mat-progress-spinner mode="indeterminate" diameter="32" />
         } @else if (store.error(); as error) {
@@ -241,12 +229,7 @@
               <li class="notebook-detail-page__card">
                 <div class="notebook-detail-page__card-head">
                   <span class="notebook-detail-page__filename">{{ document.filename }}</span>
-                  <span
-                    [class]="
-                      'notebook-detail-page__badge notebook-detail-page__badge--' + document.status
-                    "
-                    >{{ document.status }}</span
-                  >
+                  <app-status-badge [status]="document.status" />
                   <span class="notebook-detail-page__version"
                     >v{{ document.latestVersion.versionNumber }}</span
                   >

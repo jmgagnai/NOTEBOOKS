@@ -4,6 +4,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { DocumentsStore } from './documents.store';
+import { StatusBadge } from '../shared/status-badge';
 import { MarkdownView } from './markdown-view';
 
 /**
@@ -45,7 +46,14 @@ import { MarkdownView } from './markdown-view';
 @Component({
   selector: 'app-document-detail-page',
   standalone: true,
-  imports: [MatButtonModule, MatCardModule, MatProgressSpinnerModule, MarkdownView, RouterLink],
+  imports: [
+    MatButtonModule,
+    MatCardModule,
+    MatProgressSpinnerModule,
+    MarkdownView,
+    RouterLink,
+    StatusBadge,
+  ],
   templateUrl: './document-detail-page.html',
   styleUrl: './document-detail-page.scss',
 })

@@ -17,13 +17,10 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { ThreadNavigator } from '../chat/thread-navigator';
 import { ThreadView } from '../chat/thread-view';
-import {
-  ConflictChoice,
-  Document,
-  DocumentsStore,
-  UploadItemStatus,
-} from '../documents/documents.store';
+import { ConflictChoice, Document, DocumentsStore } from '../documents/documents.store';
 import { UPLOAD_ACCEPT } from '../documents/upload-rules';
+import { StatusBadge } from '../shared/status-badge';
+import { UndoSnackBar } from '../shared/undo-snack-bar';
 import { NotebooksStore } from './notebooks.store';
 
 /**
@@ -103,6 +100,7 @@ const APP_NAME = 'RAG Notebook';
     MatProgressSpinnerModule,
     MatTooltipModule,
     RouterLink,
+    StatusBadge,
     ThreadNavigator,
     ThreadView,
   ],
@@ -124,6 +122,7 @@ export class NotebookDetailPage implements OnInit, OnDestroy {
 
   protected readonly notebooksStore = inject(NotebooksStore);
   protected readonly store = inject(DocumentsStore);
+  private readonly undoSnackBar = inject(UndoSnackBar);
 
   protected readonly notebookId = this.route.snapshot.paramMap.get('notebookId')!;
   protected readonly notebook = computed(
@@ -319,13 +318,13 @@ export class NotebookDetailPage implements OnInit, OnDestroy {
     void this.store.uploadDocuments(this.notebookId, files, { folders });
   }
 
-  /** How an item's status reads in the progress panel. */
-  protected statusLabel(status: UploadItemStatus): string {
-    return status === 'new-version' ? 'new version' : status;
-  }
-
-  protected delete(document: Document): void {
-    void this.store.deleteDocument(this.notebookId, document.id);
+  protected async delete(document: Document): Promise<void> {
+    await this.store.deleteDocument(this.notebookId, document.id);
+    // `lastDeleted` holding this Document is the store's own signal that the
+    // delete went through; a failure leaves it as it was and sets `error`.
+    const deleted = this.store.lastDeleted();
+    if (deleted?.id !== document.id) return;
+    this.undoSnackBar.open(deleted.filename, () => this.restore(deleted));
   }
 
   protected restore(document: Document): void {

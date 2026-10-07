@@ -331,8 +331,8 @@ describe('DocumentDetailPage', () => {
       expect(metaLine?.textContent).toContain('v1');
       expect(metaLine?.textContent).not.toContain('v2');
       // The badge shows v1's own ingestion status, not the latest Version's
-      // ('summarized' on SUMMARIZED_DETAIL).
-      expect(metaLine?.textContent).toContain('ready');
+      // ('summarized' on SUMMARIZED_DETAIL), in the badge's sentence case (NBK-32).
+      expect(metaLine?.textContent).toContain('Ready');
     });
 
     it('says the Version it opened is a superseded one', async () => {
