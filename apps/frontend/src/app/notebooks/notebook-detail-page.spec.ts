@@ -674,6 +674,40 @@ describe('NotebookDetailPage', () => {
       await waitFor(() => expect(input.disabled).toBe(false));
     });
 
+    // The disabled picker is the page's guard; the store has its own, so a
+    // selection that reaches it anyway — a dialog open counts as running too
+    // — leaves the batch alone and says why.
+    it('refuses a second selection while the batch runs, even with a conflict dialog open', async () => {
+      const uploads = heldUploads();
+      await renderWithUpload(uploads.uploadDocument, [documentFor('report.txt')]);
+
+      const input = pick(['1.txt', '2.txt', '3.txt', 'report.txt']);
+      const open = await screen.findByRole('dialog', { name: 'Document already exists' });
+      await waitFor(() => expect(uploads.uploadDocument).toHaveBeenCalledTimes(3));
+      expect(input.disabled).toBe(true);
+
+      // Past the disabled picker, as a stale page or a script could be.
+      input.disabled = false;
+      pick(['later.txt']);
+
+      expect(await screen.findByText('An upload is already running.')).toBeTruthy();
+      const panel = screen.getByRole('list', { name: 'Upload progress' });
+      expect(within(panel).getAllByRole('listitem')).toHaveLength(4);
+      expect(within(panel).queryByText('later.txt')).toBeNull();
+      expect(screen.getByRole('dialog', { name: 'Document already exists' })).toBe(open);
+      expect(uploads.uploadDocument).toHaveBeenCalledTimes(3);
+
+      // The running batch finishes as if nothing had happened.
+      fireEvent.click(within(open).getByRole('button', { name: 'New Version' }));
+      for (const name of ['1.txt', '2.txt', '3.txt']) uploads.land(name);
+      await waitFor(() => expect(uploads.sentNames()).toContain('report.txt'));
+      uploads.land('report.txt');
+      expect(
+        await screen.findByText('4 uploaded (1 as new Versions), 0 skipped, 0 failed'),
+      ).toBeTruthy();
+      expect(uploads.uploadDocument).toHaveBeenCalledTimes(4);
+    });
+
     it("asks the browser to warn before the tab closes while the batch runs, and not once it's done", async () => {
       const uploads = heldUploads();
       await renderWithUpload(uploads.uploadDocument);

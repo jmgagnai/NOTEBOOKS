@@ -677,12 +677,23 @@ export const DocumentsStore = signalStore(
          * too, which is why they arrive in the same list. They are listed as
          * skipped with the folder message and count toward nothing else:
          * not the cap, and not the names a later duplicate is checked against.
+         *
+         * Refused outright while a batch is running (NBK-17): a second batch
+         * is not queued behind the first (spec, out of scope), and replacing
+         * the running one would orphan its in-flight requests. The page's
+         * picker and drop target are disabled meanwhile; this is the guard
+         * for whatever gets past them. A file waiting on its conflict dialog
+         * (NBK-19) keeps the batch running, so a dialog open refuses too.
          */
         async uploadDocuments(
           notebookId: string,
           files: File[],
           options: { folders?: ReadonlySet<File> } = {},
         ): Promise<void> {
+          if (store.batchRunning()) {
+            patchState(store, { uploadRefused: 'An upload is already running.' });
+            return;
+          }
           // Filtered in the browser before anything is sent, so a stray file
           // costs no request and blocks nothing (see upload-rules.ts).
           const accepted = new Set<string>();
