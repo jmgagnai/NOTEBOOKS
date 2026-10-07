@@ -117,6 +117,26 @@ transparent / `outline-variant` border (others). The `color="primary"`
 attribute on a Material button or toolbar does nothing under an M3
 `mat.theme` and can be dropped when a template is next touched.
 
+## Status badge
+
+One component, `<app-status-badge [status]="…" />`
+(`apps/frontend/src/app/shared/status-badge.ts`), renders a Document
+Version's ingestion status and an upload step's status everywhere they appear
+(spec 01 "Status badge", NBK-32). The host element is the badge: 12/600
+`label-medium`, 2 px / 8 px padding, `corner-extra-small`, sentence-case
+label (`statusLabel`: "Ready", "Converting", "New version"). Its colour is
+the status's *tone* (`statusTone`), carried as a class on the host:
+
+| Tone | Class | Colours | Statuses |
+|---|---|---|---|
+| neutral | `.app-badge` alone | `secondary-container` | `waiting`, `uploading`, `skipped` |
+| in progress | `.app-badge--progress` | `primary-container` (accent tint) | `queued`, `converting`, `converted`, `summarizing`, `summarized`, `indexing` |
+| success | `.app-badge--success` | `tertiary-container` | `ready`, `uploaded`, `new-version` |
+| error | `.app-badge--error` | `error-container` | `failed` |
+
+Tests query the badge by its label text and read the tone class off the same
+element; nothing asserts a colour.
+
 ## Material components with Fluent overrides
 
 - `mat-toolbar`: white, text colour, 48 px (`--app-title-bar-height`), 1 px

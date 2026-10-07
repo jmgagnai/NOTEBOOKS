@@ -6,13 +6,9 @@ import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { ThreadNavigator } from '../chat/thread-navigator';
 import { ThreadView } from '../chat/thread-view';
-import {
-  ConflictChoice,
-  Document,
-  DocumentsStore,
-  UploadItemStatus,
-} from '../documents/documents.store';
+import { ConflictChoice, Document, DocumentsStore } from '../documents/documents.store';
 import { UPLOAD_ACCEPT } from '../documents/upload-rules';
+import { StatusBadge } from '../shared/status-badge';
 import { NotebooksStore } from './notebooks.store';
 
 /**
@@ -84,6 +80,7 @@ function droppedEntries(dataTransfer: DataTransfer | null): {
     MatCheckboxModule,
     MatProgressSpinnerModule,
     RouterLink,
+    StatusBadge,
     ThreadNavigator,
     ThreadView,
   ],
@@ -243,11 +240,6 @@ export class NotebookDetailPage implements OnInit, OnDestroy {
     const { files, folders } = droppedEntries(event.dataTransfer);
     if (files.length === 0) return;
     void this.store.uploadDocuments(this.notebookId, files, { folders });
-  }
-
-  /** How an item's status reads in the progress panel. */
-  protected statusLabel(status: UploadItemStatus): string {
-    return status === 'new-version' ? 'new version' : status;
   }
 
   protected delete(document: Document): void {
