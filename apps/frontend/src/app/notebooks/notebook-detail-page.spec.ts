@@ -603,6 +603,31 @@ describe('NotebookDetailPage', () => {
       ]);
     });
 
+    it('lists a dropped folder as skipped with the folder message, and uploads the files beside it', async () => {
+      const uploadDocument = vi
+        .fn()
+        .mockImplementation((_notebookId: string, file: File) =>
+          Promise.resolve(documentFor(file.name)),
+        );
+      await renderWithUpload(uploadDocument);
+
+      const report = new File(['x'], 'report.txt');
+      fireEvent.drop(somewhereOnThePage(), {
+        dataTransfer: dataTransferOf([{ folder: 'photos' }, report]),
+      });
+
+      expect(await screen.findByText('1 uploaded, 1 skipped, 0 failed')).toBeTruthy();
+      const folder = panelRow('photos');
+      expect(within(folder).getByText('skipped')).toBeTruthy();
+      expect(
+        within(folder).getByText(
+          "Folders can't be uploaded. Open the folder and select its files instead.",
+        ),
+      ).toBeTruthy();
+      expect(within(panelRow('report.txt')).getByText('uploaded')).toBeTruthy();
+      expect(uploadDocument.mock.calls).toEqual([[NOTEBOOK_ID, report]]);
+    });
+
     it('applies the 100-file cap to a drop', async () => {
       const uploadDocument = vi.fn();
       await renderWithUpload(uploadDocument);

@@ -9,6 +9,43 @@ import { UPLOAD_ACCEPT } from '../documents/upload-rules';
 import { NotebooksStore } from './notebooks.store';
 
 /**
+ * What a drop carried (NBK-18): every entry as a File, in drop order, and
+ * which of those Files are really folders.
+ *
+ * A file manager hands a directory over like any file — a File with the
+ * folder's name, no type and (usually) no size — so `dataTransfer.files`
+ * alone cannot tell the two apart, and a size-0 typeless *file* is a
+ * perfectly good upload. What does tell them apart is the entry behind each
+ * `DataTransferItem`: `webkitGetAsEntry()` returns a FileSystemEntry whose
+ * `isDirectory` is the answer. The folder keeps its File so it can be listed
+ * in the batch under its own name. A browser without `webkitGetAsEntry`
+ * (none current) simply has everything treated as a file, and the backend
+ * refuses the folder's typeless File as unsupported.
+ */
+function droppedEntries(dataTransfer: DataTransfer | null): {
+  files: File[];
+  folders: Set<File>;
+} {
+  const files: File[] = [];
+  const folders = new Set<File>();
+  const items = Array.from(dataTransfer?.items ?? []);
+  if (items.length === 0) {
+    return { files: Array.from(dataTransfer?.files ?? []), folders };
+  }
+  items.forEach((item, index) => {
+    if (item.kind !== 'file') return;
+    const entry = item.webkitGetAsEntry?.();
+    // `getAsFile()` and `files[index]` are the same File in a real drop;
+    // the second is a fallback for a DataTransfer that only filled one.
+    const file =
+      item.getAsFile() ?? dataTransfer?.files?.[index] ?? new File([], entry?.name ?? 'folder');
+    files.push(file);
+    if (entry?.isDirectory) folders.add(file);
+  });
+  return { files, folders };
+}
+
+/**
  * A Notebook's detail view (NBK-5): shows its Documents as cards, with
  * upload, open, delete, restore, and download actions. Notebooks have no
  * dedicated `GET /notebooks/:id` endpoint, so the Notebook itself (just its
@@ -141,9 +178,9 @@ export class NotebookDetailPage implements OnInit, OnDestroy {
     event.preventDefault();
     this.dragDepth = 0;
     this.dragOver.set(false);
-    const files = Array.from(event.dataTransfer?.files ?? []);
+    const { files, folders } = droppedEntries(event.dataTransfer);
     if (files.length === 0) return;
-    void this.store.uploadDocuments(this.notebookId, files);
+    void this.store.uploadDocuments(this.notebookId, files, { folders });
   }
 
   /** How an item's status reads in the progress panel. */
