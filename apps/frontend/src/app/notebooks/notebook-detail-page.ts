@@ -1,9 +1,11 @@
 import {
+  afterNextRender,
   Component,
   computed,
   effect,
   ElementRef,
   inject,
+  Injector,
   OnDestroy,
   OnInit,
   signal,
@@ -198,6 +200,36 @@ export class NotebookDetailPage implements OnInit, OnDestroy {
     this.renaming.set(false);
   }
 
+  /**
+   * Whether the Documents panel is hidden (NBK-37), so the Thread takes its
+   * width while the user reads answers. Component state on purpose: the spec
+   * wants a reload to show the panel again, so nothing is persisted. The
+   * panel stays in the DOM — hidden by the grid collapsing its column, and
+   * made unreachable with `inert` and `aria-hidden` — so showing it again is
+   * a slide back in rather than a re-render of the Document list.
+   */
+  protected readonly documentsHidden = signal(false);
+
+  private readonly injector = inject(Injector);
+  private readonly hideDocumentsButton = viewChild('hideDocumentsButton', { read: ElementRef });
+
+  protected hideDocuments(): void {
+    this.documentsHidden.set(true);
+  }
+
+  /**
+   * Restores the panel and hands focus to its hide control: "Show Documents"
+   * is gone from the header the moment the panel is back, so the keyboard
+   * would otherwise land on the body. The focus waits for the render that
+   * removes `inert` — a focus call on an inert element is silently ignored.
+   */
+  protected showDocuments(): void {
+    this.documentsHidden.set(false);
+    afterNextRender(() => this.hideDocumentsButton()?.nativeElement.focus(), {
+      injector: this.injector,
+    });
+  }
+
   /** The picker only offers the accepted document types (NBK-16). */
   protected readonly accept = UPLOAD_ACCEPT;
 
@@ -285,7 +317,11 @@ export class NotebookDetailPage implements OnInit, OnDestroy {
   }
 
   protected onDragEnter(event: DragEvent): void {
-    if (!this.carriesFiles(event) || this.refuseDrag(event)) return;
+    if (!this.carriesFiles(event)) return;
+    // The drop target must never be missing (NBK-37): files dragged in while
+    // the panel is hidden bring it back, whether or not the drop is welcome.
+    this.documentsHidden.set(false);
+    if (this.refuseDrag(event)) return;
     event.preventDefault();
     this.dragDepth += 1;
     this.dragOver.set(true);
