@@ -540,6 +540,13 @@ describe('NotebookDetailPage', () => {
       };
     }
 
+    function panelRow(filename: string) {
+      const panel = screen.getByRole('list', { name: 'Upload progress' });
+      return within(panel)
+        .getAllByRole('listitem')
+        .find((row) => within(row).queryByText(filename) !== null)!;
+    }
+
     /** Somewhere inside the page; drag events bubble up to the page itself. */
     function somewhereOnThePage() {
       return screen.getByRole('heading', { name: 'Documents' });
@@ -566,6 +573,45 @@ describe('NotebookDetailPage', () => {
       // ...while leaving the page clears it.
       fireEvent.dragLeave(screen.getByRole('heading', { name: 'Chat' }), { dataTransfer });
       expect(screen.queryByText(DROP_HINT)).toBeNull();
+    });
+
+    it('uploads dropped files as the same batch the picker would start, skipping included', async () => {
+      const uploadDocument = vi
+        .fn()
+        .mockImplementation((_notebookId: string, file: File) =>
+          Promise.resolve(documentFor(file.name)),
+        );
+      await renderWithUpload(uploadDocument);
+
+      const a = new File(['a'], 'a.txt');
+      const b = new File(['b'], 'b.md');
+      const dataTransfer = dataTransferOf([a, b, new File(['x'], 'photo.png')]);
+      fireEvent.dragEnter(somewhereOnThePage(), { dataTransfer });
+      expect(screen.getByText(DROP_HINT)).toBeTruthy();
+      // Cancelled, or the browser would open the dropped file instead.
+      expect(fireEvent.drop(somewhereOnThePage(), { dataTransfer })).toBe(false);
+      expect(screen.queryByText(DROP_HINT)).toBeNull();
+
+      expect(await screen.findByText('2 uploaded, 1 skipped, 0 failed')).toBeTruthy();
+      expect(within(panelRow('photo.png')).getByText(/Unsupported file type/)).toBeTruthy();
+      const cards = screen.getByRole('list', { name: 'Documents' });
+      expect(within(cards).getByText('a.txt')).toBeTruthy();
+      expect(within(cards).getByText('b.md')).toBeTruthy();
+      expect(uploadDocument.mock.calls).toEqual([
+        [NOTEBOOK_ID, a],
+        [NOTEBOOK_ID, b],
+      ]);
+    });
+
+    it('applies the 100-file cap to a drop', async () => {
+      const uploadDocument = vi.fn();
+      await renderWithUpload(uploadDocument);
+
+      const files = Array.from({ length: 101 }, (_, i) => new File(['x'], `f${i}.txt`));
+      fireEvent.drop(somewhereOnThePage(), { dataTransfer: dataTransferOf(files) });
+
+      expect(await screen.findByText(/Too many files: 101 uploadable files/)).toBeTruthy();
+      expect(uploadDocument).not.toHaveBeenCalled();
     });
   });
 

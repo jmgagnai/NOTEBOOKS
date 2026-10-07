@@ -40,6 +40,7 @@ import { NotebooksStore } from './notebooks.store';
     '(dragenter)': 'onDragEnter($event)',
     '(dragover)': 'onDragOver($event)',
     '(dragleave)': 'onDragLeave($event)',
+    '(drop)': 'onDrop($event)',
   },
 })
 export class NotebookDetailPage implements OnInit, OnDestroy {
@@ -128,6 +129,21 @@ export class NotebookDetailPage implements OnInit, OnDestroy {
     if (!this.carriesFiles(event)) return;
     this.dragDepth = Math.max(0, this.dragDepth - 1);
     if (this.dragDepth === 0) this.dragOver.set(false);
+  }
+
+  /**
+   * A drop goes through the same `uploadDocuments` as the picker, so the
+   * skipping rules and the cap apply unchanged (NBK-18).
+   */
+  protected onDrop(event: DragEvent): void {
+    if (!this.carriesFiles(event)) return;
+    // Cancelled, or the browser would navigate to the dropped file.
+    event.preventDefault();
+    this.dragDepth = 0;
+    this.dragOver.set(false);
+    const files = Array.from(event.dataTransfer?.files ?? []);
+    if (files.length === 0) return;
+    void this.store.uploadDocuments(this.notebookId, files);
   }
 
   /** How an item's status reads in the progress panel. */
