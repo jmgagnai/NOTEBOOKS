@@ -585,6 +585,86 @@ describe('NotebookDetailPage', () => {
       expect(within(cards).getAllByText('report.txt')).toHaveLength(1);
       expect(within(cards).getByText('v2')).toBeTruthy();
     });
+
+    it('lists the file as skipped, with the reason, on Skip — and never sends it', async () => {
+      const existing = documentFor('report.txt');
+      const uploadDocument = vi
+        .fn()
+        .mockImplementation((_notebookId: string, file: File) =>
+          Promise.resolve(documentFor(file.name)),
+        );
+      await renderWithUpload(uploadDocument, [existing]);
+
+      pick([new File(['x'], 'report.txt'), new File(['x'], 'fresh.txt')]);
+
+      const open = await findDialog();
+      fireEvent.click(within(open).getByRole('button', { name: 'Skip' }));
+
+      expect(await screen.findByText('1 uploaded, 1 skipped, 0 failed')).toBeTruthy();
+      expect(dialog()).toBeNull();
+      const row = panelRow('report.txt');
+      expect(within(row).getByText('skipped')).toBeTruthy();
+      expect(within(row).getByText(/name already exists/i)).toBeTruthy();
+      expect(sentNames(uploadDocument)).toEqual(['fresh.txt']);
+      // The existing Document is untouched: still one card, no v2 anywhere.
+      const cards = screen.getByRole('list', { name: 'Documents' });
+      expect(within(cards).getAllByText('report.txt')).toHaveLength(1);
+      expect(within(cards).queryByText('v2')).toBeNull();
+    });
+
+    it('applies one answer to every later conflict of the batch when "apply to all" is ticked', async () => {
+      const existing = ['a.txt', 'b.txt', 'c.txt'].map((name) => documentFor(name));
+      const uploadDocument = vi
+        .fn()
+        .mockImplementation((_notebookId: string, file: File) =>
+          Promise.resolve(documentFor(file.name)),
+        );
+      await renderWithUpload(uploadDocument, existing);
+
+      pick(['a.txt', 'fresh.txt', 'b.txt', 'c.txt'].map((name) => new File(['x'], name)));
+
+      // The first conflict is asked about...
+      const open = await findDialog();
+      expect(within(open).getByText(/"a\.txt" already exists/)).toBeTruthy();
+      fireEvent.click(
+        within(open).getByRole('checkbox', { name: 'Apply to all remaining conflicts' }),
+      );
+      fireEvent.click(within(open).getByRole('button', { name: 'Skip' }));
+
+      // ...and the other two are settled the same way, with no second dialog.
+      expect(await screen.findByText('1 uploaded, 3 skipped, 0 failed')).toBeTruthy();
+      expect(dialog()).toBeNull();
+      for (const name of ['a.txt', 'b.txt', 'c.txt']) {
+        expect(within(panelRow(name)).getByText('skipped')).toBeTruthy();
+        expect(within(panelRow(name)).getByText(/name already exists/i)).toBeTruthy();
+      }
+      expect(sentNames(uploadDocument)).toEqual(['fresh.txt']);
+    });
+
+    it('applies New Version to every later conflict when "apply to all" is ticked', async () => {
+      const existing = ['a.txt', 'b.txt'].map((name) => documentFor(name));
+      const uploadDocument = vi
+        .fn()
+        .mockImplementation((_notebookId: string, file: File) =>
+          Promise.resolve(newVersionOf(existing.find((d) => d.filename === file.name)!)),
+        );
+      await renderWithUpload(uploadDocument, existing);
+
+      pick(['a.txt', 'b.txt'].map((name) => new File(['x'], name)));
+
+      const open = await findDialog();
+      fireEvent.click(
+        within(open).getByRole('checkbox', { name: 'Apply to all remaining conflicts' }),
+      );
+      fireEvent.click(within(open).getByRole('button', { name: 'New Version' }));
+
+      expect(
+        await screen.findByText('2 uploaded (2 as new Versions), 0 skipped, 0 failed'),
+      ).toBeTruthy();
+      expect(sentNames(uploadDocument)).toEqual(['a.txt', 'b.txt']);
+      const cards = screen.getByRole('list', { name: 'Documents' });
+      expect(within(cards).getAllByText('v2')).toHaveLength(2);
+    });
   });
 
   it('deletes a Document, removing it from the list, then restores it via Undo', async () => {
