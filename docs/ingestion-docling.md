@@ -184,6 +184,16 @@ container was still running (NBK-22). Change the timeout through
 `DOCLING_TIMEOUT_MS` and the expiry moves with it; never set one without
 the other.
 
+Expiry is not how a restart recovers, though. A backend stopped mid-job
+leaves that job `active` in pg_boss with no process behind it, and pg_boss
+cannot tell that from a busy worker. So a worker, on starting, takes back
+every stage job still active — cancel and resume, through pg_boss — and
+runs it again with its retry count intact (`reclaimActiveJobs` in
+`jobs/queue.ts`, NBK-25); the backend logs each one it reclaimed. That
+rests on the single worker process ADR-0004 describes. A deployment with
+several worker processes passes `reclaimActiveJobs: false` and falls back
+on expiry, because there an active job may belong to a live sibling.
+
 ## Tests
 
 `MarkdownConverter` (a `({ inputPath, outputPath }) => Promise<void>`

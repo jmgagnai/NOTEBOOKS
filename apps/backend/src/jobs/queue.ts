@@ -1,4 +1,5 @@
 import PgBoss from 'pg-boss';
+import type { Pool } from 'pg';
 import {
   CONVERT_TO_MARKDOWN_QUEUE,
   convertToMarkdownPayloadSchema,
@@ -101,6 +102,15 @@ export interface StartJobQueueOptions {
   schema?: string;
   /** Called when pg_boss itself (not a job) errors; defaults to a console warning. */
   onError?: (error: Error) => void;
+  /**
+   * Whether a worker, on starting, takes back every stage job still marked
+   * active (NBK-25). Defaults to true. Set false in a deployment that runs
+   * more than one worker process, where an active job may belong to a live
+   * sibling — see `reclaimActiveJobs`.
+   */
+  reclaimActiveJobs?: boolean;
+  /** Where the reclaim reports what it took back. Defaults to the console. */
+  log?: (message: string) => void;
 }
 
 const DEFAULT_RETRY_LIMIT = 3;
@@ -129,9 +139,52 @@ export function jobExpirySeconds(): number {
   return Math.ceil(resolveDoclingTimeoutMs() / 1000) + JOB_EXPIRY_MARGIN_SECONDS;
 }
 
+const STAGE_QUEUES = [CONVERT_TO_MARKDOWN_QUEUE, SUMMARIZE_DOCUMENT_QUEUE, EMBED_CHUNKS_QUEUE];
+
+/**
+ * Takes back every stage job a previous process left `active` (NBK-25).
+ *
+ * pg_boss keeps no record of which process holds a job, so a job whose
+ * worker died in a restart looks exactly like one whose worker is busy. Its
+ * only recovery is expiry — which NBK-22 had to push above the Docling
+ * timeout, so a Document interrupted by a restart sat in "converting" or
+ * "summarizing" for an hour with nothing working on it. This app runs one
+ * worker process (ADR-0004), so at startup an active job can only be an
+ * orphan: cancel it and resume it, both through pg_boss, and it is fetched
+ * again with its retry count intact. Every stage handler is retry-safe by
+ * design (stage 2 picks up its cached section summaries), so re-running is
+ * the same as a retry.
+ *
+ * Reads the job table directly because pg_boss offers no "list active jobs";
+ * the writes go through pg_boss so its state machine stays its own.
+ */
+async function reclaimActiveJobs(
+  boss: PgBoss,
+  pool: Pool,
+  schema: string,
+  log: (message: string) => void,
+): Promise<number> {
+  // pg_boss has already validated the schema name on start; this keeps the
+  // interpolation below honest regardless.
+  if (!/^[a-z_][a-z0-9_]*$/i.test(schema)) throw new Error(`Invalid pg_boss schema: ${schema}`);
+  const { rows } = await pool.query<{ id: string; name: string; data: unknown }>(
+    `SELECT id, name, data FROM ${schema}.job WHERE state = 'active' AND name = ANY($1)`,
+    [STAGE_QUEUES],
+  );
+  for (const job of rows) {
+    await boss.cancel(job.name, job.id);
+    await boss.resume(job.name, job.id);
+    log(
+      `Reclaimed ${job.name} job ${job.id} left active by a previous process: ${JSON.stringify(job.data)}`,
+    );
+  }
+  return rows.length;
+}
+
 /**
  * Starts pg_boss, ensures the stage queues exist, and (if `worker` is given)
- * registers the stage handlers.
+ * registers the stage handlers — after reclaiming whatever the previous
+ * worker process left active, see `reclaimActiveJobs`.
  *
  * pg_boss owns its own `pgboss` schema and migrates it on `start()`, so this
  * deliberately sits outside the app's `src/db/migrations` chain — there is no
@@ -191,6 +244,16 @@ export async function startJobQueue(options: StartJobQueueOptions): Promise<JobQ
 
   if (options.worker) {
     const { complete, models, embed, ...convertDeps } = options.worker;
+
+    if (options.reclaimActiveJobs !== false) {
+      await reclaimActiveJobs(
+        boss,
+        convertDeps.pool,
+        options.schema ?? 'pgboss',
+        // eslint-disable-next-line no-console
+        options.log ?? ((message) => console.log(message)),
+      );
+    }
 
     await boss.work<ConvertToMarkdownPayload>(
       CONVERT_TO_MARKDOWN_QUEUE,
