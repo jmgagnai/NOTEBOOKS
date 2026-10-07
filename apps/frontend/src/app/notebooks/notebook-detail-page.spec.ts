@@ -547,6 +547,15 @@ describe('NotebookDetailPage', () => {
         .find((row) => within(row).queryByText(filename) !== null)!;
     }
 
+    /** A promise the test resolves by hand, to hold a request "in flight". */
+    function deferred<T>() {
+      let resolve!: (value: T) => void;
+      const promise = new Promise<T>((res) => {
+        resolve = res;
+      });
+      return { promise, resolve };
+    }
+
     /** Somewhere inside the page; drag events bubble up to the page itself. */
     function somewhereOnThePage() {
       return screen.getByRole('heading', { name: 'Documents' });
@@ -626,6 +635,34 @@ describe('NotebookDetailPage', () => {
       ).toBeTruthy();
       expect(within(panelRow('report.txt')).getByText('uploaded')).toBeTruthy();
       expect(uploadDocument.mock.calls).toEqual([[NOTEBOOK_ID, report]]);
+    });
+
+    it('ignores a drop while a batch is running, and shows no drag-over state', async () => {
+      const request = deferred<Record<string, unknown>>();
+      const uploadDocument = vi.fn().mockReturnValue(request.promise);
+      await renderWithUpload(uploadDocument);
+
+      fireEvent.drop(somewhereOnThePage(), {
+        dataTransfer: dataTransferOf([new File(['x'], 'first.txt')]),
+      });
+      await screen.findByText('first.txt');
+      expect(within(panelRow('first.txt')).getByText('uploading')).toBeTruthy();
+
+      // With first.txt still in flight, a second drag gets no welcome...
+      const second = dataTransferOf([new File(['x'], 'second.txt')]);
+      fireEvent.dragEnter(somewhereOnThePage(), { dataTransfer: second });
+      fireEvent.dragOver(somewhereOnThePage(), { dataTransfer: second });
+      expect(screen.queryByText(DROP_HINT)).toBeNull();
+      // ...and its drop changes nothing: the running batch is untouched.
+      fireEvent.drop(somewhereOnThePage(), { dataTransfer: second });
+      expect(screen.queryByText('second.txt')).toBeNull();
+      expect(uploadDocument).toHaveBeenCalledTimes(1);
+
+      // Once the batch is done, dropping works again.
+      request.resolve(documentFor('first.txt'));
+      await screen.findByText('1 uploaded, 0 skipped, 0 failed');
+      fireEvent.drop(somewhereOnThePage(), { dataTransfer: second });
+      expect(await screen.findByText('second.txt')).toBeTruthy();
     });
 
     it('applies the 100-file cap to a drop', async () => {

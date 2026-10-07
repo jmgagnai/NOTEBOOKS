@@ -149,15 +149,28 @@ export class NotebookDetailPage implements OnInit, OnDestroy {
     return Array.from(event.dataTransfer?.types ?? []).includes('Files');
   }
 
+  /**
+   * Whether the page takes a drop right now. It does not while a batch is
+   * running: a second batch is not queued behind the first (spec, out of
+   * scope), so the honest thing is to refuse it visibly. Leaving `dragenter`
+   * and `dragover` uncancelled is how a page tells the browser that — the
+   * cursor shows "not allowed" and no `drop` is fired.
+   */
+  private refuseDrag(event: DragEvent): boolean {
+    if (!this.store.batchRunning()) return false;
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'none';
+    return true;
+  }
+
   protected onDragEnter(event: DragEvent): void {
-    if (!this.carriesFiles(event)) return;
+    if (!this.carriesFiles(event) || this.refuseDrag(event)) return;
     event.preventDefault();
     this.dragDepth += 1;
     this.dragOver.set(true);
   }
 
   protected onDragOver(event: DragEvent): void {
-    if (!this.carriesFiles(event)) return;
+    if (!this.carriesFiles(event) || this.refuseDrag(event)) return;
     // Cancelling `dragover` is what tells the browser the drop is allowed.
     event.preventDefault();
   }
@@ -178,6 +191,9 @@ export class NotebookDetailPage implements OnInit, OnDestroy {
     event.preventDefault();
     this.dragDepth = 0;
     this.dragOver.set(false);
+    // Normally unreachable while a batch runs, since `dragover` was not
+    // cancelled; guarded anyway so nothing else on the page can let it in.
+    if (this.store.batchRunning()) return;
     const { files, folders } = droppedEntries(event.dataTransfer);
     if (files.length === 0) return;
     void this.store.uploadDocuments(this.notebookId, files, { folders });
