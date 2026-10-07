@@ -42,9 +42,12 @@ function droppedEntries(dataTransfer: DataTransfer | null): {
     if (item.kind !== 'file') return;
     const entry = item.webkitGetAsEntry?.();
     // `getAsFile()` and `files[index]` are the same File in a real drop;
-    // the second is a fallback for a DataTransfer that only filled one.
-    const file =
-      item.getAsFile() ?? dataTransfer?.files?.[index] ?? new File([], entry?.name ?? 'folder');
+    // the second is a fallback for a DataTransfer that only filled one. An
+    // item that yields neither has nothing to upload and nothing to list —
+    // current browsers always back a directory entry with a File, so a
+    // placeholder File for that case would be code no drop exercises.
+    const file = item.getAsFile() ?? dataTransfer?.files?.[index];
+    if (!file) return;
     files.push(file);
     if (entry?.isDirectory) folders.add(file);
   });
