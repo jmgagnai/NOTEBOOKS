@@ -45,6 +45,18 @@ silently and takes `ng build`/`ng test` with it. The frontend's `build`, `start`
 pure-JS Sass fallback. Same output, different backend. Harmless on newer macOS,
 Linux and CI; it uses POSIX inline-env syntax, so it assumes a POSIX shell.
 
+## The pre-commit hook needs git 2.32 or newer
+
+lint-staged 17, which the hook runs, requires git ≥ 2.32, and macOS 13 ships
+2.17. On such a machine every commit fails in the hook with a version
+complaint, not a lint failure. `brew install git` (and a shell that picks up
+Homebrew's `git` first) fixes it for good.
+
+Until then, run what the hook would have run by hand —
+`pnpm run check:format:fix` and `pnpm run check` — and commit past the hook
+with `git -c core.hooksPath=/dev/null commit ...`. CI runs the full set
+regardless, so nothing is skipped for the branch, only for the local commit.
+
 ## Reaching `.env` from a git worktree
 
 `.env` is gitignored, so a fresh worktree does not have it, and anything calling
