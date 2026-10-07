@@ -1,4 +1,4 @@
-import { Component, computed, inject, OnDestroy, OnInit } from '@angular/core';
+import { Component, computed, inject, OnDestroy, OnInit, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
@@ -34,6 +34,13 @@ import { NotebooksStore } from './notebooks.store';
   imports: [ChatPanel, MatButtonModule, MatCardModule, MatProgressSpinnerModule, RouterLink],
   templateUrl: './notebook-detail-page.html',
   styleUrl: './notebook-detail-page.scss',
+  // The whole page is the drop target (NBK-18), so the drag events are
+  // listened for on the host rather than on one box inside it.
+  host: {
+    '(dragenter)': 'onDragEnter($event)',
+    '(dragover)': 'onDragOver($event)',
+    '(dragleave)': 'onDragLeave($event)',
+  },
 })
 export class NotebookDetailPage implements OnInit, OnDestroy {
   private readonly route = inject(ActivatedRoute);
@@ -85,6 +92,42 @@ export class NotebookDetailPage implements OnInit, OnDestroy {
     if (files.length === 0) return;
     void this.store.uploadDocuments(this.notebookId, files);
     input.value = '';
+  }
+
+  /**
+   * How many elements of the page the dragged files are currently "inside"
+   * (NBK-18). A drag fires `dragenter` on each element it moves over and
+   * `dragleave` on the one it left, in that order, so a single boolean would
+   * flicker off at every boundary; counting enters against leaves makes the
+   * state hold until the drag leaves the page altogether.
+   */
+  private dragDepth = 0;
+
+  /** True while files are being dragged over the page. */
+  protected readonly dragOver = signal(false);
+
+  /** Whether a drag carries files at all — text or links dragged over the page are not a drop. */
+  private carriesFiles(event: DragEvent): boolean {
+    return Array.from(event.dataTransfer?.types ?? []).includes('Files');
+  }
+
+  protected onDragEnter(event: DragEvent): void {
+    if (!this.carriesFiles(event)) return;
+    event.preventDefault();
+    this.dragDepth += 1;
+    this.dragOver.set(true);
+  }
+
+  protected onDragOver(event: DragEvent): void {
+    if (!this.carriesFiles(event)) return;
+    // Cancelling `dragover` is what tells the browser the drop is allowed.
+    event.preventDefault();
+  }
+
+  protected onDragLeave(event: DragEvent): void {
+    if (!this.carriesFiles(event)) return;
+    this.dragDepth = Math.max(0, this.dragDepth - 1);
+    if (this.dragDepth === 0) this.dragOver.set(false);
   }
 
   /** How an item's status reads in the progress panel. */

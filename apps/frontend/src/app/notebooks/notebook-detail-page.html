@@ -1,4 +1,11 @@
-<mat-card class="notebook-detail-page">
+<mat-card class="notebook-detail-page" [class.notebook-detail-page--drag-over]="dragOver()">
+  <!--
+    The drag-over state (NBK-18): the whole page is the drop target, so the
+    whole card lights up and says what a drop will do.
+  -->
+  @if (dragOver()) {
+    <p class="notebook-detail-page__drop-hint">Drop files to upload them into this Notebook</p>
+  }
   <mat-card-header>
     <mat-card-title>{{ notebook()?.title ?? 'Notebook' }}</mat-card-title>
   </mat-card-header>

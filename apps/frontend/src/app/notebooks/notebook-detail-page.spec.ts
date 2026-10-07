@@ -467,6 +467,108 @@ describe('NotebookDetailPage', () => {
     });
   });
 
+  // NBK-18: files dragged from a file manager onto the Notebook page upload
+  // as the same batch a picker selection would. jsdom has no DataTransfer or
+  // DragEvent, so each drag event carries a constructed object shaped like a
+  // DataTransfer: `types`, `files`, and `items` whose `webkitGetAsEntry()`
+  // says whether the entry is a directory — the same thing the page reads
+  // from a real drop.
+  describe('NBK-18: drag and drop', () => {
+    function documentFor(filename: string) {
+      return {
+        id: `doc-${filename}`,
+        notebookId: NOTEBOOK_ID,
+        filename,
+        status: 'queued',
+        abstract: null,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        latestVersion: {
+          id: `v-${filename}-1`,
+          versionNumber: 1,
+          mimeType: 'text/plain',
+          sizeBytes: 1,
+          createdAt: '2026-01-01T00:00:00.000Z',
+        },
+      };
+    }
+
+    async function renderWithUpload(uploadDocument: ReturnType<typeof vi.fn>) {
+      const listNotebooks = vi.fn().mockResolvedValue([]);
+      const listDocuments = vi.fn().mockResolvedValue([]);
+      await render(NotebookDetailPage, {
+        providers: [
+          activatedRouteFor(NOTEBOOK_ID),
+          { provide: NotebooksService, useValue: { listNotebooks } },
+          { provide: DocumentsService, useValue: { listDocuments } },
+          chatServiceStub(),
+          { provide: DocumentTransferService, useValue: { uploadDocument } },
+          appEventsStub().provider,
+        ],
+      });
+      await screen.findByText('No Documents yet.');
+    }
+
+    /** A dropped folder: what a file manager hands over for a directory. */
+    interface Folder {
+      folder: string;
+    }
+
+    /**
+     * A DataTransfer as a drop of `entries` would carry it. A folder arrives
+     * as an item whose entry `isDirectory`, backed by a size-0 File named
+     * after it — which is what Chromium and Firefox actually put in `files`.
+     */
+    function dataTransferOf(entries: (File | Folder)[]) {
+      const files = entries.map((entry) =>
+        entry instanceof File ? entry : new File([], entry.folder),
+      );
+      return {
+        types: ['Files'],
+        files,
+        items: entries.map((entry, index) => ({
+          kind: 'file',
+          type: files[index].type,
+          getAsFile: () => files[index],
+          webkitGetAsEntry: () => ({
+            name: files[index].name,
+            isFile: entry instanceof File,
+            isDirectory: !(entry instanceof File),
+          }),
+        })),
+        dropEffect: 'none',
+        effectAllowed: 'all',
+      };
+    }
+
+    /** Somewhere inside the page; drag events bubble up to the page itself. */
+    function somewhereOnThePage() {
+      return screen.getByRole('heading', { name: 'Documents' });
+    }
+
+    const DROP_HINT = 'Drop files to upload them into this Notebook';
+
+    it('highlights the whole page while files are dragged over it, until they leave', async () => {
+      await renderWithUpload(vi.fn());
+      expect(screen.queryByText(DROP_HINT)).toBeNull();
+
+      const dataTransfer = dataTransferOf([new File(['x'], 'a.txt')]);
+      fireEvent.dragEnter(somewhereOnThePage(), { dataTransfer });
+      // `dragover` has to be cancelled or the browser refuses the drop.
+      expect(fireEvent.dragOver(somewhereOnThePage(), { dataTransfer })).toBe(false);
+      expect(screen.getByText(DROP_HINT)).toBeTruthy();
+
+      // Moving between elements of the page fires leave/enter pairs that must
+      // not flicker the state off...
+      fireEvent.dragEnter(screen.getByRole('heading', { name: 'Chat' }), { dataTransfer });
+      fireEvent.dragLeave(somewhereOnThePage(), { dataTransfer });
+      expect(screen.getByText(DROP_HINT)).toBeTruthy();
+
+      // ...while leaving the page clears it.
+      fireEvent.dragLeave(screen.getByRole('heading', { name: 'Chat' }), { dataTransfer });
+      expect(screen.queryByText(DROP_HINT)).toBeNull();
+    });
+  });
+
   it('deletes a Document, removing it from the list, then restores it via Undo', async () => {
     const listNotebooks = vi.fn().mockResolvedValue([]);
     const existingDocument = {
