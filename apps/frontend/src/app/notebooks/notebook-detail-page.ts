@@ -13,6 +13,7 @@ import { Title } from '@angular/platform-browser';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCheckboxModule } from '@angular/material/checkbox';
+import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { ThreadNavigator } from '../chat/thread-navigator';
@@ -97,6 +98,7 @@ const APP_NAME = 'RAG Notebook';
   imports: [
     MatButtonModule,
     MatCheckboxModule,
+    MatIconModule,
     MatProgressSpinnerModule,
     MatTooltipModule,
     RouterLink,

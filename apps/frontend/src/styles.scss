@@ -392,6 +392,7 @@ app-root > :not(mat-toolbar):not(router-outlet) {
       container-color: var(--mat-sys-surface),
       container-shape: var(--mat-sys-corner-medium),
       container-elevation-shadow: var(--mat-sys-level3),
+      item-icon-size: 20px,
     )
   );
   border: 1px solid var(--mat-sys-outline-variant);
@@ -410,4 +411,12 @@ app-root > :not(mat-toolbar):not(router-outlet) {
       button-color: var(--mat-sys-inverse-primary),
     )
   );
+}
+
+// Icons (NBK-31): the registered set is Fluent UI System Icons drawn on a
+// 20 px grid (see app/shared/fluent-icons.ts), so `mat-icon` takes that size
+// instead of Material's 24 px default and the glyphs render at native scale.
+.mat-icon {
+  width: 20px;
+  height: 20px;
 }
