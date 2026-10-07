@@ -1,13 +1,168 @@
+@use 'sass:list';
+@use 'sass:meta';
 @use '@angular/material' as mat;
 
+// The Fluent 2 look is produced by re-theming Angular Material rather than
+// swapping component libraries (ADR-0008). Everything visual that later specs
+// reuse is a token defined here — see docs/frontend-theme.md for the map.
+// Component stylesheets reference the tokens and never hard-code a colour, a
+// radius or a type size (NBK-29).
+
+// No webfont: the system UI font is what makes the app read as a Microsoft
+// 365 surface on every OS (Segoe UI on Windows, San Francisco on macOS).
+$system-font:
+  'Segoe UI',
+  -apple-system,
+  BlinkMacSystemFont,
+  system-ui,
+  sans-serif;
+
+// Spec 01's type scale (title 20/600, section 16/600, body 14/400, caption
+// 12/400), mapped onto the Material roles components already read:
+// cards and toolbars use title-large, inputs and list rows body-large,
+// buttons label-large, tooltips body-small. Weight, size, line-height.
+$type-scale: (
+  title-large: (
+    600,
+    20px,
+    28px,
+  ),
+  title-medium: (
+    600,
+    16px,
+    22px,
+  ),
+  title-small: (
+    600,
+    14px,
+    20px,
+  ),
+  body-large: (
+    400,
+    14px,
+    20px,
+  ),
+  body-medium: (
+    400,
+    14px,
+    20px,
+  ),
+  body-small: (
+    400,
+    12px,
+    16px,
+  ),
+  label-large: (
+    600,
+    14px,
+    20px,
+  ),
+  label-medium: (
+    600,
+    12px,
+    16px,
+  ),
+);
+
 html {
+  // `theme-type: light` rather than Material's default `color-scheme`: dark
+  // mode is out of scope for spec 01, and `light-dark()` values would let an
+  // OS dark preference flip every token this file does not override.
   @include mat.theme(
     (
-      color: mat.$violet-palette,
-      typography: Roboto,
-      density: 0,
+      color: (
+        primary: mat.$azure-palette,
+        theme-type: light,
+      ),
+      typography: (
+        plain-family: $system-font,
+        brand-family: $system-font,
+        bold-weight: 600,
+        medium-weight: 600,
+        regular-weight: 400,
+      ),
+      // The compact step: 32 px buttons and icon buttons, 48 px form fields.
+      density: -2,
     )
   );
+
+  // Fluent 2 colours over Material's system tokens (spec 01 token table).
+  --mat-sys-primary: #0f6cbd;
+  --mat-sys-on-primary: #ffffff;
+  // Accent tint: selected rows, chips, the in-progress status badge.
+  --mat-sys-primary-container: #ebf3fc;
+  --mat-sys-on-primary-container: #0c3b5e;
+  --mat-sys-secondary: #616161;
+  --mat-sys-on-secondary: #ffffff;
+  --mat-sys-secondary-container: #f0f0f0;
+  --mat-sys-on-secondary-container: #424242;
+  // Success (`ready`) lives on the tertiary slot, the only spare M3 role.
+  --mat-sys-tertiary: #0e700e;
+  --mat-sys-on-tertiary: #ffffff;
+  --mat-sys-tertiary-container: #e7f5e7;
+  --mat-sys-on-tertiary-container: #0e700e;
+  --mat-sys-error: #c50f1f;
+  --mat-sys-on-error: #ffffff;
+  --mat-sys-error-container: #fde7e9;
+  --mat-sys-on-error-container: #c50f1f;
+  // Page canvas vs. pane/card surface, then the subtle surfaces for hover
+  // and the user bubble, from lightest to darkest.
+  --mat-sys-background: #f5f5f5;
+  --mat-sys-on-background: #242424;
+  --mat-sys-surface: #ffffff;
+  --mat-sys-surface-container-lowest: #ffffff;
+  --mat-sys-surface-container-low: #fafafa;
+  --mat-sys-surface-container: #f5f5f5;
+  --mat-sys-surface-container-high: #f0f0f0;
+  --mat-sys-surface-container-highest: #ebebeb;
+  --mat-sys-surface-variant: #f0f0f0;
+  --mat-sys-on-surface: #242424;
+  --mat-sys-on-surface-variant: #616161;
+  // Border, then strong border (inputs, secondary buttons).
+  --mat-sys-outline-variant: #e0e0e0;
+  --mat-sys-outline: #d1d1d1;
+  // Tooltips and the snack bar are the dark-on-light exceptions.
+  --mat-sys-inverse-surface: #242424;
+  --mat-sys-inverse-on-surface: #ffffff;
+  --mat-sys-inverse-primary: #8ab9ea;
+
+  // Corners: 4 px on controls, 8 px on cards and panes, 12 px on bubbles.
+  // `corner-full` at 4 px is what stops filled and outlined buttons from
+  // rendering as pills.
+  --mat-sys-corner-full: 4px;
+  --mat-sys-corner-extra-small: 4px;
+  --mat-sys-corner-small: 4px;
+  --mat-sys-corner-medium: 8px;
+  --mat-sys-corner-large: 8px;
+  --mat-sys-corner-extra-large: 12px;
+
+  // Elevation off: surfaces are separated by 1 px borders. Only floating
+  // overlays (menus, dialogs) keep a soft shadow at level 3 and above.
+  --mat-sys-level0: none;
+  --mat-sys-level1: none;
+  --mat-sys-level2: none;
+  --mat-sys-level3: 0 4px 16px rgba(0, 0, 0, 0.12);
+  --mat-sys-level4: 0 8px 24px rgba(0, 0, 0, 0.14);
+  --mat-sys-level5: 0 8px 24px rgba(0, 0, 0, 0.14);
+
+  @each $role, $spec in $type-scale {
+    $weight: list.nth($spec, 1);
+    $size: list.nth($spec, 2);
+    $line-height: list.nth($spec, 3);
+    --mat-sys-#{$role}: #{$weight} #{$size} / #{$line-height} #{meta.inspect($system-font)};
+    --mat-sys-#{$role}-weight: #{$weight};
+    --mat-sys-#{$role}-size: #{$size};
+    --mat-sys-#{$role}-line-height: #{$line-height};
+    // Fluent sets no letter-spacing; Material's tracking would widen Segoe.
+    --mat-sys-#{$role}-tracking: 0;
+  }
+
+  // App-level tokens for the spec values Material has no system slot for.
+  --app-primary-hover: #115ea3;
+  --app-primary-pressed: #0c3b5e;
+  --app-text-disabled: #bdbdbd;
+  --app-title-bar-height: 48px;
+  --app-control-height: 32px;
 }
 
 html,
@@ -17,5 +172,227 @@ body {
 
 body {
   margin: 0;
-  font-family: Roboto, 'Helvetica Neue', sans-serif;
+  font: var(--mat-sys-body-medium);
+  color: var(--mat-sys-on-background);
+  background: var(--mat-sys-background);
+}
+
+// Headings on the spec type scale (title 20/600, section 16/600): the pages'
+// h2 "Documents" / "Chat" / "Executive Summary" are sections, the Document
+// filename h1 a title. Margins are left to the browser and the components.
+h1 {
+  font: var(--mat-sys-title-large);
+}
+
+h2 {
+  font: var(--mat-sys-title-medium);
+}
+
+h3,
+h4,
+h5,
+h6 {
+  font: var(--mat-sys-title-small);
+}
+
+// Full-height layout under the title bar: the routed page is a flex child
+// that takes the viewport below the bar (`100vh - 48px`), so later specs can
+// build panes that scroll inside it rather than with the page.
+app-root {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+
+app-root > :not(mat-toolbar):not(router-outlet) {
+  display: block;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+// Keyboard focus: a 2 px ring in the text colour on every control, 1 px
+// offset (spec 01 "Focus"). Material buttons reset `outline` on
+// `.mdc-button`, so they are named with higher specificity to win. The one
+// intended exception, the chat composer (spec 04), overrides this with its
+// own `.class:focus-visible` rule and darkens its border instead. `matInput`
+// is excluded because its form field already draws its focused outline.
+:focus-visible:not(.mat-mdc-input-element),
+.mat-mdc-button-base:focus-visible {
+  outline: 2px solid var(--mat-sys-on-surface);
+  outline-offset: 1px;
+}
+
+// ---------------------------------------------------------------------------
+// Material components in Fluent clothes. Component tokens here, layout in the
+// components' own stylesheets.
+// ---------------------------------------------------------------------------
+
+// Title bar: 48 px, white, 1 px bottom border. Its content is the shell's
+// (spec 01 "App shell").
+.mat-toolbar {
+  @include mat.toolbar-overrides(
+    (
+      container-background-color: var(--mat-sys-surface),
+      container-text-color: var(--mat-sys-on-surface),
+      standard-height: var(--app-title-bar-height),
+      mobile-height: var(--app-title-bar-height),
+    )
+  );
+  border-bottom: 1px solid var(--mat-sys-outline-variant);
+}
+
+// Cards: white, 8 px corners, a border instead of the raised shadow. The
+// pages keep Material's default (raised) appearance, so the border is given
+// to every card rather than only the `outlined` appearance.
+.mat-mdc-card {
+  @include mat.card-overrides(
+    (
+      elevated-container-color: var(--mat-sys-surface),
+      elevated-container-elevation: none,
+      filled-container-color: var(--mat-sys-surface-container-low),
+      outlined-outline-color: var(--mat-sys-outline-variant),
+    )
+  );
+  border: 1px solid var(--mat-sys-outline-variant);
+}
+
+// Buttons. The four named variants later specs refer to map onto Material's
+// directives: primary = mat-flat-button, secondary = mat-stroked-button,
+// subtle = mat-button, icon button = mat-icon-button. Hover and pressed on
+// the primary button are the spec's exact shades rather than Material's
+// translucent state layer, so the layer is switched off and the container
+// colour swapped instead.
+.mat-mdc-button-base {
+  @include mat.button-overrides(
+    (
+      filled-container-color: var(--mat-sys-primary),
+      filled-label-text-color: var(--mat-sys-on-primary),
+      filled-hover-state-layer-opacity: 0,
+      filled-pressed-state-layer-opacity: 0,
+      filled-horizontal-padding: 12px,
+      filled-disabled-container-color: var(--mat-sys-surface-container-high),
+      filled-disabled-label-text-color: var(--app-text-disabled),
+      outlined-label-text-color: var(--mat-sys-on-surface),
+      outlined-outline-color: var(--mat-sys-outline),
+      outlined-state-layer-color: var(--mat-sys-on-surface),
+      outlined-horizontal-padding: 12px,
+      outlined-disabled-label-text-color: var(--app-text-disabled),
+      outlined-disabled-outline-color: var(--mat-sys-outline-variant),
+      text-label-text-color: var(--mat-sys-on-surface),
+      text-state-layer-color: var(--mat-sys-on-surface),
+      text-disabled-label-text-color: var(--app-text-disabled),
+    )
+  );
+  @include mat.icon-button-overrides(
+    (
+      container-shape: var(--mat-sys-corner-extra-small),
+      icon-color: var(--mat-sys-on-surface),
+      state-layer-color: var(--mat-sys-on-surface),
+      state-layer-size: var(--app-control-height),
+      icon-size: 20px,
+      disabled-icon-color: var(--app-text-disabled),
+    )
+  );
+}
+
+.mat-mdc-unelevated-button:not(:disabled) {
+  &:hover {
+    --mat-button-filled-container-color: var(--app-primary-hover);
+  }
+
+  &:active {
+    --mat-button-filled-container-color: var(--app-primary-pressed);
+  }
+}
+
+// Secondary buttons are white, not transparent, so they read on the canvas.
+.mat-mdc-outlined-button:not(:disabled) {
+  background-color: var(--mat-sys-surface);
+}
+
+// The same four variants for elements that are not Material buttons (plain
+// `<button>`s and `<a>`s in later specs' panes), drawn from the same tokens.
+.app-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  box-sizing: border-box;
+  height: var(--app-control-height);
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: var(--mat-sys-corner-extra-small);
+  font: var(--mat-sys-label-large);
+  color: var(--mat-sys-on-surface);
+  background: transparent;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+
+  &:hover {
+    background: var(--mat-sys-surface-container-high);
+  }
+
+  &:active {
+    background: var(--mat-sys-surface-container-highest);
+  }
+
+  &:disabled,
+  &[aria-disabled='true'] {
+    color: var(--app-text-disabled);
+    pointer-events: none;
+  }
+
+  &--primary {
+    background: var(--mat-sys-primary);
+    color: var(--mat-sys-on-primary);
+
+    &:hover {
+      background: var(--app-primary-hover);
+    }
+
+    &:active {
+      background: var(--app-primary-pressed);
+    }
+
+    &:disabled,
+    &[aria-disabled='true'] {
+      background: var(--mat-sys-surface-container-high);
+    }
+  }
+
+  &--secondary {
+    background: var(--mat-sys-surface);
+    border-color: var(--mat-sys-outline);
+
+    &:hover {
+      background: var(--mat-sys-surface-container-low);
+    }
+
+    &:active {
+      background: var(--mat-sys-surface-container-high);
+    }
+
+    &:disabled,
+    &[aria-disabled='true'] {
+      border-color: var(--mat-sys-outline-variant);
+    }
+  }
+
+  &--icon {
+    width: var(--app-control-height);
+    padding: 0;
+  }
+}
+
+// Menus float, so they keep a shadow, plus the border every surface has.
+.mat-mdc-menu-panel {
+  @include mat.menu-overrides(
+    (
+      container-color: var(--mat-sys-surface),
+      container-shape: var(--mat-sys-corner-medium),
+      container-elevation-shadow: var(--mat-sys-level3),
+    )
+  );
+  border: 1px solid var(--mat-sys-outline-variant);
 }

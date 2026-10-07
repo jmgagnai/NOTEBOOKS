@@ -27,7 +27,7 @@
 
   &__hint,
   &__empty {
-    color: var(--mat-sys-on-surface-variant, #666);
+    color: var(--mat-sys-on-surface-variant);
   }
 
   // Result cards, not list rows: each one has to hold an Abstract, which is
@@ -42,8 +42,8 @@
   }
 
   &__result {
-    border: 1px solid var(--mat-sys-outline-variant, #ddd);
-    border-radius: 0.5rem;
+    border: 1px solid var(--mat-sys-outline-variant);
+    border-radius: var(--mat-sys-corner-medium);
     padding: 0.75rem 1rem;
   }
 
@@ -58,17 +58,16 @@
   }
 
   &__version {
-    color: var(--mat-sys-on-surface-variant, #666);
-    font-size: 0.85rem;
+    color: var(--mat-sys-on-surface-variant);
+    font: var(--mat-sys-body-small);
   }
 
   &__abstract {
     margin: 0.5rem 0;
-    font-size: 0.9rem;
-    line-height: 1.4;
+    font: var(--mat-sys-body-medium);
 
     &--pending {
-      color: var(--mat-sys-on-surface-variant, #666);
+      color: var(--mat-sys-on-surface-variant);
       font-style: italic;
     }
   }
