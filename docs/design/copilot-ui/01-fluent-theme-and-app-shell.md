@@ -124,6 +124,8 @@ presentation moves.
 
 - Why Material is re-themed rather than replaced by Fluent UI Web
   Components is ADR-0008.
+- The tokens, type roles and the four button variants as implemented, with
+  their CSS names, are documented in `docs/frontend-theme.md`.
 
 - The serif-font symptom in the screenshots comes from the theme's
   typography pointing at Roboto with no loaded webfont and no fallback in
