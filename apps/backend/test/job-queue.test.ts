@@ -67,6 +67,8 @@ describe('job queue', () => {
     complete?: ChatCompleter;
     embed?: Embedder;
     retryLimit?: number;
+    reclaimActiveJobs?: boolean;
+    log?: (message: string) => void;
   }): Promise<JobQueue> {
     const queue = await startJobQueue({
       connectionString,
@@ -76,6 +78,10 @@ describe('job queue', () => {
       retryLimit: options.retryLimit ?? 0,
       retryDelaySeconds: 0,
       pollingIntervalSeconds: 0.5,
+      ...(options.reclaimActiveJobs === undefined
+        ? {}
+        : { reclaimActiveJobs: options.reclaimActiveJobs }),
+      ...(options.log ? { log: options.log } : {}),
       worker: options.convertToMarkdown
         ? {
             pool,
@@ -289,6 +295,72 @@ describe('job queue', () => {
     );
     expect(Number(rows[0].count)).toBeGreaterThan(0);
     expect(Number(rows[0].dims)).toBe(EMBEDDING_DIMENSIONS);
+  });
+
+  /**
+   * What a backend restart mid-job leaves behind: the job is `active` in
+   * pg_boss, but the process that fetched it is gone. pg_boss cannot tell
+   * that from a busy worker, so without help the job waits out its expiry
+   * — over an hour since NBK-22 — with the Document stuck in "converting".
+   */
+  async function leaveJobOrphaned(schema: string, versionId: string): Promise<void> {
+    const { rowCount } = await pool.query(
+      `UPDATE ${schema}.job SET state = 'active', started_on = now() - interval '1 minute'
+       WHERE name = $1 AND (data->>'versionId') = $2 AND state = 'created'`,
+      [CONVERT_TO_MARKDOWN_QUEUE, versionId],
+    );
+    expect(rowCount).toBe(1);
+  }
+
+  it('reclaims a job left active by a dead worker process (NBK-25)', async () => {
+    const seeded = await seedUploadedVersion('orphaned.txt', 'left behind by a restart');
+    const producerOnly = await start({ schema: 'pgboss_orphan' });
+    await producerOnly.enqueueConvertToMarkdown({
+      documentId: seeded.documentId,
+      versionId: seeded.versionId,
+    });
+    await leaveJobOrphaned('pgboss_orphan', seeded.versionId);
+    await producerOnly.stop();
+
+    const logged: string[] = [];
+    await start({
+      schema: 'pgboss_orphan',
+      convertToMarkdown: passthrough,
+      log: (message) => logged.push(message),
+    });
+
+    const version = await waitForStatus(seeded.versionId, ['converted']);
+    expect(version.markdown).toContain('left behind by a restart');
+    expect(logged).toHaveLength(1);
+    expect(logged[0]).toContain(CONVERT_TO_MARKDOWN_QUEUE);
+    expect(logged[0]).toContain(seeded.versionId);
+  });
+
+  it('leaves active jobs alone when reclaiming is switched off', async () => {
+    // A deployment with several worker processes cannot know whether an
+    // active job belongs to a live sibling, so it must be able to opt out
+    // and fall back on expiry.
+    const seeded = await seedUploadedVersion('sibling.txt', 'held by another worker');
+    const producerOnly = await start({ schema: 'pgboss_no_reclaim' });
+    await producerOnly.enqueueConvertToMarkdown({
+      documentId: seeded.documentId,
+      versionId: seeded.versionId,
+    });
+    await leaveJobOrphaned('pgboss_no_reclaim', seeded.versionId);
+    await producerOnly.stop();
+
+    await start({
+      schema: 'pgboss_no_reclaim',
+      convertToMarkdown: passthrough,
+      reclaimActiveJobs: false,
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 2_000));
+    const { rows } = await pool.query<{ ingestion_status: string }>(
+      'SELECT ingestion_status FROM document_versions WHERE id = $1',
+      [seeded.versionId],
+    );
+    expect(rows[0].ingestion_status).toBe('queued');
   });
 
   it('completes a job enqueued before the backend started', async () => {
