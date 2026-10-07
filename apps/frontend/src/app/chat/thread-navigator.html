@@ -1,0 +1,50 @@
+<div class="thread-navigator">
+  <h3>Chat Threads</h3>
+
+  <div class="thread-navigator__new-thread">
+    <label class="thread-navigator__field">
+      <span class="thread-navigator__field-label">New Chat Thread title</span>
+      <input
+        type="text"
+        aria-label="New Chat Thread title"
+        [value]="newThreadTitle()"
+        (input)="newThreadTitle.set($any($event.target).value)"
+      />
+    </label>
+    <button mat-button type="button" (click)="startThread()">Start Chat Thread</button>
+  </div>
+
+  @if (store.threadsLoading()) {
+    <mat-progress-spinner mode="indeterminate" diameter="24" />
+  } @else if (store.threads().length === 0) {
+    <p class="thread-navigator__empty">No Chat Threads yet.</p>
+  } @else {
+    <!--
+      Every Thread in the Notebook, whoever started it (GLOSSARY.md,
+      ADR-0001) — so each entry has to say whose it is, and none of them
+      is hidden or disabled for not being yours.
+    -->
+    <ul class="thread-navigator__thread-list">
+      @for (thread of store.threads(); track thread.id) {
+        <li
+          [class]="
+            'thread-navigator__thread' +
+            (thread.id === store.activeThreadId() ? ' thread-navigator__thread--active' : '')
+          "
+        >
+          <button
+            type="button"
+            class="thread-navigator__thread-open"
+            [attr.aria-label]="'Open ' + thread.title"
+            (click)="openThread(thread)"
+          >
+            <span class="thread-navigator__thread-title">{{ thread.title }}</span>
+            <span class="thread-navigator__thread-author"
+              >Started by {{ thread.author.email }}</span
+            >
+          </button>
+        </li>
+      }
+    </ul>
+  }
+</div>
