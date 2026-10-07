@@ -13,6 +13,7 @@ import {
   UploadItemStatus,
 } from '../documents/documents.store';
 import { UPLOAD_ACCEPT } from '../documents/upload-rules';
+import { UndoSnackBar } from '../shared/undo-snack-bar';
 import { NotebooksStore } from './notebooks.store';
 
 /**
@@ -103,6 +104,7 @@ export class NotebookDetailPage implements OnInit, OnDestroy {
 
   protected readonly notebooksStore = inject(NotebooksStore);
   protected readonly store = inject(DocumentsStore);
+  private readonly undoSnackBar = inject(UndoSnackBar);
 
   protected readonly notebookId = this.route.snapshot.paramMap.get('notebookId')!;
   protected readonly notebook = computed(
@@ -250,8 +252,13 @@ export class NotebookDetailPage implements OnInit, OnDestroy {
     return status === 'new-version' ? 'new version' : status;
   }
 
-  protected delete(document: Document): void {
-    void this.store.deleteDocument(this.notebookId, document.id);
+  protected async delete(document: Document): Promise<void> {
+    await this.store.deleteDocument(this.notebookId, document.id);
+    // `lastDeleted` holding this Document is the store's own signal that the
+    // delete went through; a failure leaves it as it was and sets `error`.
+    const deleted = this.store.lastDeleted();
+    if (deleted?.id !== document.id) return;
+    this.undoSnackBar.open(deleted.filename, () => this.restore(deleted));
   }
 
   protected restore(document: Document): void {

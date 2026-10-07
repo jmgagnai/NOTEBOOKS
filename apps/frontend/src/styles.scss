@@ -396,3 +396,18 @@ app-root > :not(mat-toolbar):not(router-outlet) {
   );
   border: 1px solid var(--mat-sys-outline-variant);
 }
+
+// The undo offer after a delete (NBK-33): the one dark-on-light surface,
+// drawn from the inverse tokens, with a 13 px line that spec 01 sets between
+// the body and caption steps, so it has no type-scale role to borrow.
+.mat-mdc-snack-bar-container {
+  @include mat.snack-bar-overrides(
+    (
+      container-color: var(--mat-sys-inverse-surface),
+      container-shape: var(--mat-sys-corner-extra-small),
+      supporting-text-color: var(--mat-sys-inverse-on-surface),
+      supporting-text-size: 13px,
+      button-color: var(--mat-sys-inverse-primary),
+    )
+  );
+}

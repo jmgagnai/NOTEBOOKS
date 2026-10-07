@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/angular';
+import { fireEvent, render, screen, waitFor } from '@testing-library/angular';
 import { NotebooksPage } from './notebooks-page';
 import { NotebooksService } from '../api/services/notebooks.service';
 
@@ -140,9 +140,84 @@ describe('NotebooksPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Delete Q3 Contracts' }));
     await screen.findByText('No Notebooks yet.');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    // The offer is a snack bar (NBK-33), which only becomes visible to
+    // assistive technology once Material has announced it.
+    fireEvent.click(await screen.findByRole('button', { name: 'Undo' }));
 
     expect(restoreNotebook).toHaveBeenCalledWith({ id: '1' });
     expect(await screen.findByText('Q3 Contracts')).toBeTruthy();
+  });
+
+  // NBK-33: the undo offer is a snack bar, not a line in the page, so the
+  // list no longer jumps when something is deleted.
+  it('announces a deleted Notebook in a snack bar instead of an inline line', async () => {
+    const listNotebooks = vi
+      .fn()
+      .mockResolvedValue([
+        { id: '1', title: 'Q3 Contracts', createdAt: '2026-01-01T00:00:00.000Z' },
+      ]);
+    const deleteNotebook = vi.fn().mockResolvedValue(null);
+
+    await render(NotebooksPage, {
+      providers: [{ provide: NotebooksService, useValue: { listNotebooks, deleteNotebook } }],
+    });
+
+    await screen.findByText('Q3 Contracts');
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Q3 Contracts' }));
+
+    expect(await screen.findByText('Q3 Contracts deleted')).toBeTruthy();
+    expect(screen.queryByText(/"Q3 Contracts" deleted\./)).toBeNull();
+  });
+
+  it('replaces the undo offer when a second Notebook is deleted', async () => {
+    const listNotebooks = vi.fn().mockResolvedValue([
+      { id: '1', title: 'Q3 Contracts', createdAt: '2026-01-01T00:00:00.000Z' },
+      { id: '2', title: 'Onboarding Docs', createdAt: '2026-01-02T00:00:00.000Z' },
+    ]);
+    const deleteNotebook = vi.fn().mockResolvedValue(null);
+
+    await render(NotebooksPage, {
+      providers: [{ provide: NotebooksService, useValue: { listNotebooks, deleteNotebook } }],
+    });
+
+    await screen.findByText('Q3 Contracts');
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Q3 Contracts' }));
+    await screen.findByText('Q3 Contracts deleted');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Onboarding Docs' }));
+
+    expect(await screen.findByText('Onboarding Docs deleted')).toBeTruthy();
+    await waitFor(() => expect(screen.queryByText('Q3 Contracts deleted')).toBeNull());
+  });
+
+  it('withdraws the undo offer by itself after 8 seconds', async () => {
+    const listNotebooks = vi
+      .fn()
+      .mockResolvedValue([
+        { id: '1', title: 'Q3 Contracts', createdAt: '2026-01-01T00:00:00.000Z' },
+      ]);
+    const deleteNotebook = vi.fn().mockResolvedValue(null);
+
+    await render(NotebooksPage, {
+      providers: [{ provide: NotebooksService, useValue: { listNotebooks, deleteNotebook } }],
+    });
+    await screen.findByText('Q3 Contracts');
+
+    // Only timeouts are faked, so the queries' polling and Angular's own
+    // scheduling keep running on real time; `shouldAdvanceTime` lets the
+    // snack bar's short opening delays elapse without being stepped by hand.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'], shouldAdvanceTime: true });
+    try {
+      fireEvent.click(screen.getByRole('button', { name: 'Delete Q3 Contracts' }));
+      await screen.findByText('Q3 Contracts deleted');
+
+      await vi.advanceTimersByTimeAsync(7_000);
+      expect(screen.getByText('Q3 Contracts deleted')).toBeTruthy();
+
+      await vi.advanceTimersByTimeAsync(2_000);
+      await waitFor(() => expect(screen.queryByText('Q3 Contracts deleted')).toBeNull());
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
