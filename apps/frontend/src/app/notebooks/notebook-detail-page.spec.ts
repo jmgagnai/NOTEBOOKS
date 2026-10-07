@@ -453,6 +453,11 @@ describe('NotebookDetailPage', () => {
 
       pick([new File(['x'], 'report.txt'), new File(['x'], 'fresh.txt')]);
 
+      // Since NBK-19 the existing name is a question first; answering New
+      // Version is what lands it as one.
+      const dialog = await screen.findByRole('dialog', { name: 'Document already exists' });
+      fireEvent.click(within(dialog).getByRole('button', { name: 'New Version' }));
+
       expect(
         await screen.findByText('2 uploaded (1 as new Versions), 0 skipped, 0 failed'),
       ).toBeTruthy();
@@ -464,6 +469,121 @@ describe('NotebookDetailPage', () => {
       expect(within(cards).getAllByText('report.txt')).toHaveLength(1);
       expect(within(cards).getByText('v2')).toBeTruthy();
       expect(within(cards).getByText('fresh.txt')).toBeTruthy();
+    });
+  });
+
+  // NBK-19: before a file silently becomes a new Version of an existing
+  // Document, the user is asked. The conflict is detected in the browser,
+  // against the Document list the page already holds; the dialog offers New
+  // Version or Skip, one file at a time, while the other files keep going.
+  describe('NBK-19: conflict dialog', () => {
+    function documentFor(filename: string, overrides: Partial<Record<string, unknown>> = {}) {
+      return {
+        id: `doc-${filename}`,
+        notebookId: NOTEBOOK_ID,
+        filename,
+        status: 'queued',
+        abstract: null,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        latestVersion: {
+          id: `v-${filename}-1`,
+          versionNumber: 1,
+          mimeType: 'text/plain',
+          sizeBytes: 1,
+          createdAt: '2026-01-01T00:00:00.000Z',
+        },
+        ...overrides,
+      };
+    }
+
+    /** What the backend returns for a re-upload: the same Document, one Version up. */
+    function newVersionOf(existing: ReturnType<typeof documentFor>) {
+      return {
+        ...existing,
+        latestVersion: {
+          ...existing.latestVersion,
+          id: `${existing.latestVersion.id}-next`,
+          versionNumber: existing.latestVersion.versionNumber + 1,
+        },
+      };
+    }
+
+    /** A promise the test resolves by hand, to hold a request "in flight". */
+    function deferred<T>() {
+      let resolve!: (value: T) => void;
+      const promise = new Promise<T>((res) => {
+        resolve = res;
+      });
+      return { promise, resolve };
+    }
+
+    async function renderWithUpload(
+      uploadDocument: ReturnType<typeof vi.fn>,
+      existing: Record<string, unknown>[] = [],
+    ) {
+      const listNotebooks = vi.fn().mockResolvedValue([]);
+      const listDocuments = vi.fn().mockResolvedValue(existing);
+      await render(NotebookDetailPage, {
+        providers: [
+          activatedRouteFor(NOTEBOOK_ID),
+          { provide: NotebooksService, useValue: { listNotebooks } },
+          { provide: DocumentsService, useValue: { listDocuments } },
+          chatServiceStub(),
+          { provide: DocumentTransferService, useValue: { uploadDocument } },
+          appEventsStub().provider,
+        ],
+      });
+      if (existing.length === 0) await screen.findByText('No Documents yet.');
+      else await screen.findByText(String(existing[0]['filename']));
+    }
+
+    function pick(files: File[]) {
+      const input = screen.getByLabelText('Upload Documents') as HTMLInputElement;
+      fireEvent.change(input, { target: { files } });
+    }
+
+    function panelRow(filename: string) {
+      const panel = screen.getByRole('list', { name: 'Upload progress' });
+      return within(panel)
+        .getAllByRole('listitem')
+        .find((row) => within(row).queryByText(filename) !== null)!;
+    }
+
+    const dialog = () => screen.queryByRole('dialog', { name: 'Document already exists' });
+    const findDialog = () => screen.findByRole('dialog', { name: 'Document already exists' });
+    const sentNames = (uploadDocument: ReturnType<typeof vi.fn>) =>
+      uploadDocument.mock.calls.map(([, file]) => (file as File).name);
+
+    it('asks before sending a file whose name is an existing Document, and sends it on New Version', async () => {
+      const existing = documentFor('report.txt');
+      const uploadDocument = vi.fn().mockResolvedValue(newVersionOf(existing));
+      await renderWithUpload(uploadDocument, [existing]);
+
+      pick([new File(['x'], 'report.txt')]);
+
+      const open = await findDialog();
+      expect(within(open).getByText(/"report\.txt" already exists in this Notebook/)).toBeTruthy();
+      expect(within(open).getByRole('button', { name: 'New Version' })).toBeTruthy();
+      expect(within(open).getByRole('button', { name: 'Skip' })).toBeTruthy();
+      expect(
+        within(open).getByRole('checkbox', { name: 'Apply to all remaining conflicts' }),
+      ).toBeTruthy();
+      // Nothing is sent until the user answers.
+      expect(uploadDocument).not.toHaveBeenCalled();
+      expect(within(panelRow('report.txt')).getByText('waiting')).toBeTruthy();
+
+      fireEvent.click(within(open).getByRole('button', { name: 'New Version' }));
+
+      expect(
+        await screen.findByText('1 uploaded (1 as new Versions), 0 skipped, 0 failed'),
+      ).toBeTruthy();
+      expect(dialog()).toBeNull();
+      expect(uploadDocument).toHaveBeenCalledTimes(1);
+      expect(within(panelRow('report.txt')).getByText('new version')).toBeTruthy();
+      // The card is replaced, not duplicated.
+      const cards = screen.getByRole('list', { name: 'Documents' });
+      expect(within(cards).getAllByText('report.txt')).toHaveLength(1);
+      expect(within(cards).getByText('v2')).toBeTruthy();
     });
   });
 
