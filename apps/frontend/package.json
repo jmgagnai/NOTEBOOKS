@@ -7,7 +7,8 @@
     "build": "NG_BUILD_SASS_EMBEDDED=false ng build",
     "watch": "NG_BUILD_SASS_EMBEDDED=false ng build --watch --configuration development",
     "test": "NG_BUILD_SASS_EMBEDDED=false ng test --watch=false",
-    "openapi:generate": "ng-openapi-gen --config ng-openapi-gen.json"
+    "openapi:generate": "ng-openapi-gen --config ng-openapi-gen.json",
+    "icons:generate": "node scripts/generate-fluent-icons.mjs && prettier --write src/app/shared/fluent-icons.generated.ts"
   },
   "private": true,
   "packageManager": "pnpm@12.9.1",
@@ -30,6 +31,7 @@
     "@angular/build": "^22.2.1",
     "@angular/cli": "^22.2.1",
     "@angular/compiler-cli": "^22.2.0",
+    "@fluentui/svg-icons": "^1.1.343",
     "@testing-library/angular": "^19.5.0",
     "@testing-library/dom": "^10.4.2",
     "jsdom": "^30.0.0",

@@ -22,12 +22,6 @@
     padding: 0 12px 0 8px;
   }
 
-  // The icon button's placeholder glyph (NBK-31 brings the icon set).
-  &__glyph {
-    font-size: 20px;
-    line-height: 1;
-  }
-
   &__crumb {
     color: var(--mat-sys-on-surface-variant);
     white-space: nowrap;

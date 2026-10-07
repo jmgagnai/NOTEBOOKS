@@ -1,5 +1,6 @@
 import { Component, inject, OnInit } from '@angular/core';
 import { Router, RouterOutlet } from '@angular/router';
+import { MatIconModule } from '@angular/material/icon';
 import { MatMenuModule } from '@angular/material/menu';
 import { MatToolbarModule } from '@angular/material/toolbar';
 import { AuthStore } from './auth/auth.store';
@@ -13,7 +14,7 @@ import { Avatar } from './shared/avatar';
  * this component only reflects the session state once resolved.
  */
 @Component({
-  imports: [Avatar, MatMenuModule, MatToolbarModule, RouterOutlet],
+  imports: [Avatar, MatIconModule, MatMenuModule, MatToolbarModule, RouterOutlet],
   selector: 'app-root',
   styleUrl: './app.scss',
   templateUrl: './app.html',

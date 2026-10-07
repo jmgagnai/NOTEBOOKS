@@ -8,6 +8,7 @@ import { ChatService } from '../api/services/chat.service';
 import { DocumentsService } from '../api/services/documents.service';
 import { DocumentTransferService } from '../documents/document-transfer.service';
 import { AppEvent, AppEventsService } from '../events/app-events.service';
+import { provideAppIcons } from '../shared/fluent-icons';
 
 const NOTEBOOK_ID = '11111111-1111-1111-1111-111111111111';
 
@@ -138,6 +139,7 @@ async function renderWithUpload(
   const result = await render(NotebookDetailPage, {
     providers: [
       activatedRouteFor(NOTEBOOK_ID),
+      provideAppIcons(),
       { provide: NotebooksService, useValue: { listNotebooks } },
       { provide: DocumentsService, useValue: { listDocuments } },
       chatServiceStub(),
@@ -203,6 +205,7 @@ describe('NotebookDetailPage', () => {
     await render(NotebookDetailPage, {
       providers: [
         activatedRouteFor(NOTEBOOK_ID),
+        provideAppIcons(),
         { provide: NotebooksService, useValue: { listNotebooks } },
         { provide: DocumentsService, useValue: { listDocuments } },
         chatServiceStub(),
@@ -224,6 +227,7 @@ describe('NotebookDetailPage', () => {
     await render(NotebookDetailPage, {
       providers: [
         activatedRouteFor(NOTEBOOK_ID),
+        provideAppIcons(),
         { provide: NotebooksService, useValue: { listNotebooks } },
         { provide: DocumentsService, useValue: { listDocuments } },
         chatServiceStub(),
@@ -257,6 +261,7 @@ describe('NotebookDetailPage', () => {
     await render(NotebookDetailPage, {
       providers: [
         activatedRouteFor(NOTEBOOK_ID),
+        provideAppIcons(),
         { provide: NotebooksService, useValue: { listNotebooks } },
         { provide: DocumentsService, useValue: { listDocuments } },
         chatServiceStub(),
@@ -1338,6 +1343,7 @@ describe('NotebookDetailPage', () => {
     await render(NotebookDetailPage, {
       providers: [
         activatedRouteFor(NOTEBOOK_ID),
+        provideAppIcons(),
         { provide: NotebooksService, useValue: { listNotebooks } },
         { provide: DocumentsService, useValue: { listDocuments, deleteDocument, restoreDocument } },
         chatServiceStub(),
@@ -1369,6 +1375,7 @@ describe('NotebookDetailPage', () => {
     await render(NotebookDetailPage, {
       providers: [
         activatedRouteFor(NOTEBOOK_ID),
+        provideAppIcons(),
         { provide: NotebooksService, useValue: { listNotebooks } },
         { provide: DocumentsService, useValue: { listDocuments, deleteDocument } },
         chatServiceStub(),
@@ -1394,6 +1401,7 @@ describe('NotebookDetailPage', () => {
     await render(NotebookDetailPage, {
       providers: [
         activatedRouteFor(NOTEBOOK_ID),
+        provideAppIcons(),
         { provide: NotebooksService, useValue: { listNotebooks } },
         { provide: DocumentsService, useValue: { listDocuments, deleteDocument } },
         chatServiceStub(),
@@ -1438,6 +1446,7 @@ describe('NotebookDetailPage', () => {
     await render(NotebookDetailPage, {
       providers: [
         activatedRouteFor(NOTEBOOK_ID),
+        provideAppIcons(),
         { provide: NotebooksService, useValue: { listNotebooks } },
         { provide: DocumentsService, useValue: { listDocuments } },
         chatServiceStub(),
@@ -1510,6 +1519,7 @@ describe('NotebookDetailPage', () => {
     await render(NotebookDetailPage, {
       providers: [
         activatedRouteFor(NOTEBOOK_ID),
+        provideAppIcons(),
         { provide: NotebooksService, useValue: { listNotebooks } },
         { provide: DocumentsService, useValue: { listDocuments } },
         chatServiceStub(),
@@ -1565,6 +1575,7 @@ describe('NotebookDetailPage', () => {
     await render(NotebookDetailPage, {
       providers: [
         activatedRouteFor(NOTEBOOK_ID),
+        provideAppIcons(),
         { provide: NotebooksService, useValue: { listNotebooks } },
         { provide: DocumentsService, useValue: { listDocuments } },
         chatServiceStub(),
@@ -1622,6 +1633,7 @@ describe('NotebookDetailPage', () => {
       await render(NotebookDetailPage, {
         providers: [
           activatedRouteFor(NOTEBOOK_ID),
+          provideAppIcons(),
           { provide: NotebooksService, useValue: { listNotebooks } },
           { provide: DocumentsService, useValue: { listDocuments } },
           chatServiceStub(),
@@ -1652,6 +1664,7 @@ describe('NotebookDetailPage', () => {
       await render(NotebookDetailPage, {
         providers: [
           activatedRouteFor(NOTEBOOK_ID),
+          provideAppIcons(),
           { provide: NotebooksService, useValue: { listNotebooks } },
           { provide: DocumentsService, useValue: { listDocuments } },
           chatServiceStub(),
@@ -1687,6 +1700,7 @@ describe('NotebookDetailPage', () => {
       await render(NotebookDetailPage, {
         providers: [
           activatedRouteFor(NOTEBOOK_ID),
+          provideAppIcons(),
           { provide: NotebooksService, useValue: { listNotebooks } },
           { provide: DocumentsService, useValue: { listDocuments, getDocument } },
           chatServiceStub(),
@@ -1751,6 +1765,7 @@ describe('NotebookDetailPage', () => {
     await render(NotebookDetailPage, {
       providers: [
         activatedRouteFor(NOTEBOOK_ID),
+        provideAppIcons(),
         { provide: NotebooksService, useValue: { listNotebooks } },
         { provide: DocumentsService, useValue: { listDocuments } },
         chatServiceStub(),
@@ -1774,6 +1789,7 @@ describe('NotebookDetailPage', () => {
     await render(NotebookDetailPage, {
       providers: [
         activatedRouteFor(NOTEBOOK_ID),
+        provideAppIcons(),
         { provide: NotebooksService, useValue: { listNotebooks } },
         { provide: DocumentsService, useValue: { listDocuments } },
         { provide: DocumentTransferService, useValue: {} },
@@ -1813,6 +1829,7 @@ describe('NotebookDetailPage', () => {
       await render(NotebookDetailPage, {
         providers: [
           activatedRouteFor(NOTEBOOK_ID),
+          provideAppIcons(),
           { provide: NotebooksService, useValue: { listNotebooks, renameNotebook } },
           { provide: DocumentsService, useValue: { listDocuments } },
           chatServiceStub(),

@@ -137,6 +137,38 @@ the status's *tone* (`statusTone`), carried as a class on the host:
 Tests query the badge by its label text and read the tone class off the same
 element; nothing asserts a colour.
 
+## Icons
+
+The icon set is Fluent UI System Icons (MIT), regular style on a 20 px grid,
+registered as inline SVG literals in Material's `MatIconRegistry` by
+`provideAppIcons()` (`apps/frontend/src/app/shared/fluent-icons.ts`, listed
+in `app.config.ts`; NBK-31, spec 01 "Icons"). A template imports
+`MatIconModule` and uses an icon by name:
+
+```html
+<mat-icon svgIcon="arrow-left" />
+```
+
+Registered names: `add`, `search`, `more-horizontal`, `delete`,
+`arrow-download`, `open`, `send`, `rename`, `chevron-down`, `notebook`,
+`document`, `sparkle`, `dismiss`, `checkmark`, `warning`, `arrow-left`,
+`panel-right-contract`, `panel-right-expand`, `sign-out`. `FluentIconName`
+is the union of them. An unknown name renders an empty icon and logs through
+the `ErrorHandler`; it does not break the page.
+
+`mat-icon` is 20 px globally (and 20 px inside menu items), matching the
+icon button's `icon-size`. The icon is `aria-hidden`; an icon-only control
+carries its accessible name itself (`aria-label` plus a `matTooltip`), and an
+icon beside a label adds nothing to the name.
+
+The literals live in `fluent-icons.generated.ts`, written by
+`pnpm --filter frontend icons:generate` from the `@fluentui/svg-icons` dev
+dependency (`apps/frontend/scripts/generate-fluent-icons.mjs` holds the name
+list). The MIT notice is `fluent-icons.LICENSE.md` beside them. To add an
+icon, add its name to the script and regenerate; never edit the generated
+file. Nothing is fetched from Google Fonts any more: `index.html` carries no
+`<link>` to it.
+
 ## Material components with Fluent overrides
 
 - `mat-toolbar`: white, text colour, 48 px (`--app-title-bar-height`), 1 px
