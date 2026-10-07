@@ -551,6 +551,7 @@ describe('NotebookDetailPage', () => {
 
     const dialog = () => screen.queryByRole('dialog', { name: 'Document already exists' });
     const findDialog = () => screen.findByRole('dialog', { name: 'Document already exists' });
+    const findDialogSync = () => screen.getByRole('dialog', { name: 'Document already exists' });
     const sentNames = (uploadDocument: ReturnType<typeof vi.fn>) =>
       uploadDocument.mock.calls.map(([, file]) => (file as File).name);
 
@@ -664,6 +665,97 @@ describe('NotebookDetailPage', () => {
       expect(sentNames(uploadDocument)).toEqual(['a.txt', 'b.txt']);
       const cards = screen.getByRole('list', { name: 'Documents' });
       expect(within(cards).getAllByText('v2')).toHaveLength(2);
+    });
+
+    it('keeps 3 non-conflicting files in flight while a dialog is open, and shows one dialog at a time', async () => {
+      const existing = ['a.txt', 'b.txt'].map((name) => documentFor(name));
+      const inFlight = new Map<string, ReturnType<typeof deferred<Record<string, unknown>>>>();
+      const uploadDocument = vi.fn().mockImplementation((_notebookId: string, file: File) => {
+        const request = deferred<Record<string, unknown>>();
+        inFlight.set(file.name, request);
+        return request.promise;
+      });
+      await renderWithUpload(uploadDocument, existing);
+
+      // Two conflicts first in selection order, then four plain files.
+      pick(
+        ['a.txt', 'b.txt', '1.txt', '2.txt', '3.txt', '4.txt'].map((name) => new File(['x'], name)),
+      );
+
+      // The dialog is about the first conflict only, and while it is open
+      // the plain files fill all 3 slots — the two files awaiting an answer
+      // hold none.
+      const first = await findDialog();
+      expect(within(first).getByText(/"a\.txt" already exists/)).toBeTruthy();
+      expect(within(first).queryByText(/b\.txt/)).toBeNull();
+      await waitFor(() => expect(uploadDocument).toHaveBeenCalledTimes(3));
+      expect(sentNames(uploadDocument)).toEqual(['1.txt', '2.txt', '3.txt']);
+      expect(screen.getAllByRole('dialog')).toHaveLength(1);
+
+      // A slot freeing up goes to the next plain file, not to a file still
+      // waiting on its dialog.
+      inFlight.get('2.txt')!.resolve(documentFor('2.txt'));
+      await waitFor(() => expect(uploadDocument).toHaveBeenCalledTimes(4));
+      expect(sentNames(uploadDocument)[3]).toBe('4.txt');
+      expect(dialog()).toBe(first);
+
+      // Answering the first conflict brings up the second — still one dialog.
+      fireEvent.click(within(first).getByRole('button', { name: 'New Version' }));
+      await waitFor(() =>
+        expect(within(findDialogSync()).getByText(/"b\.txt" already exists/)).toBeTruthy(),
+      );
+      expect(screen.getAllByRole('dialog')).toHaveLength(1);
+      // a.txt is now sendable, but every slot is taken; it goes out once one
+      // frees up.
+      expect(uploadDocument).toHaveBeenCalledTimes(4);
+      inFlight.get('1.txt')!.resolve(documentFor('1.txt'));
+      await waitFor(() => expect(uploadDocument).toHaveBeenCalledTimes(5));
+      expect(sentNames(uploadDocument)[4]).toBe('a.txt');
+
+      fireEvent.click(within(findDialogSync()).getByRole('button', { name: 'Skip' }));
+      await waitFor(() => expect(dialog()).toBeNull());
+      inFlight.get('a.txt')!.resolve(newVersionOf(existing[0]));
+      for (const name of ['3.txt', '4.txt']) inFlight.get(name)!.resolve(documentFor(name));
+
+      expect(
+        await screen.findByText('5 uploaded (1 as new Versions), 1 skipped, 0 failed'),
+      ).toBeTruthy();
+      expect(uploadDocument).toHaveBeenCalledTimes(5);
+    });
+
+    // A soft-deleted Document is not in the list the page holds (`GET
+    // .../documents` never returns one), so a name only it had is no
+    // conflict: the file goes straight out and lands as a new Document.
+    it('uploads a file whose name matches only a deleted Document without asking', async () => {
+      const uploadDocument = vi
+        .fn()
+        .mockImplementation((_notebookId: string, file: File) =>
+          Promise.resolve(documentFor(file.name)),
+        );
+      await renderWithUpload(uploadDocument, [documentFor('kept.txt')]);
+
+      pick([new File(['x'], 'deleted-earlier.txt')]);
+
+      expect(await screen.findByText('1 uploaded, 0 skipped, 0 failed')).toBeTruthy();
+      expect(dialog()).toBeNull();
+      expect(sentNames(uploadDocument)).toEqual(['deleted-earlier.txt']);
+      expect(within(panelRow('deleted-earlier.txt')).getByText('uploaded')).toBeTruthy();
+    });
+
+    it('asks the same question for a single-file upload', async () => {
+      const existing = documentFor('only.txt');
+      const uploadDocument = vi.fn().mockResolvedValue(newVersionOf(existing));
+      await renderWithUpload(uploadDocument, [existing]);
+
+      pick([new File(['x'], 'only.txt')]);
+
+      const open = await findDialog();
+      expect(within(open).getByText(/"only\.txt" already exists/)).toBeTruthy();
+      expect(uploadDocument).not.toHaveBeenCalled();
+      fireEvent.click(within(open).getByRole('button', { name: 'Skip' }));
+
+      expect(await screen.findByText('0 uploaded, 1 skipped, 0 failed')).toBeTruthy();
+      expect(uploadDocument).not.toHaveBeenCalled();
     });
   });
 
