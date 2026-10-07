@@ -1,13 +1,4 @@
-<div class="notebook-detail-page" [class.notebook-detail-page--drag-over]="dragOver()">
-  <!--
-    The drag-over state (NBK-18): the whole page is still the drop target
-    until NBK-36 moves it to the Documents panel, so the whole workspace
-    lights up and says what a drop will do.
-  -->
-  @if (dragOver()) {
-    <p class="notebook-detail-page__drop-hint">Drop files to upload them into this Notebook</p>
-  }
-
+<div class="notebook-detail-page">
   <!--
     The page header (NBK-35): where the user is ("Notebooks › title"), the way
     back, and the two Notebook-level actions. 48 px, like the title bar above
@@ -124,10 +115,20 @@
       <app-thread-view [notebookId]="notebookId" />
     </section>
 
+    <!--
+      The drop target (NBK-18, moved here in NBK-36): the page still listens
+      for the drag — files dropped anywhere on it land in this Notebook — but
+      it is the Documents panel that lights up and says so, since that is
+      where the upload shows up.
+    -->
     <aside
       class="notebook-detail-page__panel notebook-detail-page__panel--documents"
+      [class.notebook-detail-page__panel--drag-over]="dragOver()"
       aria-label="Documents"
     >
+      @if (dragOver()) {
+        <p class="notebook-detail-page__drop-hint">Drop files to upload them into this Notebook</p>
+      }
       <div class="notebook-detail-page__panel-head">
         <h2 class="notebook-detail-page__panel-title">Documents</h2>
       </div>
