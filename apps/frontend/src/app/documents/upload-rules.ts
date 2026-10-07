@@ -26,9 +26,10 @@ export const UPLOAD_ACCEPT = ACCEPTED_UPLOAD_EXTENSIONS.join(',');
 const ACCEPTED_TYPES_DESCRIPTION = 'text, Markdown, DOCX, Excel (.xlsx), CSV, and PDF';
 
 /**
- * The per-file limit. Must agree with the backend's multipart limit
- * (NBK-15), which is what actually refuses a larger file with 413; this
- * check only spares the user the wait.
+ * The per-file limit. Must agree with `MAX_UPLOAD_FILE_BYTES` in
+ * apps/backend/src/documents/upload-limit.ts (NBK-15), which is what
+ * actually refuses a larger file with 413; this check only spares the user
+ * the wait.
  */
 export const MAX_UPLOAD_FILE_BYTES = 50 * 1024 * 1024;
 
