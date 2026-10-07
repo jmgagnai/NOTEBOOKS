@@ -1,3 +1,4 @@
+import './env.js';
 import { buildApp } from './app.js';
 import { runMigrations } from './db/migrate.js';
 import { createPool } from './db/pool.js';

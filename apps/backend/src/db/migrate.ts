@@ -48,6 +48,9 @@ export async function runMigrations(pool: Pool): Promise<void> {
 }
 
 async function main() {
+  // Only the CLI reads `.env`; the server imports it first itself, and tests
+  // (which import `runMigrations` from here) must stay on their own settings.
+  await import('../env.js');
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
     throw new Error('DATABASE_URL must be set to run migrations');

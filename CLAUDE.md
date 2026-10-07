@@ -10,7 +10,8 @@ either, while running the backend is not:
   for metadata and the three summaries, stage 3 for chunk embeddings, chat
   twice per question (once to embed the question for retrieval, once to
   generate the answer), and search once per query to embed it — so
-  `OPENROUTER_API_KEY` must be in `.env`. Without it the backend starts and
+  `OPENROUTER_API_KEY` must be in the repo-root `.env`, which the backend
+  loads at startup. Without it the backend starts and
   says so, but Documents stop at the `converted` status instead of reaching
   `ready`, and asking a question in a Chat Thread or running a search reports
   503. See `docs/ingestion-summaries.md`, `docs/ingestion-embeddings.md` and
