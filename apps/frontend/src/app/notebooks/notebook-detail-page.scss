@@ -155,47 +155,6 @@
     flex: 1;
   }
 
-  &__badge {
-    font-size: var(--mat-sys-body-small-size);
-    text-transform: uppercase;
-    letter-spacing: 0.02em;
-    padding: 0.125rem 0.5rem;
-    border-radius: 1rem;
-    background: var(--mat-sys-secondary-container);
-    color: var(--mat-sys-on-secondary-container);
-
-    // Ingestion outcomes (NBK-6, NBK-7, NBK-8) need to be distinguishable at
-    // a glance — a failed conversion must not look like a finished one. The
-    // in-progress statuses (queued, converting, summarizing, indexing) keep
-    // the neutral default. "converted" and "summarized" are *stage*
-    // boundaries, not the end of ingestion, so they share a finished-a-step
-    // look.
-    // The upload panel (NBK-16) reuses the badge: a landed file (uploaded,
-    // or as a new Version) reads as a finished step, a failed request as a
-    // failure, and waiting/uploading/skipped keep the neutral default.
-    &--converted,
-    &--summarized,
-    &--uploaded,
-    &--new-version {
-      background: var(--mat-sys-tertiary-container);
-      color: var(--mat-sys-on-tertiary-container);
-    }
-
-    // "ready" is the end of the pipeline, and the only status that means the
-    // Document is safe to rely on for chat (NBK-8). It gets its own, stronger
-    // treatment so it can't be read as "another stage done".
-    &--ready {
-      background: var(--mat-sys-primary);
-      color: var(--mat-sys-on-primary);
-      font-weight: 600;
-    }
-
-    &--failed {
-      background: var(--mat-sys-error-container);
-      color: var(--mat-sys-on-error-container);
-    }
-  }
-
   &__version {
     color: var(--mat-sys-on-surface-variant);
     font: var(--mat-sys-body-small);

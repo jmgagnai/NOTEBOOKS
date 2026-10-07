@@ -213,7 +213,7 @@ describe('NotebookDetailPage', () => {
 
     expect(await screen.findByText('Research')).toBeTruthy();
     expect(await screen.findByText('report.txt')).toBeTruthy();
-    expect(screen.getByText('queued')).toBeTruthy();
+    expect(screen.getByText('Queued')).toBeTruthy();
     expect(screen.getByText('v1')).toBeTruthy();
   });
 
@@ -357,14 +357,14 @@ describe('NotebookDetailPage', () => {
       pick(['1.txt', '2.txt', '3.txt', '4.txt'].map(fileNamed));
 
       await screen.findByText('4.txt');
-      expect(within(panelRow('1.txt')).getByText('uploading')).toBeTruthy();
-      expect(within(panelRow('4.txt')).getByText('waiting')).toBeTruthy();
+      expect(within(panelRow('1.txt')).getByText('Uploading')).toBeTruthy();
+      expect(within(panelRow('4.txt')).getByText('Waiting')).toBeTruthy();
       // No summary while files are still moving.
       expect(screen.queryByText(/uploaded, .* skipped, .* failed/)).toBeNull();
 
       inFlight[0].resolve(documentFor('1.txt'));
-      expect(await within(panelRow('1.txt')).findByText('uploaded')).toBeTruthy();
-      expect(await within(panelRow('4.txt')).findByText('uploading')).toBeTruthy();
+      expect(await within(panelRow('1.txt')).findByText('Uploaded')).toBeTruthy();
+      expect(await within(panelRow('4.txt')).findByText('Uploading')).toBeTruthy();
     });
 
     // Filtering happens in the browser before anything is sent, so a stray
@@ -385,14 +385,14 @@ describe('NotebookDetailPage', () => {
 
       expect(await screen.findByText('1 uploaded, 2 skipped, 0 failed')).toBeTruthy();
       const photo = panelRow('photo.png');
-      expect(within(photo).getByText('skipped')).toBeTruthy();
+      expect(within(photo).getByText('Skipped')).toBeTruthy();
       expect(
         within(photo).getByText(
           'Unsupported file type. Accepted types: text, Markdown, DOCX, Excel (.xlsx), CSV, and PDF.',
         ),
       ).toBeTruthy();
       const legacy = panelRow('legacy.xls');
-      expect(within(legacy).getByText('skipped')).toBeTruthy();
+      expect(within(legacy).getByText('Skipped')).toBeTruthy();
       expect(within(legacy).getByText(/Re-save it as \.xlsx/)).toBeTruthy();
       expect(uploadDocument).toHaveBeenCalledTimes(1);
       expect((uploadDocument.mock.calls[0][1] as File).name).toBe('fine.pdf');
@@ -414,7 +414,7 @@ describe('NotebookDetailPage', () => {
 
       expect(await screen.findByText('1 uploaded, 1 skipped, 0 failed')).toBeTruthy();
       expect(within(panelRow('huge.pdf')).getByText(/50 MiB/)).toBeTruthy();
-      expect(within(panelRow('at-limit.pdf')).getByText('uploaded')).toBeTruthy();
+      expect(within(panelRow('at-limit.pdf')).getByText('Uploaded')).toBeTruthy();
       expect(uploadDocument).toHaveBeenCalledTimes(1);
       expect((uploadDocument.mock.calls[0][1] as File).name).toBe('at-limit.pdf');
     });
@@ -435,8 +435,8 @@ describe('NotebookDetailPage', () => {
       const rows = within(screen.getByRole('list', { name: 'Upload progress' })).getAllByRole(
         'listitem',
       );
-      expect(within(rows[0]).getByText('uploaded')).toBeTruthy();
-      expect(within(rows[1]).getByText('skipped')).toBeTruthy();
+      expect(within(rows[0]).getByText('Uploaded')).toBeTruthy();
+      expect(within(rows[1]).getByText('Skipped')).toBeTruthy();
       expect(within(rows[1]).getByText(/duplicate/i)).toBeTruthy();
       // The first one wins.
       expect(uploadDocument).toHaveBeenCalledTimes(1);
@@ -476,7 +476,12 @@ describe('NotebookDetailPage', () => {
 
       expect(await screen.findByText('1 uploaded, 0 skipped, 1 failed')).toBeTruthy();
       const bad = panelRow('bad.txt');
-      expect(within(bad).getByText('failed')).toBeTruthy();
+      // The panel reuses the Document status badge (NBK-32): a request that
+      // did not land reads as a failure, a landed one as finished.
+      expect(within(bad).getByText('Failed').className).toContain('app-badge--error');
+      expect(within(panelRow('good.txt')).getByText('Uploaded').className).toContain(
+        'app-badge--success',
+      );
       expect(within(bad).getByText('Storage is unavailable.')).toBeTruthy();
       // The failure stays in the panel; it does not replace the Document list
       // with an error banner, and the other file still landed.
@@ -509,8 +514,10 @@ describe('NotebookDetailPage', () => {
       expect(
         await screen.findByText('2 uploaded (1 as new Versions), 0 skipped, 0 failed'),
       ).toBeTruthy();
-      expect(within(panelRow('report.txt')).getByText('new version')).toBeTruthy();
-      expect(within(panelRow('fresh.txt')).getByText('uploaded')).toBeTruthy();
+      expect(within(panelRow('report.txt')).getByText('New version').className).toContain(
+        'app-badge--success',
+      );
+      expect(within(panelRow('fresh.txt')).getByText('Uploaded')).toBeTruthy();
 
       const cards = screen.getByRole('list', { name: 'Documents' });
       // One card for report.txt, now at v2 — not a duplicate.
@@ -549,11 +556,11 @@ describe('NotebookDetailPage', () => {
       // in flight, the fourth waiting for a slot.
       await waitFor(() => expect(uploads.uploadDocument).toHaveBeenCalledTimes(8));
       expect(uploads.sentNames().slice(5)).toEqual(['bad1.txt', 'bad2.txt', 'bad3.txt']);
-      expect(within(panelRow('bad4.txt')).getByText('waiting')).toBeTruthy();
+      expect(within(panelRow('bad4.txt')).getByText('Waiting')).toBeTruthy();
       expect(screen.queryByText(/uploaded, .* skipped, .* failed/)).toBeNull();
       // The file that landed and the one that was skipped are untouched.
-      expect(within(panelRow('good.txt')).getByText('uploaded')).toBeTruthy();
-      expect(within(panelRow('photo.png')).getByText('skipped')).toBeTruthy();
+      expect(within(panelRow('good.txt')).getByText('Uploaded')).toBeTruthy();
+      expect(within(panelRow('photo.png')).getByText('Skipped')).toBeTruthy();
 
       uploads.inFlight[5].request.resolve(documentFor('bad1.txt'));
       await waitFor(() => expect(uploads.uploadDocument).toHaveBeenCalledTimes(9));
@@ -584,12 +591,12 @@ describe('NotebookDetailPage', () => {
       // The two that had not gone out are stopped, and say why.
       for (const name of ['4.txt', '5.txt']) {
         const row = panelRow(name);
-        expect(await within(row).findByText('skipped')).toBeTruthy();
+        expect(await within(row).findByText('Skipped')).toBeTruthy();
         expect(within(row).getByText(/cancelled/i)).toBeTruthy();
       }
       // The three in flight are left alone — neither aborted nor re-sent —
       // and still land when they finish.
-      expect(within(panelRow('1.txt')).getByText('uploading')).toBeTruthy();
+      expect(within(panelRow('1.txt')).getByText('Uploading')).toBeTruthy();
       expect(screen.queryByText(/uploaded, .* skipped, .* failed/)).toBeNull();
       for (const name of ['1.txt', '2.txt', '3.txt']) uploads.land(name);
 
@@ -613,7 +620,7 @@ describe('NotebookDetailPage', () => {
 
       uploads.land('1.txt');
       // One file landing does not free the picker; the batch is still running.
-      await within(panelRow('1.txt')).findByText('uploaded');
+      await within(panelRow('1.txt')).findByText('Uploaded');
       expect(input.disabled).toBe(true);
 
       uploads.land('2.txt');
@@ -678,7 +685,7 @@ describe('NotebookDetailPage', () => {
       expect(closingTab()).toEqual({ prevented: true, returnValue: '' });
 
       uploads.land('1.txt');
-      await within(panelRow('1.txt')).findByText('uploaded');
+      await within(panelRow('1.txt')).findByText('Uploaded');
       expect(closingTab()).toEqual({ prevented: true, returnValue: '' });
 
       uploads.land('2.txt');
@@ -730,8 +737,8 @@ describe('NotebookDetailPage', () => {
       await navigate(`/notebooks/${NOTEBOOK_ID}`);
       // ...the batch is still shown, in progress, with what landed meanwhile...
       const panel = await screen.findByRole('list', { name: 'Upload progress' });
-      expect(within(panelRow('1.txt')).getByText('uploaded')).toBeTruthy();
-      expect(within(panelRow('2.txt')).getByText('uploading')).toBeTruthy();
+      expect(within(panelRow('1.txt')).getByText('Uploaded')).toBeTruthy();
+      expect(within(panelRow('2.txt')).getByText('Uploading')).toBeTruthy();
       expect(within(panel).getAllByRole('listitem')).toHaveLength(2);
       expect(screen.getByRole('button', { name: 'Cancel' })).toBeTruthy();
       expect((screen.getByLabelText('Upload Documents') as HTMLInputElement).disabled).toBe(true);
@@ -786,7 +793,7 @@ describe('NotebookDetailPage', () => {
 
       pick(['1.txt', '2.txt', '3.txt', 'notes.txt'].map(fileNamed));
       await waitFor(() => expect(uploads.uploadDocument).toHaveBeenCalledTimes(3));
-      expect(within(panelRow('notes.txt')).getByText('waiting')).toBeTruthy();
+      expect(within(panelRow('notes.txt')).getByText('Waiting')).toBeTruthy();
 
       // Through another page, as the app goes through the Notebooks list: the
       // router reuses the page between two Notebooks on the same route.
@@ -815,13 +822,13 @@ describe('NotebookDetailPage', () => {
       expect(
         listDocuments.mock.calls.filter(([args]) => args.notebookId === NOTEBOOK_ID),
       ).toHaveLength(2);
-      expect(within(panelRow('1.txt')).getByText('uploaded')).toBeTruthy();
-      expect(within(panelRow('notes.txt')).getByText('uploading')).toBeTruthy();
+      expect(within(panelRow('1.txt')).getByText('Uploaded')).toBeTruthy();
+      expect(within(panelRow('notes.txt')).getByText('Uploading')).toBeTruthy();
       expect(screen.queryByRole('dialog', { name: 'Document already exists' })).toBeNull();
 
       for (const name of ['2.txt', '3.txt', 'notes.txt']) uploads.land(name);
       expect(await screen.findByText('4 uploaded, 0 skipped, 0 failed')).toBeTruthy();
-      expect(within(panelRow('notes.txt')).getByText('uploaded')).toBeTruthy();
+      expect(within(panelRow('notes.txt')).getByText('Uploaded')).toBeTruthy();
       expect(within(cards).getAllByText('notes.txt')).toHaveLength(1);
       expect(within(cards).getAllByText('1.txt')).toHaveLength(1);
     });
@@ -868,7 +875,7 @@ describe('NotebookDetailPage', () => {
       );
       for (const name of ['report.txt', '4.txt']) {
         const row = panelRow(name);
-        expect(await within(row).findByText('skipped')).toBeTruthy();
+        expect(await within(row).findByText('Skipped')).toBeTruthy();
         expect(within(row).getByText(/cancelled/i)).toBeTruthy();
       }
       // The three in flight still land, and the batch reaches its summary.
@@ -997,13 +1004,13 @@ describe('NotebookDetailPage', () => {
 
       expect(await screen.findByText('1 uploaded, 1 skipped, 0 failed')).toBeTruthy();
       const folder = panelRow('photos');
-      expect(within(folder).getByText('skipped')).toBeTruthy();
+      expect(within(folder).getByText('Skipped')).toBeTruthy();
       expect(
         within(folder).getByText(
           "Folders can't be uploaded. Open the folder and select its files instead.",
         ),
       ).toBeTruthy();
-      expect(within(panelRow('report.txt')).getByText('uploaded')).toBeTruthy();
+      expect(within(panelRow('report.txt')).getByText('Uploaded')).toBeTruthy();
       expect(uploadDocument.mock.calls).toEqual([[NOTEBOOK_ID, report]]);
     });
 
@@ -1016,7 +1023,7 @@ describe('NotebookDetailPage', () => {
         dataTransfer: dataTransferOf([new File(['x'], 'first.txt')]),
       });
       await screen.findByText('first.txt');
-      expect(within(panelRow('first.txt')).getByText('uploading')).toBeTruthy();
+      expect(within(panelRow('first.txt')).getByText('Uploading')).toBeTruthy();
 
       // With first.txt still in flight, a second drag gets no welcome...
       const second = dataTransferOf([new File(['x'], 'second.txt')]);
@@ -1086,7 +1093,7 @@ describe('NotebookDetailPage', () => {
       ).toBeTruthy();
       // Nothing is sent until the user answers.
       expect(uploadDocument).not.toHaveBeenCalled();
-      expect(within(panelRow('report.txt')).getByText('waiting')).toBeTruthy();
+      expect(within(panelRow('report.txt')).getByText('Waiting')).toBeTruthy();
 
       fireEvent.click(within(open).getByRole('button', { name: 'New Version' }));
 
@@ -1095,7 +1102,7 @@ describe('NotebookDetailPage', () => {
       ).toBeTruthy();
       expect(dialog()).toBeNull();
       expect(uploadDocument).toHaveBeenCalledTimes(1);
-      expect(within(panelRow('report.txt')).getByText('new version')).toBeTruthy();
+      expect(within(panelRow('report.txt')).getByText('New version')).toBeTruthy();
       // The card is replaced, not duplicated.
       const cards = screen.getByRole('list', { name: 'Documents' });
       expect(within(cards).getAllByText('report.txt')).toHaveLength(1);
@@ -1119,7 +1126,7 @@ describe('NotebookDetailPage', () => {
       expect(await screen.findByText('1 uploaded, 1 skipped, 0 failed')).toBeTruthy();
       expect(dialog()).toBeNull();
       const row = panelRow('report.txt');
-      expect(within(row).getByText('skipped')).toBeTruthy();
+      expect(within(row).getByText('Skipped')).toBeTruthy();
       expect(within(row).getByText(/name already exists/i)).toBeTruthy();
       expect(sentNames(uploadDocument)).toEqual(['fresh.txt']);
       // The existing Document is untouched: still one card, no v2 anywhere.
@@ -1151,7 +1158,7 @@ describe('NotebookDetailPage', () => {
       expect(await screen.findByText('1 uploaded, 3 skipped, 0 failed')).toBeTruthy();
       expect(dialog()).toBeNull();
       for (const name of ['a.txt', 'b.txt', 'c.txt']) {
-        expect(within(panelRow(name)).getByText('skipped')).toBeTruthy();
+        expect(within(panelRow(name)).getByText('Skipped')).toBeTruthy();
         expect(within(panelRow(name)).getByText(/name already exists/i)).toBeTruthy();
       }
       expect(sentNames(uploadDocument)).toEqual(['fresh.txt']);
@@ -1252,7 +1259,7 @@ describe('NotebookDetailPage', () => {
       expect(await screen.findByText('1 uploaded, 0 skipped, 0 failed')).toBeTruthy();
       expect(dialog()).toBeNull();
       expect(sentNames(uploadDocument)).toEqual(['deleted-earlier.txt']);
-      expect(within(panelRow('deleted-earlier.txt')).getByText('uploaded')).toBeTruthy();
+      expect(within(panelRow('deleted-earlier.txt')).getByText('Uploaded')).toBeTruthy();
     });
 
     it('asks the same question for a single-file upload', async () => {
@@ -1349,7 +1356,7 @@ describe('NotebookDetailPage', () => {
     });
 
     await screen.findByText('thesis.pdf');
-    expect(screen.getByText('queued')).toBeTruthy();
+    expect(screen.getByText('Queued')).toBeTruthy();
     // Only this Notebook's events are asked for — by every store on the page
     // that follows the stream (Document statuses, and since NBK-11 the chat
     // panel's streamed answers). How *many* ask is not the point, and the
@@ -1366,7 +1373,7 @@ describe('NotebookDetailPage', () => {
       occurredAt: '2026-01-01T00:00:01.000Z',
       data: { documentId: 'doc-5', versionId: 'v-7', status: 'converting' },
     });
-    expect(await screen.findByText('converting')).toBeTruthy();
+    expect(await screen.findByText('Converting')).toBeTruthy();
 
     appEvents.events.next({
       id: 'event-2',
@@ -1375,10 +1382,11 @@ describe('NotebookDetailPage', () => {
       occurredAt: '2026-01-01T00:00:02.000Z',
       data: { documentId: 'doc-5', versionId: 'v-7', status: 'converted' },
     });
-    const badge = await screen.findByText('converted');
+    const badge = await screen.findByText('Converted');
     // The badge is styled by outcome, so a failed conversion can't be
-    // mistaken for a finished one at a glance.
-    expect(badge.className).toContain('notebook-detail-page__badge--converted');
+    // mistaken for a finished one at a glance: "converted" is a stage done,
+    // not the end of ingestion, so it reads as in progress (NBK-32).
+    expect(badge.className).toContain('app-badge--progress');
     // Nothing was re-fetched: the event alone drove the change.
     expect(listDocuments).toHaveBeenCalledTimes(1);
   });
@@ -1428,7 +1436,7 @@ describe('NotebookDetailPage', () => {
       occurredAt: '2026-01-01T00:00:01.000Z',
       data: { documentId: 'doc-9', versionId: 'v-9', status: 'indexing' },
     });
-    expect(await screen.findByText('indexing')).toBeTruthy();
+    expect(await screen.findByText('Indexing')).toBeTruthy();
 
     appEvents.events.next({
       id: 'event-2',
@@ -1437,8 +1445,8 @@ describe('NotebookDetailPage', () => {
       occurredAt: '2026-01-01T00:00:02.000Z',
       data: { documentId: 'doc-9', versionId: 'v-9', status: 'ready' },
     });
-    const badge = await screen.findByText('ready');
-    expect(badge.className).toContain('notebook-detail-page__badge--ready');
+    const badge = await screen.findByText('Ready');
+    expect(badge.className).toContain('app-badge--success');
     // The event alone drove it; nothing was re-fetched.
     expect(listDocuments).toHaveBeenCalledTimes(1);
   });
@@ -1487,8 +1495,8 @@ describe('NotebookDetailPage', () => {
       data: { documentId: 'doc-6', versionId: 'v-1', status: 'failed' },
     });
 
-    expect(screen.getByText('converted')).toBeTruthy();
-    expect(screen.queryByText('failed')).toBeNull();
+    expect(screen.getByText('Converted')).toBeTruthy();
+    expect(screen.queryByText('Failed')).toBeNull();
   });
 
   // NBK-7: "Document cards show the Abstract". Per GLOSSARY.md the Abstract
@@ -1597,7 +1605,7 @@ describe('NotebookDetailPage', () => {
       });
 
       await screen.findByText('quarterly.pdf');
-      expect(screen.getByText('converted')).toBeTruthy();
+      expect(screen.getByText('Converted')).toBeTruthy();
       expect(screen.getByText('Abstract not generated yet.')).toBeTruthy();
 
       appEvents.events.next({
@@ -1607,7 +1615,7 @@ describe('NotebookDetailPage', () => {
         occurredAt: '2026-01-01T00:00:01.000Z',
         data: { documentId: 'doc-7', versionId: 'v-11', status: 'summarizing' },
       });
-      expect(await screen.findByText('summarizing')).toBeTruthy();
+      expect(await screen.findByText('Summarizing')).toBeTruthy();
       // An in-progress stage is not a reason to re-read anything.
       expect(getDocument).not.toHaveBeenCalled();
 
@@ -1619,8 +1627,8 @@ describe('NotebookDetailPage', () => {
         data: { documentId: 'doc-7', versionId: 'v-11', status: 'summarized' },
       });
 
-      const badge = await screen.findByText('summarized');
-      expect(badge.className).toContain('notebook-detail-page__badge--summarized');
+      const badge = await screen.findByText('Summarized');
+      expect(badge.className).toContain('app-badge--progress');
       // The Abstract arrives from the re-read, not from the event.
       expect(await screen.findByText('The freshly generated Abstract.')).toBeTruthy();
       expect(getDocument).toHaveBeenCalledWith({ notebookId: NOTEBOOK_ID, documentId: 'doc-7' });

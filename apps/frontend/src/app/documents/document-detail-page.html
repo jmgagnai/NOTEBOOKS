@@ -17,10 +17,7 @@
         reader never has to work out which half of the page they are reading.
       -->
       <p class="document-detail-page__meta-line">
-        <span
-          [class]="'document-detail-page__badge document-detail-page__badge--' + document.status"
-          >{{ document.status }}</span
-        >
+        <app-status-badge [status]="document.status" />
         <span>v{{ document.version.versionNumber }}</span>
       </p>
 

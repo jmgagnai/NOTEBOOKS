@@ -25,27 +25,6 @@
     font: var(--mat-sys-body-small);
   }
 
-  &__badge {
-    font-size: var(--mat-sys-body-small-size);
-    text-transform: uppercase;
-    letter-spacing: 0.02em;
-    padding: 0.125rem 0.5rem;
-    border-radius: 1rem;
-    background: var(--mat-sys-secondary-container);
-    color: var(--mat-sys-on-secondary-container);
-
-    &--converted,
-    &--summarized {
-      background: var(--mat-sys-tertiary-container);
-      color: var(--mat-sys-on-tertiary-container);
-    }
-
-    &--failed {
-      background: var(--mat-sys-error-container);
-      color: var(--mat-sys-on-error-container);
-    }
-  }
-
   &__metadata {
     display: grid;
     grid-template-columns: max-content 1fr;
