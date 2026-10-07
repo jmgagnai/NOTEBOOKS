@@ -597,6 +597,37 @@ describe('NotebookDetailPage', () => {
       expect(within(cards).getByText('bad4.txt')).toBeTruthy();
       expect(within(cards).getAllByText('good.txt')).toHaveLength(1);
     });
+
+    it('stops the files not yet sent on Cancel, and lets the ones in flight land', async () => {
+      const uploads = heldUploads();
+      await renderWithUpload(uploads.uploadDocument);
+
+      pick(['1.txt', '2.txt', '3.txt', '4.txt', '5.txt']);
+      await waitFor(() => expect(uploads.uploadDocument).toHaveBeenCalledTimes(3));
+      await screen.findByText('5.txt');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+      // The two that had not gone out are stopped, and say why.
+      for (const name of ['4.txt', '5.txt']) {
+        const row = panelRow(name);
+        expect(await within(row).findByText('skipped')).toBeTruthy();
+        expect(within(row).getByText(/cancelled/i)).toBeTruthy();
+      }
+      // The three in flight are left alone — neither aborted nor re-sent —
+      // and still land when they finish.
+      expect(within(panelRow('1.txt')).getByText('uploading')).toBeTruthy();
+      expect(screen.queryByText(/uploaded, .* skipped, .* failed/)).toBeNull();
+      for (const name of ['1.txt', '2.txt', '3.txt']) uploads.land(name);
+
+      expect(await screen.findByText('3 uploaded, 2 skipped, 0 failed')).toBeTruthy();
+      expect(uploads.uploadDocument).toHaveBeenCalledTimes(3);
+      const cards = screen.getByRole('list', { name: 'Documents' });
+      expect(within(cards).getByText('3.txt')).toBeTruthy();
+      expect(within(cards).queryByText('4.txt')).toBeNull();
+      // Cancel is for a running batch; a finished one has nothing to cancel.
+      expect(screen.queryByRole('button', { name: 'Cancel' })).toBeNull();
+    });
   });
 
   it('deletes a Document, removing it from the list, then restores it via Undo', async () => {

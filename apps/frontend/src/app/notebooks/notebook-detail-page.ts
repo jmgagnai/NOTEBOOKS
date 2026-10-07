@@ -92,6 +92,11 @@ export class NotebookDetailPage implements OnInit, OnDestroy {
     void this.store.retryFailed();
   }
 
+  /** Stops the files of the batch not sent yet; in-flight ones finish (NBK-17). */
+  protected cancelBatch(): void {
+    this.store.cancelBatch();
+  }
+
   /** How an item's status reads in the progress panel. */
   protected statusLabel(status: UploadItemStatus): string {
     return status === 'new-version' ? 'new version' : status;

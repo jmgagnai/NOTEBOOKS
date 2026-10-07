@@ -73,7 +73,9 @@
           without re-selecting, so a network blip costs one click.
         -->
         <div class="notebook-detail-page__batch-actions">
-          @if (!store.batchRunning() && (store.batchSummary()?.failed ?? 0) > 0) {
+          @if (store.batchRunning()) {
+            <button mat-button type="button" (click)="cancelBatch()">Cancel</button>
+          } @else if ((store.batchSummary()?.failed ?? 0) > 0) {
             <button mat-button type="button" (click)="retryFailed()">Retry failed</button>
           }
         </div>

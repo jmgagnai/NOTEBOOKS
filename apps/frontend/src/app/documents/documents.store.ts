@@ -550,6 +550,29 @@ export const DocumentsStore = signalStore(
           await drainBatch();
         },
 
+        /**
+         * Stops the files of the current batch that have not been sent yet
+         * (NBK-17): every `waiting` item becomes `skipped` with a cancelled
+         * reason. Requests already in flight are left to finish — nothing is
+         * aborted, and nothing already stored is removed. The workers in
+         * `drainBatch` find no `waiting` item afterwards and stop by
+         * themselves.
+         */
+        cancelBatch(): void {
+          const batch = store.batch();
+          if (!batch) return;
+          patchState(store, {
+            batch: {
+              ...batch,
+              items: batch.items.map((item): UploadItem =>
+                item.status === 'waiting'
+                  ? { ...item, status: 'skipped', reason: 'Cancelled before it was sent.' }
+                  : item,
+              ),
+            },
+          });
+        },
+
         async deleteDocument(notebookId: string, documentId: string): Promise<void> {
           patchState(store, { error: null });
           const deleted = store.documents().find((d) => d.id === documentId) ?? null;
