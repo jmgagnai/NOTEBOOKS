@@ -915,9 +915,13 @@ export const DocumentsStore = signalStore(
   // would lose it just the same. The browser shows its leave-page dialog
   // only when `beforeunload` is cancelled, so cancelling it while the batch
   // runs is the whole mechanism — the wording is the browser's, not ours.
+  // `preventDefault()` is the standard way; older Chromium only honours a
+  // set `returnValue`, so both are done.
   withHooks((store) => {
-    const warnBeforeUnload = (event: Event): void => {
-      if (store.batchRunning()) event.preventDefault();
+    const warnBeforeUnload = (event: BeforeUnloadEvent): void => {
+      if (!store.batchRunning()) return;
+      event.preventDefault();
+      event.returnValue = '';
     };
     return {
       onInit() {

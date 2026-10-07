@@ -712,26 +712,31 @@ describe('NotebookDetailPage', () => {
       const uploads = heldUploads();
       await renderWithUpload(uploads.uploadDocument);
       // The browser only shows its leave-page dialog when the event is
-      // cancelled, so "prevented" is the whole contract.
+      // cancelled — by `preventDefault()`, or, in older Chromium, by setting
+      // `returnValue` — so both are the contract. jsdom has no
+      // BeforeUnloadEvent, and its plain Event's legacy `returnValue` only
+      // mirrors `defaultPrevented`; an own property stands in for the real
+      // one so the assignment is observable.
       const closingTab = () => {
         const event = new Event('beforeunload', { cancelable: true });
+        Object.defineProperty(event, 'returnValue', { value: undefined, writable: true });
         window.dispatchEvent(event);
-        return event.defaultPrevented;
+        return { prevented: event.defaultPrevented, returnValue: event.returnValue };
       };
 
-      expect(closingTab()).toBe(false);
+      expect(closingTab()).toEqual({ prevented: false, returnValue: undefined });
 
       pick(['1.txt', '2.txt']);
       await screen.findByText('2.txt');
-      expect(closingTab()).toBe(true);
+      expect(closingTab()).toEqual({ prevented: true, returnValue: '' });
 
       uploads.land('1.txt');
       await within(panelRow('1.txt')).findByText('uploaded');
-      expect(closingTab()).toBe(true);
+      expect(closingTab()).toEqual({ prevented: true, returnValue: '' });
 
       uploads.land('2.txt');
       await screen.findByText('2 uploaded, 0 skipped, 0 failed');
-      expect(closingTab()).toBe(false);
+      expect(closingTab()).toEqual({ prevented: false, returnValue: undefined });
     });
 
     // Real routing here, not the ActivatedRoute stub: the page has to be
