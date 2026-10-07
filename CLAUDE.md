@@ -10,7 +10,8 @@ either, while running the backend is not:
   for metadata and the three summaries, stage 3 for chunk embeddings, chat
   twice per question (once to embed the question for retrieval, once to
   generate the answer), and search once per query to embed it — so
-  `OPENROUTER_API_KEY` must be in `.env`. Without it the backend starts and
+  `OPENROUTER_API_KEY` must be in the repo-root `.env`, which the backend
+  loads at startup. Without it the backend starts and
   says so, but Documents stop at the `converted` status instead of reaching
   `ready`, and asking a question in a Chat Thread or running a search reports
   503. See `docs/ingestion-summaries.md`, `docs/ingestion-embeddings.md` and
@@ -28,6 +29,12 @@ Testcontainers flake, a silent `ng build` failure? See
 formatting, both typechecks, then the published OpenAPI contract against
 `GLOSSARY.md`'s `_Avoid_` lists. `pnpm run verify` adds the test suite. The
 pre-commit hook runs a subset; CI runs everything.
+
+## Coding standards
+
+The judgement calls review enforces that no check can — glossary vocabulary in
+UI copy, mirrored cross-app constants, seam-3 test-helper placement, comments
+that carry the why — are in `CODING_STANDARDS.md`.
 
 ## Generated code
 

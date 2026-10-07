@@ -1,11 +1,58 @@
-import { Component, computed, inject, OnDestroy, OnInit } from '@angular/core';
+import { Component, computed, inject, OnDestroy, OnInit, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
+import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { ChatPanel } from '../chat/chat-panel';
-import { Document, DocumentsStore } from '../documents/documents.store';
+import {
+  ConflictChoice,
+  Document,
+  DocumentsStore,
+  UploadItemStatus,
+} from '../documents/documents.store';
+import { UPLOAD_ACCEPT } from '../documents/upload-rules';
 import { NotebooksStore } from './notebooks.store';
+
+/**
+ * What a drop carried (NBK-18): every entry as a File, in drop order, and
+ * which of those Files are really folders.
+ *
+ * A file manager hands a directory over like any file — a File with the
+ * folder's name, no type and (usually) no size — so `dataTransfer.files`
+ * alone cannot tell the two apart, and a size-0 typeless *file* is a
+ * perfectly good upload. What does tell them apart is the entry behind each
+ * `DataTransferItem`: `webkitGetAsEntry()` returns a FileSystemEntry whose
+ * `isDirectory` is the answer. The folder keeps its File so it can be listed
+ * in the batch under its own name. A browser without `webkitGetAsEntry`
+ * (none current) simply has everything treated as a file, and the backend
+ * refuses the folder's typeless File as unsupported.
+ */
+function droppedEntries(dataTransfer: DataTransfer | null): {
+  files: File[];
+  folders: Set<File>;
+} {
+  const files: File[] = [];
+  const folders = new Set<File>();
+  const items = Array.from(dataTransfer?.items ?? []);
+  if (items.length === 0) {
+    return { files: Array.from(dataTransfer?.files ?? []), folders };
+  }
+  items.forEach((item, index) => {
+    if (item.kind !== 'file') return;
+    const entry = item.webkitGetAsEntry?.();
+    // `getAsFile()` and `files[index]` are the same File in a real drop;
+    // the second is a fallback for a DataTransfer that only filled one. An
+    // item that yields neither has nothing to upload and nothing to list —
+    // current browsers always back a directory entry with a File, so a
+    // placeholder File for that case would be code no drop exercises.
+    const file = item.getAsFile() ?? dataTransfer?.files?.[index];
+    if (!file) return;
+    files.push(file);
+    if (entry?.isDirectory) folders.add(file);
+  });
+  return { files, folders };
+}
 
 /**
  * A Notebook's detail view (NBK-5): shows its Documents as cards, with
@@ -30,9 +77,24 @@ import { NotebooksStore } from './notebooks.store';
 @Component({
   selector: 'app-notebook-detail-page',
   standalone: true,
-  imports: [ChatPanel, MatButtonModule, MatCardModule, MatProgressSpinnerModule, RouterLink],
+  imports: [
+    ChatPanel,
+    MatButtonModule,
+    MatCardModule,
+    MatCheckboxModule,
+    MatProgressSpinnerModule,
+    RouterLink,
+  ],
   templateUrl: './notebook-detail-page.html',
   styleUrl: './notebook-detail-page.scss',
+  // The whole page is the drop target (NBK-18), so the drag events are
+  // listened for on the host rather than on one box inside it.
+  host: {
+    '(dragenter)': 'onDragEnter($event)',
+    '(dragover)': 'onDragOver($event)',
+    '(dragleave)': 'onDragLeave($event)',
+    '(drop)': 'onDrop($event)',
+  },
 })
 export class NotebookDetailPage implements OnInit, OnDestroy {
   private readonly route = inject(ActivatedRoute);
@@ -58,12 +120,132 @@ export class NotebookDetailPage implements OnInit, OnDestroy {
     this.store.stopWatching();
   }
 
+  /** The picker only offers the accepted document types (NBK-16). */
+  protected readonly accept = UPLOAD_ACCEPT;
+
+  /** The upload batch, if the one in the store belongs to this Notebook. */
+  protected readonly batch = computed(() => {
+    const batch = this.store.batch();
+    return batch?.notebookId === this.notebookId ? batch : null;
+  });
+
+  /** The end-of-batch summary line, once nothing is waiting or in flight. */
+  protected readonly batchSummaryLine = computed(() => {
+    const summary = this.store.batchSummary();
+    if (!summary || !this.batch() || this.store.batchRunning()) return null;
+    const uploaded =
+      summary.newVersions > 0
+        ? `${summary.uploaded} uploaded (${summary.newVersions} as new Versions)`
+        : `${summary.uploaded} uploaded`;
+    return `${uploaded}, ${summary.skipped} skipped, ${summary.failed} failed`;
+  });
+
   protected onFileSelected(event: Event): void {
     const input = event.target as HTMLInputElement;
-    const file = input.files?.[0];
-    if (!file) return;
-    void this.store.uploadDocument(this.notebookId, file);
+    const files = Array.from(input.files ?? []);
+    if (files.length === 0) return;
+    void this.store.uploadDocuments(this.notebookId, files);
     input.value = '';
+  }
+
+  /** Re-sends every failed file of the batch (NBK-17). */
+  protected retryFailed(): void {
+    void this.store.retryFailed();
+  }
+
+  /** Stops the files of the batch not sent yet; in-flight ones finish (NBK-17). */
+  protected cancelBatch(): void {
+    this.store.cancelBatch();
+  }
+
+  /** Clears the panel once the batch is done (NBK-17). */
+  protected dismissBatch(): void {
+    this.store.dismissBatch();
+  }
+
+  /**
+   * The conflict dialog's "apply to all remaining conflicts" tick (NBK-19).
+   * Page state, not store state: it is part of the answer being composed,
+   * and is sent with it.
+   */
+  protected readonly applyToAll = signal(false);
+
+  /** Answers the open conflict dialog, with the tick as it stands. */
+  protected answerConflict(choice: ConflictChoice): void {
+    this.store.answerConflict(choice, this.applyToAll());
+    this.applyToAll.set(false);
+  }
+
+  /**
+   * How many elements of the page the dragged files are currently "inside"
+   * (NBK-18). A drag fires `dragenter` on each element it moves over and
+   * `dragleave` on the one it left, in that order, so a single boolean would
+   * flicker off at every boundary; counting enters against leaves makes the
+   * state hold until the drag leaves the page altogether.
+   */
+  private dragDepth = 0;
+
+  /** True while files are being dragged over the page. */
+  protected readonly dragOver = signal(false);
+
+  /** Whether a drag carries files at all — text or links dragged over the page are not a drop. */
+  private carriesFiles(event: DragEvent): boolean {
+    return Array.from(event.dataTransfer?.types ?? []).includes('Files');
+  }
+
+  /**
+   * Whether the page takes a drop right now. It does not while a batch is
+   * running: a second batch is not queued behind the first (spec, out of
+   * scope), so the honest thing is to refuse it visibly. Leaving `dragenter`
+   * and `dragover` uncancelled is how a page tells the browser that — the
+   * cursor shows "not allowed" and no `drop` is fired.
+   */
+  private refuseDrag(event: DragEvent): boolean {
+    if (!this.store.batchRunning()) return false;
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'none';
+    return true;
+  }
+
+  protected onDragEnter(event: DragEvent): void {
+    if (!this.carriesFiles(event) || this.refuseDrag(event)) return;
+    event.preventDefault();
+    this.dragDepth += 1;
+    this.dragOver.set(true);
+  }
+
+  protected onDragOver(event: DragEvent): void {
+    if (!this.carriesFiles(event) || this.refuseDrag(event)) return;
+    // Cancelling `dragover` is what tells the browser the drop is allowed.
+    event.preventDefault();
+  }
+
+  protected onDragLeave(event: DragEvent): void {
+    if (!this.carriesFiles(event)) return;
+    this.dragDepth = Math.max(0, this.dragDepth - 1);
+    if (this.dragDepth === 0) this.dragOver.set(false);
+  }
+
+  /**
+   * A drop goes through the same `uploadDocuments` as the picker, so the
+   * skipping rules and the cap apply unchanged (NBK-18).
+   */
+  protected onDrop(event: DragEvent): void {
+    if (!this.carriesFiles(event)) return;
+    // Cancelled, or the browser would navigate to the dropped file.
+    event.preventDefault();
+    this.dragDepth = 0;
+    this.dragOver.set(false);
+    // Normally unreachable while a batch runs, since `dragover` was not
+    // cancelled; guarded anyway so nothing else on the page can let it in.
+    if (this.store.batchRunning()) return;
+    const { files, folders } = droppedEntries(event.dataTransfer);
+    if (files.length === 0) return;
+    void this.store.uploadDocuments(this.notebookId, files, { folders });
+  }
+
+  /** How an item's status reads in the progress panel. */
+  protected statusLabel(status: UploadItemStatus): string {
+    return status === 'new-version' ? 'new version' : status;
   }
 
   protected delete(document: Document): void {

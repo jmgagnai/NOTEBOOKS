@@ -1,4 +1,11 @@
-<mat-card class="notebook-detail-page">
+<mat-card class="notebook-detail-page" [class.notebook-detail-page--drag-over]="dragOver()">
+  <!--
+    The drag-over state (NBK-18): the whole page is the drop target, so the
+    whole card lights up and says what a drop will do.
+  -->
+  @if (dragOver()) {
+    <p class="notebook-detail-page__drop-hint">Drop files to upload them into this Notebook</p>
+  }
   <mat-card-header>
     <mat-card-title>{{ notebook()?.title ?? 'Notebook' }}</mat-card-title>
   </mat-card-header>
@@ -21,13 +28,106 @@
       Search this Notebook
     </a>
 
+    <!--
+      Several files at once (NBK-16): the picker is multi-select and only
+      offers the accepted document types, derived from upload-rules.ts.
+    -->
     <label class="notebook-detail-page__upload">
-      Upload a Document
-      <input type="file" (change)="onFileSelected($event)" aria-label="Upload a Document" />
+      Upload Documents
+      <!--
+        Disabled while a batch runs (NBK-17): a second batch behind the
+        first is out of scope, so the picker cannot start one mid-way.
+      -->
+      <input
+        type="file"
+        multiple
+        [accept]="accept"
+        [disabled]="store.batchRunning()"
+        (change)="onFileSelected($event)"
+        aria-label="Upload Documents"
+      />
     </label>
 
-    @if (store.uploading()) {
-      <mat-progress-spinner mode="indeterminate" diameter="24" />
+    <!--
+      The progress panel (NBK-16): every file of the batch with its status and,
+      where it was skipped or failed, why — then the summary once the batch
+      is done. It replaces the single spinner, which could not say which of
+      forty files was the slow one.
+    -->
+    @if (store.uploadRefused(); as refused) {
+      <p class="notebook-detail-page__error">{{ refused }}</p>
+    }
+
+    @if (batch(); as batch) {
+      <section class="notebook-detail-page__batch" aria-label="Upload batch">
+        @if (store.batchRunning()) {
+          <mat-progress-spinner mode="indeterminate" diameter="24" />
+        }
+        <ul class="notebook-detail-page__batch-items" aria-label="Upload progress">
+          @for (item of batch.items; track item.id) {
+            <li class="notebook-detail-page__batch-item">
+              <span class="notebook-detail-page__filename">{{ item.file.name }}</span>
+              <span
+                [class]="'notebook-detail-page__badge notebook-detail-page__badge--' + item.status"
+                >{{ statusLabel(item.status) }}</span
+              >
+              @if (item.reason) {
+                <span class="notebook-detail-page__batch-reason">{{ item.reason }}</span>
+              }
+            </li>
+          }
+        </ul>
+        @if (batchSummaryLine(); as summary) {
+          <p class="notebook-detail-page__batch-summary">{{ summary }}</p>
+        }
+        <!--
+          Steering the batch (NBK-17). Retry failed re-sends every failure
+          without re-selecting, so a network blip costs one click.
+        -->
+        <div class="notebook-detail-page__batch-actions">
+          @if (store.batchRunning()) {
+            <button mat-button type="button" (click)="cancelBatch()">Cancel</button>
+          } @else {
+            @if ((store.batchSummary()?.failed ?? 0) > 0) {
+              <button mat-button type="button" (click)="retryFailed()">Retry failed</button>
+            }
+            <button mat-button type="button" (click)="dismissBatch()">Dismiss</button>
+          }
+        </div>
+
+        <!--
+          The conflict dialog (NBK-19): a file whose name is an existing
+          Document is held back until the user says whether it becomes a new
+          Version of that Document or is skipped. Inline rather than an
+          overlay, next to the file it is about, because the rest of the
+          batch keeps moving in the panel above while the question is open
+          — the user is asked, not blocked.
+        -->
+        @if (store.conflict(); as conflict) {
+          <div
+            class="notebook-detail-page__conflict"
+            role="dialog"
+            aria-labelledby="conflict-dialog-title"
+          >
+            <h3 id="conflict-dialog-title" class="notebook-detail-page__conflict-title">
+              Document already exists
+            </h3>
+            <p>
+              "{{ conflict.filename }}" already exists in this Notebook. Upload this file as a new
+              Version of that Document, or skip it?
+            </p>
+            <mat-checkbox [checked]="applyToAll()" (change)="applyToAll.set($event.checked)">
+              Apply to all remaining conflicts
+            </mat-checkbox>
+            <div class="notebook-detail-page__conflict-actions">
+              <button mat-button type="button" (click)="answerConflict('skip')">Skip</button>
+              <button mat-flat-button type="button" (click)="answerConflict('new-version')">
+                New Version
+              </button>
+            </div>
+          </div>
+        }
+      </section>
     }
 
     @if (store.lastDeleted(); as deleted) {
@@ -50,7 +150,7 @@
         "to be skimmed in a list"), so each entry needs room for a line or
         two of prose under its filename.
       -->
-      <ul class="notebook-detail-page__cards">
+      <ul class="notebook-detail-page__cards" aria-label="Documents">
         @for (document of store.documents(); track document.id) {
           <li class="notebook-detail-page__card">
             <div class="notebook-detail-page__card-head">

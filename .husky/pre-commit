@@ -1,3 +1,17 @@
+# lint-staged 17 needs git >= 2.32. A package manager's older git earlier on
+# PATH (MacPorts' /opt/local/bin/git 2.17 on macOS, for one) shadows the
+# system's newer one, so pick the system git for this hook when the first git
+# found is too old. See docs/environment-gotchas.md.
+set -- $(git --version | sed -E 's/^git version ([0-9]+)\.([0-9]+).*/\1 \2/')
+if [ "$1" -lt 2 ] || { [ "$1" -eq 2 ] && [ "$2" -lt 32 ]; }; then
+  if [ -x /usr/bin/git ] && /usr/bin/git --version | grep -qvE 'version (1\.|2\.([0-9]|[12][0-9]|3[01])\.)'; then
+    export PATH="/usr/bin:$PATH"
+  else
+    echo "pre-commit: git $1.$2 found on PATH, but lint-staged needs git >= 2.32. Install a newer git." >&2
+    exit 1
+  fi
+fi
+
 # Fast gate only. The full suite (Docker + Testcontainers, ~150s) runs in CI,
 # because a hook people wait on is a hook people bypass with --no-verify.
 pnpm exec lint-staged
