@@ -1,4 +1,6 @@
-import { Component, computed, inject, OnDestroy, OnInit, signal } from '@angular/core';
+import { Component, computed, effect, inject, OnDestroy, OnInit, signal } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { map, of } from 'rxjs';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
@@ -13,6 +15,21 @@ import {
 } from '../documents/documents.store';
 import { UPLOAD_ACCEPT } from '../documents/upload-rules';
 import { NotebooksStore } from './notebooks.store';
+import { PrototypeSwitcher, PrototypeVariant } from '../shared/prototype-switcher';
+import { WorkspaceVariantA } from './prototype/workspace-variant-a';
+import { WorkspaceVariantB } from './prototype/workspace-variant-b';
+import { WorkspaceVariantC } from './prototype/workspace-variant-c';
+
+/**
+ * PROTOTYPE — throwaway. Three variants of the Notebook workspace (specs 01
+ * and 02), switchable via `?variant=A|B|C` on this existing route; no param
+ * shows the page as it is today. See notebooks/prototype/.
+ */
+const PROTOTYPE_VARIANTS: PrototypeVariant[] = [
+  { key: 'A', name: WorkspaceVariantA.variantName },
+  { key: 'B', name: WorkspaceVariantB.variantName },
+  { key: 'C', name: WorkspaceVariantC.variantName },
+];
 
 /**
  * What a drop carried (NBK-18): every entry as a File, in drop order, and
@@ -84,6 +101,10 @@ function droppedEntries(dataTransfer: DataTransfer | null): {
     MatCheckboxModule,
     MatProgressSpinnerModule,
     RouterLink,
+    PrototypeSwitcher,
+    WorkspaceVariantA,
+    WorkspaceVariantB,
+    WorkspaceVariantC,
   ],
   templateUrl: './notebook-detail-page.html',
   styleUrl: './notebook-detail-page.scss',
@@ -107,6 +128,31 @@ export class NotebookDetailPage implements OnInit, OnDestroy {
     () => this.notebooksStore.notebooks().find((n) => n.id === this.notebookId) ?? null,
   );
 
+  /**
+   * PROTOTYPE — throwaway. Which workspace variant to render, or null for
+   * the real page. Read reactively so the switcher's URL rewrite re-renders
+   * in place; guarded because the page spec's `ActivatedRoute` stub has no
+   * `queryParamMap`.
+   */
+  protected readonly prototypeVariants = PROTOTYPE_VARIANTS;
+  protected readonly variant = toSignal(
+    (this.route.queryParamMap ?? of(null)).pipe(
+      map((params) => {
+        const key = params?.get('variant') ?? null;
+        return PROTOTYPE_VARIANTS.some((v) => v.key === key) ? key : null;
+      }),
+    ),
+    { initialValue: null as string | null },
+  );
+
+  constructor() {
+    // The Fluent re-theme (spec 01) is global CSS, so it rides on an <html>
+    // class that is set only while a prototype variant is showing.
+    effect(() => {
+      document.documentElement.classList.toggle('proto-fluent', this.variant() !== null);
+    });
+  }
+
   ngOnInit(): void {
     void this.notebooksStore.loadNotebooks();
     void this.store.loadDocuments(this.notebookId);
@@ -118,6 +164,7 @@ export class NotebookDetailPage implements OnInit, OnDestroy {
     // connection has to be closed explicitly or it would leak across
     // navigations.
     this.store.stopWatching();
+    document.documentElement.classList.remove('proto-fluent');
   }
 
   /** The picker only offers the accepted document types (NBK-16). */

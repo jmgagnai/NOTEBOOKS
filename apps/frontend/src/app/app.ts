@@ -3,6 +3,7 @@ import { Router, RouterOutlet } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { MatToolbarModule } from '@angular/material/toolbar';
 import { AuthStore } from './auth/auth.store';
+import { protoInitials } from './notebooks/prototype/proto-chat-helpers';
 
 /**
  * The app shell (NBK-3): a toolbar showing who's logged in with a logout
@@ -23,6 +24,11 @@ export class App implements OnInit {
 
   ngOnInit(): void {
     void this.store.checkSession();
+  }
+
+  /** PROTOTYPE — throwaway: initials for the Fluent-theme avatar. */
+  protected initials(email: string): string {
+    return protoInitials(email);
   }
 
   protected async logout(): Promise<void> {

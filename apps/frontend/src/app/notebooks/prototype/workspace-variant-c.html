@@ -1,0 +1,150 @@
+<div class="vc">
+  <header class="vc__header">
+    <a
+      class="vc__icon-btn"
+      routerLink="/"
+      aria-label="Back to Notebooks"
+      matTooltip="Back to Notebooks"
+    >
+      <proto-icon name="arrow-left" [size]="18" />
+    </a>
+    <span class="vc__brand-mark"><proto-icon name="notebook" [size]="16" /></span>
+    @if (editing()) {
+      <input
+        class="vc__title-input proto-title-input"
+        type="text"
+        aria-label="Notebook title"
+        [value]="titleDraft()"
+        (input)="onTitleInput($event)"
+        (keydown.enter)="commitTitle()"
+        (keydown.escape)="cancelTitle()"
+        (blur)="commitTitle()"
+      />
+    } @else {
+      <button type="button" class="vc__title" (click)="startEdit()" matTooltip="Rename">
+        {{ title() }}
+      </button>
+    }
+    <span class="vc__spacer"></span>
+    <proto-thread-menu [notebookId]="notebookId()" />
+    <button type="button" class="vc__btn" aria-label="Documents" (click)="sheetOpen.set(true)">
+      <proto-icon name="document" [size]="16" /> Documents
+      <span class="vc__pill">{{ documentCount() }}</span>
+    </button>
+    <a
+      class="vc__icon-btn"
+      [routerLink]="['/notebooks', notebookId(), 'search']"
+      aria-label="Search this Notebook"
+      matTooltip="Search this Notebook"
+    >
+      <proto-icon name="search" [size]="18" />
+    </a>
+  </header>
+
+  <section class="vc__canvas" aria-label="Chat">
+    <div class="vc__scroll">
+      <div class="vc__column">
+        @if (showHero()) {
+          <div class="vc__hero">
+            <span class="vc__hero-spark"><proto-icon name="sparkle" [size]="26" /></span>
+            <h1 class="vc__hero-title">{{ activeThread() ? activeThread()!.title : title() }}</h1>
+            <p class="vc__hero-sub">
+              @if (documentCount() === 0) {
+                Add Documents to this Notebook, then ask anything about them.
+              } @else {
+                Ask anything. Answers are grounded in the {{ readyCount() }} ready Documents below
+                and cite their sources.
+              }
+            </p>
+            @if (documentCount() > 0) {
+              <ul class="vc__suggestions">
+                @for (s of suggestions; track s) {
+                  <li>
+                    <button type="button" class="vc__suggestion">
+                      <proto-icon name="sparkle" [size]="14" /> {{ s }}
+                    </button>
+                  </li>
+                }
+              </ul>
+            }
+          </div>
+        } @else {
+          <proto-message-list [notebookId]="notebookId()" />
+        }
+      </div>
+    </div>
+
+    <div class="vc__dock">
+      <div class="vc__column">
+        <div class="vc__chips" [class.vc__chips--drag]="dragOver()" aria-label="Documents">
+          @if (dragOver()) {
+            <span class="vc__chips-label vc__chips-label--drag"
+              >Drop files to upload them into this Notebook</span
+            >
+          } @else {
+            <span class="vc__chips-label">Grounded in</span>
+            @for (d of chips(); track d.id) {
+              <a
+                class="vc__chip"
+                [class]="'vc__chip vc__chip--' + kind(d.filename)"
+                [class.vc__chip--busy]="d.status !== 'ready' && d.status !== 'failed'"
+                [class.vc__chip--failed]="d.status === 'failed'"
+                [routerLink]="['/notebooks', notebookId(), 'documents', d.id]"
+                [matTooltip]="d.abstract ?? d.status"
+              >
+                <span class="vc__chip-dot"></span>
+                <span class="vc__chip-name">{{ d.filename }}</span>
+              </a>
+            }
+            @if (overflow() > 0) {
+              <button type="button" class="vc__chip vc__chip--more" (click)="sheetOpen.set(true)">
+                +{{ overflow() }} more
+              </button>
+            }
+            <proto-add-documents-button [notebookId]="notebookId()" kind="icon" />
+          }
+        </div>
+        <proto-composer
+          [notebookId]="notebookId()"
+          [threadId]="activeThread()?.id ?? null"
+          [placeholder]="'Ask ' + title() + ' anything'"
+        />
+        <p class="vc__footnote">Answers may contain mistakes. Check the Citations.</p>
+      </div>
+    </div>
+  </section>
+
+  @if (sheetOpen()) {
+    <div class="vc__backdrop" (click)="sheetOpen.set(false)"></div>
+    <aside class="vc__sheet" aria-label="Documents">
+      <div class="vc__sheet-head">
+        <h2 class="vc__sheet-title">
+          Documents <span class="vc__pill">{{ documentCount() }}</span>
+        </h2>
+        <span class="vc__spacer"></span>
+        <proto-add-documents-button [notebookId]="notebookId()" kind="secondary" />
+        <button
+          type="button"
+          class="vc__icon-btn"
+          aria-label="Close"
+          (click)="sheetOpen.set(false)"
+        >
+          <proto-icon name="dismiss" [size]="18" />
+        </button>
+      </div>
+      <label class="vc__filter">
+        <proto-icon name="filter" [size]="14" />
+        <input
+          type="search"
+          placeholder="Filter by name"
+          aria-label="Filter Documents"
+          [value]="filter()"
+          (input)="onFilterInput($event)"
+        />
+      </label>
+      <div class="vc__sheet-body">
+        <proto-document-list [notebookId]="notebookId()" [filter]="filter()" />
+      </div>
+    </aside>
+  }
+</div>

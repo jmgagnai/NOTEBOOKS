@@ -2,7 +2,10 @@
   <mat-toolbar color="primary" class="app-shell__toolbar">
     <span>RAG Notebook</span>
     <span class="app-shell__spacer"></span>
-    <span class="app-shell__user">{{ user.email }}</span>
+    <!-- data-initials: PROTOTYPE hook; the Fluent theme draws it as an avatar. -->
+    <span class="app-shell__user" [attr.data-initials]="initials(user.email)">{{
+      user.email
+    }}</span>
     <button mat-button (click)="logout()">Log out</button>
   </mat-toolbar>
 }

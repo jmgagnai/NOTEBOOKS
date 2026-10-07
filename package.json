@@ -9,6 +9,7 @@
     "backend:migrate": "pnpm --filter backend migrate",
     "backend:openapi:generate": "pnpm --filter backend openapi:generate",
     "frontend:dev": "pnpm --filter frontend start",
+    "prototype:workspace": "echo 'PROTOTYPE: open http://localhost:4200/notebooks/<notebookId>?variant=A  (A | B | C; arrow keys or the bottom bar cycle them)' && pnpm --filter frontend start",
     "frontend:build": "pnpm --filter frontend build",
     "frontend:test": "pnpm --filter frontend test",
     "frontend:openapi:generate": "pnpm --filter frontend openapi:generate",

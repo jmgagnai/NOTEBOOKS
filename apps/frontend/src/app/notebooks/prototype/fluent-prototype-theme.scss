@@ -1,0 +1,156 @@
+// PROTOTYPE — throwaway. Spec 01's Fluent-over-Material re-theme, scoped to
+// `html.proto-fluent`, which the Notebook page toggles while a `?variant=`
+// is active. Nothing outside the prototype is affected; the real
+// implementation moves this (minus the scope) into styles.scss.
+@use '@angular/material' as mat;
+
+$font:
+  'Segoe UI',
+  -apple-system,
+  BlinkMacSystemFont,
+  system-ui,
+  sans-serif;
+
+html.proto-fluent {
+  @include mat.theme(
+    (
+      color: mat.$azure-palette,
+      typography: (
+        plain-family: $font,
+        brand-family: $font,
+        bold-weight: 600,
+        medium-weight: 600,
+        regular-weight: 400,
+      ),
+      density: -2,
+    )
+  );
+
+  // Fluent 2 tokens over Material's system tokens (spec 01 table).
+  --mat-sys-primary: #0f6cbd;
+  --mat-sys-on-primary: #ffffff;
+  --mat-sys-primary-container: #ebf3fc;
+  --mat-sys-on-primary-container: #0c3b5e;
+  --mat-sys-secondary-container: #f0f0f0;
+  --mat-sys-on-secondary-container: #424242;
+  --mat-sys-tertiary-container: #e7f5e7;
+  --mat-sys-on-tertiary-container: #0e700e;
+  --mat-sys-surface: #ffffff;
+  --mat-sys-surface-container-lowest: #ffffff;
+  --mat-sys-surface-container-low: #fafafa;
+  --mat-sys-surface-container: #f5f5f5;
+  --mat-sys-surface-container-high: #f0f0f0;
+  --mat-sys-surface-container-highest: #ebebeb;
+  --mat-sys-on-surface: #242424;
+  --mat-sys-on-surface-variant: #616161;
+  --mat-sys-outline: #d1d1d1;
+  --mat-sys-outline-variant: #e0e0e0;
+  --mat-sys-error: #c50f1f;
+  --mat-sys-error-container: #fde7e9;
+  --mat-sys-on-error-container: #c50f1f;
+  --mat-sys-corner-full: 4px;
+  --mat-sys-corner-extra-small: 4px;
+  --mat-sys-corner-small: 4px;
+  --mat-sys-corner-medium: 8px;
+  --mat-sys-corner-large: 8px;
+  --mat-sys-level0: none;
+  --mat-sys-level1: none;
+  --mat-sys-level2: none;
+  --mat-sys-level3: 0 4px 16px rgba(0, 0, 0, 0.12);
+  --mat-sys-level4: 0 8px 24px rgba(0, 0, 0, 0.14);
+  --mat-sys-level5: 0 8px 24px rgba(0, 0, 0, 0.14);
+
+  body {
+    font-family: $font;
+    font-size: 14px;
+    line-height: 20px;
+    color: #242424;
+    background: #fafafa;
+  }
+
+  // App shell → 48 px white title bar with a 1 px border (spec 01).
+  .app-shell__toolbar {
+    --mat-toolbar-container-background-color: #ffffff;
+    --mat-toolbar-container-text-color: #242424;
+    --mat-toolbar-standard-height: 48px;
+    --mat-toolbar-mobile-height: 48px;
+    height: 48px;
+    padding: 0 12px 0 16px;
+    border-bottom: 1px solid #e0e0e0;
+    font-size: 16px;
+    font-weight: 600;
+    gap: 8px;
+  }
+
+  // The e-mail becomes a 28 px initials avatar; the text stays in the DOM
+  // for the existing tests, hidden visually, with the initials drawn from
+  // the data attribute app.html sets.
+  .app-shell__user {
+    position: relative;
+    width: 28px;
+    height: 28px;
+    margin: 0;
+    overflow: hidden;
+    color: transparent;
+    font-size: 0;
+    border-radius: 50%;
+    background: #0f6cbd;
+    flex: none;
+    &::after {
+      content: attr(data-initials);
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+  }
+
+  .app-shell__toolbar .mdc-button {
+    --mdc-text-button-label-text-color: #424242;
+    font-weight: 400;
+    font-size: 13px;
+  }
+
+  // Material menus/tooltips/snack bar in Fluent clothes.
+  .mat-mdc-menu-panel {
+    border: 1px solid #e0e0e0;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12) !important;
+    border-radius: 8px !important;
+    min-width: 200px;
+  }
+  .mat-mdc-menu-item {
+    min-height: 36px;
+    font-size: 14px;
+  }
+  .mat-mdc-tooltip .mdc-tooltip__surface {
+    background: #242424;
+    font-size: 12px;
+    border-radius: 4px;
+    max-width: 320px;
+  }
+  .mat-mdc-snack-bar-container {
+    --mdc-snackbar-container-color: #242424;
+    --mat-snack-bar-button-color: #8ab9ea;
+    --mdc-snackbar-supporting-text-size: 13px;
+  }
+  .mat-mdc-progress-bar {
+    --mdc-linear-progress-active-indicator-color: #0f6cbd;
+    --mdc-linear-progress-track-color: #e0e0e0;
+  }
+  .mat-mdc-checkbox {
+    --mdc-checkbox-selected-icon-color: #0f6cbd;
+    --mdc-checkbox-selected-focus-icon-color: #0f6cbd;
+    --mdc-checkbox-selected-hover-icon-color: #115ea3;
+    --mdc-checkbox-selected-pressed-icon-color: #0c3b5e;
+  }
+
+  *:focus-visible {
+    outline: 2px solid #242424;
+    outline-offset: 1px;
+  }
+}

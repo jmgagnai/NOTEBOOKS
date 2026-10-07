@@ -1,0 +1,124 @@
+<div class="vb">
+  <header class="vb__header">
+    <a
+      class="vb__icon-btn"
+      routerLink="/"
+      aria-label="Back to Notebooks"
+      matTooltip="Back to Notebooks"
+    >
+      <proto-icon name="arrow-left" [size]="18" />
+    </a>
+    <span class="vb__crumb">Notebooks</span>
+    <proto-icon name="chevron-right" [size]="14" class="vb__crumb-sep" />
+    @if (editing()) {
+      <input
+        class="vb__title-input proto-title-input"
+        type="text"
+        aria-label="Notebook title"
+        [value]="titleDraft()"
+        (input)="onTitleInput($event)"
+        (keydown.enter)="commitTitle()"
+        (keydown.escape)="cancelTitle()"
+        (blur)="commitTitle()"
+      />
+    } @else {
+      <button type="button" class="vb__title" (click)="startEdit()" matTooltip="Rename">
+        {{ title() }}
+      </button>
+    }
+    <span class="vb__spacer"></span>
+    <a
+      class="vb__btn"
+      [routerLink]="['/notebooks', notebookId(), 'search']"
+      aria-label="Search this Notebook"
+    >
+      <proto-icon name="search" [size]="16" /> Search
+    </a>
+    <proto-add-documents-button [notebookId]="notebookId()" kind="primary" />
+  </header>
+
+  <div class="vb__body">
+    <nav class="vb__card vb__threads" aria-label="Chat Threads">
+      <div class="vb__card-head">
+        <h2 class="vb__card-title"><proto-icon name="history" [size]="16" /> Chat Threads</h2>
+        <span class="vb__spacer"></span>
+        <button
+          type="button"
+          class="vb__icon-btn"
+          aria-label="New Chat Thread"
+          matTooltip="New Chat Thread"
+          (click)="create()"
+        >
+          <proto-icon name="add" [size]="16" />
+        </button>
+      </div>
+      <div class="vb__card-body">
+        @if (chat.threads().length === 0) {
+          <p class="vb__empty">No Chat Threads yet.</p>
+          <button type="button" class="vb__btn vb__btn--block" (click)="create()">
+            <proto-icon name="add" [size]="16" /> New Chat Thread
+          </button>
+        } @else {
+          <ul class="vb__thread-list">
+            @for (t of chat.threads(); track t.id) {
+              <li>
+                <button
+                  type="button"
+                  class="vb__thread"
+                  [class.vb__thread--active]="t.id === chat.activeThreadId()"
+                  [attr.aria-label]="'Open ' + t.title"
+                  (click)="open(t)"
+                >
+                  <span class="vb__thread-title">{{ t.title }}</span>
+                  <span class="vb__thread-sub">{{ t.author.email }} · {{ when(t) }}</span>
+                </button>
+              </li>
+            }
+          </ul>
+        }
+      </div>
+    </nav>
+
+    <section class="vb__card vb__chat" aria-label="Chat">
+      <div class="vb__card-head vb__card-head--chat">
+        @if (activeThread(); as t) {
+          <h2 class="vb__card-title">{{ t.title }}</h2>
+          <span class="vb__muted">Started by {{ t.author.email }}</span>
+        } @else {
+          <h2 class="vb__card-title vb__muted">Choose a Chat Thread</h2>
+        }
+      </div>
+      <div class="vb__messages" [class.vb__messages--drag]="dragOver()">
+        <div class="vb__messages-inner">
+          <proto-message-list [notebookId]="notebookId()" />
+        </div>
+      </div>
+      <div class="vb__composer">
+        <proto-composer [notebookId]="notebookId()" [threadId]="activeThread()?.id ?? null" />
+      </div>
+    </section>
+
+    <aside class="vb__card vb__docs" aria-label="Documents" [class.vb__docs--drag]="dragOver()">
+      <div class="vb__card-head">
+        <h2 class="vb__card-title"><proto-icon name="document" [size]="16" /> Documents</h2>
+        <span class="vb__count">{{ readyCount() }}/{{ documentCount() }} ready</span>
+      </div>
+      <label class="vb__filter">
+        <proto-icon name="search" [size]="14" />
+        <input
+          type="search"
+          placeholder="Filter Documents"
+          aria-label="Filter Documents"
+          [value]="filter()"
+          (input)="onFilterInput($event)"
+        />
+      </label>
+      <div class="vb__card-body">
+        <proto-document-list [notebookId]="notebookId()" [filter]="filter()" />
+      </div>
+      @if (dragOver()) {
+        <div class="vb__drop-hint">Drop files to upload them into this Notebook</div>
+      }
+    </aside>
+  </div>
+</div>

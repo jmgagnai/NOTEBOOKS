@@ -1,4 +1,6 @@
 @use '@angular/material' as mat;
+// PROTOTYPE — throwaway. Spec 01 re-theme, scoped to html.proto-fluent.
+@use './app/notebooks/prototype/fluent-prototype-theme';
 
 html {
   @include mat.theme(
