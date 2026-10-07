@@ -76,6 +76,14 @@
     font-weight: 600;
   }
 
+  // Steering the batch (NBK-17): Cancel while it runs, Retry failed and
+  // Dismiss once it is done.
+  &__batch-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
   // The conflict dialog (NBK-19): inline under the batch rows, set off as a
   // question the user has to answer, while the rows above keep moving.
   &__conflict {

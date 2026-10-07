@@ -34,10 +34,15 @@
     -->
     <label class="notebook-detail-page__upload">
       Upload Documents
+      <!--
+        Disabled while a batch runs (NBK-17): a second batch behind the
+        first is out of scope, so the picker cannot start one mid-way.
+      -->
       <input
         type="file"
         multiple
         [accept]="accept"
+        [disabled]="store.batchRunning()"
         (change)="onFileSelected($event)"
         aria-label="Upload Documents"
       />
@@ -75,6 +80,20 @@
         @if (batchSummaryLine(); as summary) {
           <p class="notebook-detail-page__batch-summary">{{ summary }}</p>
         }
+        <!--
+          Steering the batch (NBK-17). Retry failed re-sends every failure
+          without re-selecting, so a network blip costs one click.
+        -->
+        <div class="notebook-detail-page__batch-actions">
+          @if (store.batchRunning()) {
+            <button mat-button type="button" (click)="cancelBatch()">Cancel</button>
+          } @else {
+            @if ((store.batchSummary()?.failed ?? 0) > 0) {
+              <button mat-button type="button" (click)="retryFailed()">Retry failed</button>
+            }
+            <button mat-button type="button" (click)="dismissBatch()">Dismiss</button>
+          }
+        </div>
 
         <!--
           The conflict dialog (NBK-19): a file whose name is an existing

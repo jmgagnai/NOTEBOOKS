@@ -1,4 +1,5 @@
-import { convertToParamMap, ActivatedRoute } from '@angular/router';
+import { Component } from '@angular/core';
+import { convertToParamMap, ActivatedRoute, RouterOutlet } from '@angular/router';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/angular';
 import { Subject } from 'rxjs';
 import { NotebookDetailPage } from './notebook-detail-page';
@@ -9,6 +10,22 @@ import { DocumentTransferService } from '../documents/document-transfer.service'
 import { AppEvent, AppEventsService } from '../events/app-events.service';
 
 const NOTEBOOK_ID = '11111111-1111-1111-1111-111111111111';
+
+/**
+ * A bare outlet to route the real page in and out of (NBK-17): in-app
+ * navigation has to destroy and re-create the page the way the router does.
+ */
+@Component({
+  selector: 'app-router-shell',
+  standalone: true,
+  imports: [RouterOutlet],
+  template: '<router-outlet />',
+})
+class RouterShell {}
+
+/** Any other page of the app, to navigate away to. */
+@Component({ selector: 'app-elsewhere', standalone: true, template: '<p>Somewhere else</p>' })
+class Elsewhere {}
 
 function activatedRouteFor(notebookId: string) {
   return {
@@ -469,6 +486,337 @@ describe('NotebookDetailPage', () => {
       expect(within(cards).getAllByText('report.txt')).toHaveLength(1);
       expect(within(cards).getByText('v2')).toBeTruthy();
       expect(within(cards).getByText('fresh.txt')).toBeTruthy();
+    });
+  });
+
+  // NBK-17: while a batch runs the user can steer it and is protected from
+  // losing it — Retry failed, Cancel, a disabled picker, the browser's
+  // leave-page warning, survival across in-app navigation, and a dismiss
+  // once it is done. Same seam as NBK-16: the real page and store, with only
+  // the upload client, the generated Documents client and the app-events
+  // stream mocked. The helpers mirror NBK-16's rather than sharing them, so
+  // the tickets built in parallel on this file merge without touching each
+  // other's blocks.
+  describe('NBK-17: retry, cancel, and leaving the page', () => {
+    function documentFor(filename: string) {
+      return {
+        id: `doc-${filename}`,
+        notebookId: NOTEBOOK_ID,
+        filename,
+        status: 'queued',
+        abstract: null,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        latestVersion: {
+          id: `v-${filename}-1`,
+          versionNumber: 1,
+          mimeType: 'text/plain',
+          sizeBytes: 1,
+          createdAt: '2026-01-01T00:00:00.000Z',
+        },
+      };
+    }
+
+    /** A promise the test resolves or rejects by hand, to hold a request "in flight". */
+    function deferred<T>() {
+      let resolve!: (value: T) => void;
+      let reject!: (reason: unknown) => void;
+      const promise = new Promise<T>((res, rej) => {
+        resolve = res;
+        reject = rej;
+      });
+      return { promise, resolve, reject };
+    }
+
+    /** An upload client whose every request stays in flight until the test settles it. */
+    function heldUploads() {
+      const inFlight: {
+        file: File;
+        request: ReturnType<typeof deferred<Record<string, unknown>>>;
+      }[] = [];
+      const uploadDocument = vi.fn().mockImplementation((_notebookId: string, file: File) => {
+        const request = deferred<Record<string, unknown>>();
+        inFlight.push({ file, request });
+        return request.promise;
+      });
+      const sentNames = () => inFlight.map(({ file }) => file.name);
+      const land = (filename: string) =>
+        inFlight.find(({ file }) => file.name === filename)!.request.resolve(documentFor(filename));
+      const fail = (filename: string) =>
+        inFlight
+          .find(({ file }) => file.name === filename)!
+          .request.reject({ error: { message: 'Storage is unavailable.' } });
+      return { uploadDocument, inFlight, sentNames, land, fail };
+    }
+
+    async function renderWithUpload(
+      uploadDocument: ReturnType<typeof vi.fn>,
+      existing: Record<string, unknown>[] = [],
+    ) {
+      const listNotebooks = vi.fn().mockResolvedValue([]);
+      const listDocuments = vi.fn().mockResolvedValue(existing);
+      const result = await render(NotebookDetailPage, {
+        providers: [
+          activatedRouteFor(NOTEBOOK_ID),
+          { provide: NotebooksService, useValue: { listNotebooks } },
+          { provide: DocumentsService, useValue: { listDocuments } },
+          chatServiceStub(),
+          { provide: DocumentTransferService, useValue: { uploadDocument } },
+          appEventsStub().provider,
+        ],
+      });
+      if (existing.length === 0) await screen.findByText('No Documents yet.');
+      else await screen.findByText(String(existing[0]['filename']));
+      return result;
+    }
+
+    function pick(names: string[]) {
+      const input = screen.getByLabelText('Upload Documents') as HTMLInputElement;
+      fireEvent.change(input, { target: { files: names.map((name) => new File(['x'], name)) } });
+      return input;
+    }
+
+    function panelRow(filename: string) {
+      const panel = screen.getByRole('list', { name: 'Upload progress' });
+      return within(panel)
+        .getAllByRole('listitem')
+        .find((row) => within(row).queryByText(filename) !== null)!;
+    }
+
+    it('re-sends only the failed files on Retry failed, three at a time, leaving the rest alone', async () => {
+      const uploads = heldUploads();
+      await renderWithUpload(uploads.uploadDocument);
+
+      pick(['good.txt', 'photo.png', 'bad1.txt', 'bad2.txt', 'bad3.txt', 'bad4.txt']);
+      await waitFor(() => expect(uploads.uploadDocument).toHaveBeenCalledTimes(3));
+      uploads.land('good.txt');
+      for (const name of ['bad1.txt', 'bad2.txt', 'bad3.txt', 'bad4.txt']) {
+        await waitFor(() => expect(uploads.sentNames()).toContain(name));
+        uploads.fail(name);
+      }
+      expect(await screen.findByText('1 uploaded, 1 skipped, 4 failed')).toBeTruthy();
+      expect(uploads.uploadDocument).toHaveBeenCalledTimes(5);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Retry failed' }));
+
+      // Only the failures go again, through the same 3-at-a-time flow: three
+      // in flight, the fourth waiting for a slot.
+      await waitFor(() => expect(uploads.uploadDocument).toHaveBeenCalledTimes(8));
+      expect(uploads.sentNames().slice(5)).toEqual(['bad1.txt', 'bad2.txt', 'bad3.txt']);
+      expect(within(panelRow('bad4.txt')).getByText('waiting')).toBeTruthy();
+      expect(screen.queryByText(/uploaded, .* skipped, .* failed/)).toBeNull();
+      // The file that landed and the one that was skipped are untouched.
+      expect(within(panelRow('good.txt')).getByText('uploaded')).toBeTruthy();
+      expect(within(panelRow('photo.png')).getByText('skipped')).toBeTruthy();
+
+      uploads.inFlight[5].request.resolve(documentFor('bad1.txt'));
+      await waitFor(() => expect(uploads.uploadDocument).toHaveBeenCalledTimes(9));
+      expect(uploads.sentNames()[8]).toBe('bad4.txt');
+      for (const { file, request } of uploads.inFlight.slice(6)) {
+        request.resolve(documentFor(file.name));
+      }
+
+      expect(await screen.findByText('5 uploaded, 1 skipped, 0 failed')).toBeTruthy();
+      expect(uploads.uploadDocument).toHaveBeenCalledTimes(9);
+      // Nothing is left to retry.
+      expect(screen.queryByRole('button', { name: 'Retry failed' })).toBeNull();
+      const cards = screen.getByRole('list', { name: 'Documents' });
+      expect(within(cards).getByText('bad4.txt')).toBeTruthy();
+      expect(within(cards).getAllByText('good.txt')).toHaveLength(1);
+    });
+
+    it('stops the files not yet sent on Cancel, and lets the ones in flight land', async () => {
+      const uploads = heldUploads();
+      await renderWithUpload(uploads.uploadDocument);
+
+      pick(['1.txt', '2.txt', '3.txt', '4.txt', '5.txt']);
+      await waitFor(() => expect(uploads.uploadDocument).toHaveBeenCalledTimes(3));
+      await screen.findByText('5.txt');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+      // The two that had not gone out are stopped, and say why.
+      for (const name of ['4.txt', '5.txt']) {
+        const row = panelRow(name);
+        expect(await within(row).findByText('skipped')).toBeTruthy();
+        expect(within(row).getByText(/cancelled/i)).toBeTruthy();
+      }
+      // The three in flight are left alone — neither aborted nor re-sent —
+      // and still land when they finish.
+      expect(within(panelRow('1.txt')).getByText('uploading')).toBeTruthy();
+      expect(screen.queryByText(/uploaded, .* skipped, .* failed/)).toBeNull();
+      for (const name of ['1.txt', '2.txt', '3.txt']) uploads.land(name);
+
+      expect(await screen.findByText('3 uploaded, 2 skipped, 0 failed')).toBeTruthy();
+      expect(uploads.uploadDocument).toHaveBeenCalledTimes(3);
+      const cards = screen.getByRole('list', { name: 'Documents' });
+      expect(within(cards).getByText('3.txt')).toBeTruthy();
+      expect(within(cards).queryByText('4.txt')).toBeNull();
+      // Cancel is for a running batch; a finished one has nothing to cancel.
+      expect(screen.queryByRole('button', { name: 'Cancel' })).toBeNull();
+    });
+
+    it('disables the picker while the batch runs, so a second batch cannot start mid-way', async () => {
+      const uploads = heldUploads();
+      await renderWithUpload(uploads.uploadDocument);
+
+      expect((screen.getByLabelText('Upload Documents') as HTMLInputElement).disabled).toBe(false);
+      const input = pick(['1.txt', '2.txt']);
+      await screen.findByText('2.txt');
+      await waitFor(() => expect(input.disabled).toBe(true));
+
+      uploads.land('1.txt');
+      // One file landing does not free the picker; the batch is still running.
+      await within(panelRow('1.txt')).findByText('uploaded');
+      expect(input.disabled).toBe(true);
+
+      uploads.land('2.txt');
+      await screen.findByText('2 uploaded, 0 skipped, 0 failed');
+      await waitFor(() => expect(input.disabled).toBe(false));
+    });
+
+    it("asks the browser to warn before the tab closes while the batch runs, and not once it's done", async () => {
+      const uploads = heldUploads();
+      await renderWithUpload(uploads.uploadDocument);
+      // The browser only shows its leave-page dialog when the event is
+      // cancelled, so "prevented" is the whole contract.
+      const closingTab = () => {
+        const event = new Event('beforeunload', { cancelable: true });
+        window.dispatchEvent(event);
+        return event.defaultPrevented;
+      };
+
+      expect(closingTab()).toBe(false);
+
+      pick(['1.txt', '2.txt']);
+      await screen.findByText('2.txt');
+      expect(closingTab()).toBe(true);
+
+      uploads.land('1.txt');
+      await within(panelRow('1.txt')).findByText('uploaded');
+      expect(closingTab()).toBe(true);
+
+      uploads.land('2.txt');
+      await screen.findByText('2 uploaded, 0 skipped, 0 failed');
+      expect(closingTab()).toBe(false);
+    });
+
+    // Real routing here, not the ActivatedRoute stub: the page has to be
+    // destroyed and created again by the router, the way it is in the app,
+    // for "navigating away and back" to mean anything.
+    it('keeps the batch going, and shows it again, across in-app navigation away and back', async () => {
+      const uploads = heldUploads();
+      const listNotebooks = vi.fn().mockResolvedValue([]);
+      // The second visit re-reads the list, and by then the first file is
+      // stored — as the real backend would report.
+      const listDocuments = vi
+        .fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValue([documentFor('1.txt')]);
+      const { navigate } = await render(RouterShell, {
+        routes: [
+          { path: 'notebooks/:notebookId', component: NotebookDetailPage },
+          { path: 'elsewhere', component: Elsewhere },
+        ],
+        providers: [
+          { provide: NotebooksService, useValue: { listNotebooks } },
+          { provide: DocumentsService, useValue: { listDocuments } },
+          chatServiceStub(),
+          {
+            provide: DocumentTransferService,
+            useValue: { uploadDocument: uploads.uploadDocument },
+          },
+          appEventsStub().provider,
+        ],
+      });
+      await navigate(`/notebooks/${NOTEBOOK_ID}`);
+      await screen.findByText('No Documents yet.');
+
+      pick(['1.txt', '2.txt']);
+      await waitFor(() => expect(uploads.uploadDocument).toHaveBeenCalledTimes(2));
+      await screen.findByText('2.txt');
+
+      await navigate('/elsewhere');
+      await screen.findByText('Somewhere else');
+      expect(screen.queryByRole('list', { name: 'Upload progress' })).toBeNull();
+      // A file landing while the page is away is not lost...
+      uploads.land('1.txt');
+
+      await navigate(`/notebooks/${NOTEBOOK_ID}`);
+      // ...the batch is still shown, in progress, with what landed meanwhile...
+      const panel = await screen.findByRole('list', { name: 'Upload progress' });
+      expect(within(panelRow('1.txt')).getByText('uploaded')).toBeTruthy();
+      expect(within(panelRow('2.txt')).getByText('uploading')).toBeTruthy();
+      expect(within(panel).getAllByRole('listitem')).toHaveLength(2);
+      expect(screen.getByRole('button', { name: 'Cancel' })).toBeTruthy();
+      expect((screen.getByLabelText('Upload Documents') as HTMLInputElement).disabled).toBe(true);
+      // ...and Documents keep landing on the re-created page; no file was
+      // sent twice.
+      uploads.land('2.txt');
+      expect(await screen.findByText('2 uploaded, 0 skipped, 0 failed')).toBeTruthy();
+      const cards = screen.getByRole('list', { name: 'Documents' });
+      expect(within(cards).getByText('1.txt')).toBeTruthy();
+      expect(within(cards).getByText('2.txt')).toBeTruthy();
+      expect(uploads.uploadDocument).toHaveBeenCalledTimes(2);
+    });
+
+    it('offers to dismiss the panel once the batch has finished, and not before', async () => {
+      const uploads = heldUploads();
+      await renderWithUpload(uploads.uploadDocument);
+
+      pick(['1.txt']);
+      await screen.findByText('1.txt');
+      expect(screen.queryByRole('button', { name: 'Dismiss' })).toBeNull();
+
+      uploads.land('1.txt');
+      await screen.findByText('1 uploaded, 0 skipped, 0 failed');
+      fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+
+      await waitFor(() =>
+        expect(screen.queryByRole('list', { name: 'Upload progress' })).toBeNull(),
+      );
+      expect(screen.queryByText('1 uploaded, 0 skipped, 0 failed')).toBeNull();
+      // Dismissing the panel forgets nothing that was stored.
+      expect(
+        within(screen.getByRole('list', { name: 'Documents' })).getByText('1.txt'),
+      ).toBeTruthy();
+    });
+
+    // Cancel meets the conflict dialog (NBK-19): a file waiting on its
+    // dialog is a file not yet sent, so Cancel covers it too — the question
+    // is withdrawn, not left on screen over a batch that has nothing left
+    // to ask about.
+    it('withdraws an open conflict dialog on Cancel, and the batch still finishes', async () => {
+      const uploads = heldUploads();
+      await renderWithUpload(uploads.uploadDocument, [documentFor('report.txt')]);
+
+      pick(['1.txt', '2.txt', '3.txt', 'report.txt', '4.txt']);
+      const open = await screen.findByRole('dialog', { name: 'Document already exists' });
+      expect(within(open).getByText(/"report\.txt" already exists/)).toBeTruthy();
+      await waitFor(() => expect(uploads.uploadDocument).toHaveBeenCalledTimes(3));
+
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+      await waitFor(() =>
+        expect(screen.queryByRole('dialog', { name: 'Document already exists' })).toBeNull(),
+      );
+      for (const name of ['report.txt', '4.txt']) {
+        const row = panelRow(name);
+        expect(await within(row).findByText('skipped')).toBeTruthy();
+        expect(within(row).getByText(/cancelled/i)).toBeTruthy();
+      }
+      // The three in flight still land, and the batch reaches its summary.
+      for (const name of ['1.txt', '2.txt', '3.txt']) uploads.land(name);
+      expect(await screen.findByText('3 uploaded, 2 skipped, 0 failed')).toBeTruthy();
+      expect(uploads.uploadDocument).toHaveBeenCalledTimes(3);
+      expect(screen.queryByRole('dialog', { name: 'Document already exists' })).toBeNull();
+      expect(screen.getByRole('button', { name: 'Dismiss' })).toBeTruthy();
+      // The existing Document was neither replaced nor duplicated.
+      const cards = screen.getByRole('list', { name: 'Documents' });
+      expect(within(cards).getAllByText('report.txt')).toHaveLength(1);
+      const reportCard = within(cards)
+        .getAllByRole('listitem')
+        .find((card) => within(card).queryByText('report.txt') !== null)!;
+      expect(within(reportCard).getByText('v1')).toBeTruthy();
     });
   });
 

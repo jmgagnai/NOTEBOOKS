@@ -1,5 +1,12 @@
 import { computed, inject } from '@angular/core';
-import { patchState, signalStore, withComputed, withMethods, withState } from '@ngrx/signals';
+import {
+  patchState,
+  signalStore,
+  withComputed,
+  withHooks,
+  withMethods,
+  withState,
+} from '@ngrx/signals';
 import { Subscription } from 'rxjs';
 import { DocumentsService } from '../api/services/documents.service';
 import { AppEvent, AppEventsService } from '../events/app-events.service';
@@ -488,6 +495,11 @@ export const DocumentsStore = signalStore(
               if (answer.applyToAll && batch) {
                 patchState(store, { batch: { ...batch, conflictAnswer: choice } });
               }
+              // The batch may have been cancelled while the dialog was open
+              // (NBK-17): its item is then already skipped as cancelled, and
+              // the answer that withdrew the dialog is not one to apply.
+              const current = batch?.items.find((item) => item.id === next.id);
+              if (current?.status !== 'waiting') continue;
             }
             if (choice === 'skip') {
               patchItem(next.id, { status: 'skipped', reason: NAME_ALREADY_EXISTS_REASON });
@@ -680,6 +692,68 @@ export const DocumentsStore = signalStore(
         },
 
         /**
+         * Re-queues every `failed` item of the current batch and sends them
+         * again (NBK-17), through the same 3-at-a-time flow and without the
+         * user re-selecting anything. Items that landed or were skipped are
+         * untouched. Resolves when the batch is no longer running.
+         */
+        async retryFailed(): Promise<void> {
+          const batch = store.batch();
+          if (!batch) return;
+          patchState(store, {
+            batch: {
+              ...batch,
+              items: batch.items.map((item): UploadItem =>
+                item.status === 'failed' ? { ...item, status: 'waiting', reason: null } : item,
+              ),
+            },
+          });
+          await drainBatch();
+        },
+
+        /**
+         * Stops the files of the current batch that have not been sent yet
+         * (NBK-17): every `waiting` item becomes `skipped` with a cancelled
+         * reason. Requests already in flight are left to finish — nothing is
+         * aborted, and nothing already stored is removed. The workers in
+         * `drainBatch` find no `waiting` item afterwards and stop by
+         * themselves.
+         *
+         * A file waiting on its conflict dialog (NBK-19) is a `waiting` file
+         * too, so it is cancelled with the rest — and its open dialog is
+         * withdrawn: the question is moot, and the asker loop is parked on
+         * that answer, so settling it is what lets the batch finish.
+         */
+        cancelBatch(): void {
+          const batch = store.batch();
+          if (!batch) return;
+          patchState(store, {
+            batch: {
+              ...batch,
+              items: batch.items.map((item): UploadItem =>
+                item.status === 'waiting'
+                  ? { ...item, status: 'skipped', reason: 'Cancelled before it was sent.' }
+                  : item,
+              ),
+            },
+            conflict: null,
+          });
+          // After the items above are cancelled, so the asker finds the
+          // dialog's item no longer waiting and nothing further to ask.
+          deliverAnswer?.({ choice: 'skip', applyToAll: false });
+        },
+
+        /**
+         * Drops a finished batch from the panel (NBK-17). A running one stays:
+         * the panel is where its Cancel lives, and the Documents it has
+         * stored are in the list regardless.
+         */
+        dismissBatch(): void {
+          if (store.batchRunning()) return;
+          patchState(store, { batch: null });
+        },
+
+        /**
          * Answers the open conflict dialog (NBK-19): New Version sends the
          * file as a new Version of the existing Document, Skip lists it as
          * skipped. With `applyToAll`, the same answer settles every later
@@ -795,4 +869,23 @@ export const DocumentsStore = signalStore(
       };
     },
   ),
+  // The tab-close warning (NBK-17). It lives here, on the root-provided
+  // store, and not on the Notebook page: a batch keeps running while the
+  // user browses to another page of the app, and closing the tab from there
+  // would lose it just the same. The browser shows its leave-page dialog
+  // only when `beforeunload` is cancelled, so cancelling it while the batch
+  // runs is the whole mechanism — the wording is the browser's, not ours.
+  withHooks((store) => {
+    const warnBeforeUnload = (event: Event): void => {
+      if (store.batchRunning()) event.preventDefault();
+    };
+    return {
+      onInit() {
+        window.addEventListener('beforeunload', warnBeforeUnload);
+      },
+      onDestroy() {
+        window.removeEventListener('beforeunload', warnBeforeUnload);
+      },
+    };
+  }),
 );

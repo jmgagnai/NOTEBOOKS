@@ -145,6 +145,21 @@ export class NotebookDetailPage implements OnInit, OnDestroy {
     input.value = '';
   }
 
+  /** Re-sends every failed file of the batch (NBK-17). */
+  protected retryFailed(): void {
+    void this.store.retryFailed();
+  }
+
+  /** Stops the files of the batch not sent yet; in-flight ones finish (NBK-17). */
+  protected cancelBatch(): void {
+    this.store.cancelBatch();
+  }
+
+  /** Clears the panel once the batch is done (NBK-17). */
+  protected dismissBatch(): void {
+    this.store.dismissBatch();
+  }
+
   /**
    * The conflict dialog's "apply to all remaining conflicts" tick (NBK-19).
    * Page state, not store state: it is part of the answer being composed,
