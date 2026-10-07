@@ -93,7 +93,7 @@
   &__message-author {
     display: block;
     font-size: var(--mat-sys-body-small-size);
-    opacity: 0.7;
+    color: var(--mat-sys-on-surface-variant);
     margin-bottom: 0.25rem;
   }
 
@@ -159,8 +159,8 @@
     font-variant-numeric: tabular-nums;
   }
 
-  // Pinned as the last row of the column (NBK-35), set off from the
-  // messages scrolling above it.
+  // The border marks where the scrolling stops (NBK-35): without it a long
+  // Thread's last message runs straight into the question box.
   &__composer {
     flex: none;
     display: flex;

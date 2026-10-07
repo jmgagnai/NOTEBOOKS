@@ -22,6 +22,7 @@ import { ThreadNavigator } from '../chat/thread-navigator';
 import { ThreadView } from '../chat/thread-view';
 import { ConflictChoice, Document, DocumentsStore } from '../documents/documents.store';
 import { UPLOAD_ACCEPT } from '../documents/upload-rules';
+import { APP_NAME } from '../shared/app-name';
 import { StatusBadge } from '../shared/status-badge';
 import { UndoSnackBar } from '../shared/undo-snack-bar';
 import { NotebooksStore } from './notebooks.store';
@@ -65,13 +66,6 @@ function droppedEntries(dataTransfer: DataTransfer | null): {
   });
   return { files, folders };
 }
-
-/**
- * The app's name as the browser tab shows it. Spec 06 brings the app-name
- * constant and its own title handling; until then this is the literal
- * index.html carries (NBK-35).
- */
-const APP_NAME = 'RAG Notebook';
 
 /**
  * A Notebook's workspace (NBK-5, framed in NBK-35): a slim header, then

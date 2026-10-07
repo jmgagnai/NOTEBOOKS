@@ -175,23 +175,23 @@
     padding: 16px;
     text-align: center;
     font-weight: 600;
-    background: var(--mat-sys-primary-container);
+    // Not quite opaque, so the Document list still shows through where the
+    // files are about to land.
+    background: color-mix(in srgb, var(--mat-sys-primary-container) 92%, transparent);
     color: var(--mat-sys-on-primary-container);
-    opacity: 0.92;
     // The hint sits over the panel, but the drop must still reach the page
     // beneath it, not get swallowed by the hint.
     pointer-events: none;
   }
 
-  // The count on "Show Documents" (NBK-37): a small pill, so the number
-  // reads as a count and not as part of the label.
+  // The count on "Show Documents" (NBK-37): a small tinted badge at the
+  // caption step, so the number reads as a count and not as part of the label.
   &__count {
     padding: 0 6px;
-    border-radius: 10px;
+    border-radius: var(--mat-sys-corner-full);
     background: var(--mat-sys-primary-container);
     color: var(--mat-sys-primary);
-    font: var(--mat-sys-label-small);
-    font-weight: 600;
+    font: var(--mat-sys-label-medium);
   }
 
   &__panel-head {

@@ -88,13 +88,13 @@
   }
 
   &__thread-title {
-    font-weight: 500;
+    font-weight: 600;
   }
 
   // Attribution, not a heading: whose Thread this is matters, but it must not
   // compete with the title it belongs to.
   &__thread-author {
     font-size: var(--mat-sys-body-small-size);
-    opacity: 0.7;
+    color: var(--mat-sys-on-surface-variant);
   }
 }

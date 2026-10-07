@@ -4,6 +4,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatMenuModule } from '@angular/material/menu';
 import { MatToolbarModule } from '@angular/material/toolbar';
 import { AuthStore } from './auth/auth.store';
+import { APP_NAME } from './shared/app-name';
 import { Avatar } from './shared/avatar';
 
 /**
@@ -20,6 +21,7 @@ import { Avatar } from './shared/avatar';
   templateUrl: './app.html',
 })
 export class App implements OnInit {
+  protected readonly appName = APP_NAME;
   protected readonly store = inject(AuthStore);
   private readonly router = inject(Router);
 

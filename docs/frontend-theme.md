@@ -84,9 +84,12 @@ sit on the scale without per-page rules. Rendered Markdown
 | `--app-control-height` | 32 px | buttons, icon buttons, the plain `.app-button` variants |
 
 `app-root` is a flex column; the routed page element (whatever follows the
-toolbar) gets `flex: 1 1 auto; min-height: 0`, so a page that wants panes
-scrolling inside the viewport sets `height: 100%` (or `display: flex`) on its
-own root and lets the children scroll. `body` carries the page canvas colour.
+toolbar) gets `flex: 1 1 auto; min-height: 0`. That leaves it no definite
+height for a percentage to resolve against, so a page that wants panes
+scrolling inside the viewport sets
+`height: calc(100vh - var(--app-title-bar-height))` on its own root (as
+`notebook-detail-page.scss` does) and lets the children scroll. `body`
+carries the page canvas colour.
 
 ## Focus
 
@@ -94,7 +97,10 @@ Every focusable control shows `outline: 2px solid var(--mat-sys-on-surface)`
 at `outline-offset: 1px` on `:focus-visible`. Material buttons are named
 explicitly (`.mat-mdc-button-base:focus-visible`) because `.mdc-button`
 resets `outline`. `matInput` inside a `mat-form-field` is excluded: the field
-draws its own focused outline. The chat composer (spec 04) is the intended
+draws its own focused outline. `mat-checkbox` keeps its native input
+invisible over the box it draws, so there the ring goes on
+`.mdc-checkbox__background` (through `:has(:focus-visible)`) instead. The
+chat composer (spec 04) is the intended
 exception and opts out with its own `.<class>:focus-visible { outline: none }`
 rule, darkening its border instead.
 

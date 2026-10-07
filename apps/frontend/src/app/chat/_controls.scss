@@ -24,7 +24,7 @@
 
 @mixin field-label {
   font-size: var(--mat-sys-body-small-size);
-  opacity: 0.75;
+  color: var(--mat-sys-on-surface-variant);
 }
 
 // A text box with its action button beside it, bottom-aligned.
@@ -36,5 +36,5 @@
 }
 
 @mixin empty {
-  opacity: 0.75;
+  color: var(--mat-sys-on-surface-variant);
 }

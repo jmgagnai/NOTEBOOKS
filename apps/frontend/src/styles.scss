@@ -222,6 +222,13 @@ app-root > :not(mat-toolbar):not(router-outlet) {
   outline-offset: 1px;
 }
 
+// `mat-checkbox` keeps its native input invisible (opacity 0) over the box
+// it draws, so the ring the input gets is never seen: it goes on the box.
+.mat-mdc-checkbox:has(.mdc-checkbox__native-control:focus-visible) .mdc-checkbox__background {
+  outline: 2px solid var(--mat-sys-on-surface);
+  outline-offset: 1px;
+}
+
 // ---------------------------------------------------------------------------
 // Material components in Fluent clothes. Component tokens here, layout in the
 // components' own stylesheets.
@@ -382,6 +389,14 @@ app-root > :not(mat-toolbar):not(router-outlet) {
   &--icon {
     width: var(--app-control-height);
     padding: 0;
+
+    // The 20 px grid the Fluent set is drawn on (NBK-31), whether the glyph
+    // comes through `mat-icon` or as a bare `<svg>`.
+    > svg,
+    > .mat-icon {
+      width: 20px;
+      height: 20px;
+    }
   }
 }
 
