@@ -1,4 +1,5 @@
 import { Component, computed, effect, ElementRef, inject, input, signal } from '@angular/core';
+import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { ChatStore } from '../../chat/chat.store';
 import { ProtoIcon } from './proto-icon';
@@ -14,9 +15,12 @@ import { ProtoIcon } from './proto-icon';
 @Component({
   selector: 'proto-composer',
   standalone: true,
-  imports: [MatTooltipModule, ProtoIcon],
+  imports: [MatProgressBarModule, MatTooltipModule, ProtoIcon],
   template: `
-    <div class="pc" [class.pc--disabled]="!enabled()">
+    <div class="pc" [class.pc--disabled]="!enabled()" [class.pc--busy]="store.sending()">
+      @if (store.sending()) {
+        <mat-progress-bar class="pc__progress" mode="indeterminate" aria-label="Answering" />
+      }
       <textarea
         class="pc__input"
         rows="1"
@@ -29,16 +33,22 @@ import { ProtoIcon } from './proto-icon';
       ></textarea>
       <div class="pc__bar">
         <span class="pc__hint">{{ hint() }}</span>
-        <button
-          type="button"
-          class="pc__send"
-          aria-label="Send"
-          matTooltip="Send (Enter)"
-          [disabled]="!canSend()"
-          (click)="send()"
-        >
-          <proto-icon name="send" [size]="18" />
-        </button>
+        @if (store.sending()) {
+          <span class="pc__spinner" role="status" aria-label="Answering">
+            <span class="pc__ring"></span>
+          </span>
+        } @else {
+          <button
+            type="button"
+            class="pc__send"
+            aria-label="Send"
+            matTooltip="Send (Enter)"
+            [disabled]="!canSend()"
+            (click)="send()"
+          >
+            <proto-icon name="send" [size]="18" />
+          </button>
+        }
       </div>
     </div>
   `,
@@ -47,6 +57,8 @@ import { ProtoIcon } from './proto-icon';
       display: block;
     }
     .pc {
+      position: relative;
+      overflow: hidden;
       border: 1px solid #d1d1d1;
       border-radius: 8px;
       background: #fff;
@@ -57,6 +69,38 @@ import { ProtoIcon } from './proto-icon';
       transition:
         border-color 0.12s,
         box-shadow 0.12s;
+    }
+    .pc--busy {
+      border-color: #b4d6fa;
+    }
+    .pc__progress {
+      position: absolute;
+      top: 0;
+      left: 8px;
+      right: 8px;
+      height: 2px;
+      --mdc-linear-progress-active-indicator-color: #0f6cbd;
+      --mdc-linear-progress-track-color: transparent;
+    }
+    .pc__spinner {
+      width: 32px;
+      height: 32px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .pc__ring {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      border: 2px solid #b4d6fa;
+      border-top-color: #0f6cbd;
+      animation: pc-spin 0.8s linear infinite;
+    }
+    @keyframes pc-spin {
+      to {
+        transform: rotate(360deg);
+      }
     }
     .pc--disabled {
       background: #f5f5f5;
@@ -137,8 +181,8 @@ export class ProtoComposer {
     () => this.enabled() && this.draft().trim().length > 0 && !this.store.sending(),
   );
   protected readonly hint = computed(() => {
-    if (!this.enabled()) return 'Open or start a Chat Thread to ask';
     if (this.store.sending()) return 'Answering… the box reopens when the answer is in';
+    if (!this.enabled()) return 'Open or start a Chat Thread to ask';
     return 'Enter to send · Shift+Enter for a new line';
   });
 

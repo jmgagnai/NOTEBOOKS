@@ -221,9 +221,12 @@
     // fill with a tinted border, bold brand-coloured title; the others stay
     // regular weight so the contrast is in weight as well as colour.
     &--active {
-      background: #deecf9;
+      background: #d6e8f9;
       border-left-color: #0f6cbd;
-      box-shadow: inset 0 0 0 1px #b4d6fa;
+      // A solid 2 px brand outline so the open Thread reads as selected at
+      // a glance, not just as a tinted row.
+      outline: 2px solid #0f6cbd;
+      outline-offset: -2px;
       .vb__thread-title {
         color: #0c3b5e;
         font-weight: 700;
@@ -232,7 +235,7 @@
         color: #0f548c;
       }
       &:hover {
-        background: #d3e5f7;
+        background: #c7def6;
       }
     }
   }

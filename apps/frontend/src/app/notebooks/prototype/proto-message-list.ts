@@ -305,18 +305,32 @@ export class ProtoMessageList {
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 
   constructor() {
-    // When an answer starts arriving (first streamed chunk) and again when
-    // the recorded message replaces the preview, scroll the nearest
-    // scrollable ancestor so the answer's first line sits at the top.
+    // Two scroll behaviours, one effect so they cannot fight:
+    // - Switching Thread (or opening the first) scrolls to the bottom once
+    //   its messages are in, so the latest exchange is what you land on.
+    // - An answer starting to stream, and the recorded message replacing the
+    //   preview, scroll so the answer's first line sits at the top.
+    let seenThread: string | null | undefined;
     let seenBlocks = 0;
     let seenMessages = 0;
     effect(() => {
-      const blocks = this.blocks().length;
+      const thread = this.store.activeThreadId();
+      const loading = this.store.messagesLoading();
       const messages = this.store.messages();
+      const blocks = this.blocks().length;
+
+      if (thread !== seenThread) {
+        if (loading) return; // wait for the switch to finish loading
+        seenThread = thread;
+        seenBlocks = blocks;
+        seenMessages = messages.length;
+        setTimeout(() => this.scrollToBottom());
+        return;
+      }
+
       const lastIsAnswer = messages.at(-1)?.role === 'assistant';
       const answerStarted = seenBlocks === 0 && blocks > 0;
-      const answerLanded =
-        blocks === 0 && messages.length > seenMessages && lastIsAnswer && seenMessages > 0;
+      const answerLanded = blocks === 0 && messages.length > seenMessages && lastIsAnswer;
       seenBlocks = blocks;
       seenMessages = messages.length;
       if (!answerStarted && !answerLanded) return;
@@ -325,6 +339,13 @@ export class ProtoMessageList {
         rows[rows.length - 1]?.scrollIntoView({ block: 'start', behavior: 'smooth' });
       });
     });
+  }
+
+  /** The nearest scrollable ancestor is the pane; drop it to its end. */
+  private scrollToBottom(): void {
+    let el: HTMLElement | null = this.host.nativeElement.parentElement;
+    while (el && !/(auto|scroll)/.test(getComputedStyle(el).overflowY)) el = el.parentElement;
+    if (el) el.scrollTop = el.scrollHeight;
   }
 
   protected author(m: ChatMessage): string {
