@@ -108,9 +108,10 @@ const APP_NAME = 'RAG Notebook';
   ],
   templateUrl: './notebook-detail-page.html',
   styleUrl: './notebook-detail-page.scss',
-  // The whole page is the drop target (NBK-18), so the drag events are
-  // listened for on the host rather than on one box inside it. NBK-36 moves
-  // them to the Documents panel.
+  // Files dropped anywhere on the page land in this Notebook (NBK-18), so
+  // the drag events are listened for on the host rather than on one box
+  // inside it; what lights up is the Documents panel (NBK-36), driven by
+  // `dragOver`.
   host: {
     '(dragenter)': 'onDragEnter($event)',
     '(dragover)': 'onDragOver($event)',
@@ -262,7 +263,7 @@ export class NotebookDetailPage implements OnInit, OnDestroy {
    */
   private dragDepth = 0;
 
-  /** True while files are being dragged over the page. */
+  /** True while files are being dragged over the page; the Documents panel shows it (NBK-36). */
   protected readonly dragOver = signal(false);
 
   /** Whether a drag carries files at all — text or links dragged over the page are not a drop. */

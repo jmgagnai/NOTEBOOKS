@@ -953,26 +953,53 @@ describe('NotebookDetailPage', () => {
     }
 
     const DROP_HINT = 'Drop files to upload them into this Notebook';
+    const DRAG_OVER = 'notebook-detail-page__panel--drag-over';
 
-    it('highlights the whole page while files are dragged over it, until they leave', async () => {
+    /** The Documents panel: the drop target since NBK-36. */
+    function documentsPanel() {
+      return screen.getByRole('complementary', { name: 'Documents' });
+    }
+
+    /** Whether files dragged over the page light up the Documents panel, and only it. */
+    function highlightsDocumentsPanel() {
+      const litUp = document.querySelectorAll(`.${DRAG_OVER}`);
+      const hintInPanel = within(documentsPanel()).queryByText(DROP_HINT) !== null;
+      expect(litUp.length).toBe(hintInPanel ? 1 : 0);
+      if (hintInPanel) expect(litUp[0]).toBe(documentsPanel());
+      // Nothing outside the panel lights up or carries the hint.
+      expect(screen.queryAllByText(DROP_HINT).length).toBe(hintInPanel ? 1 : 0);
+      return hintInPanel;
+    }
+
+    it('highlights the Documents panel, and only it, while files are dragged over the page', async () => {
       await renderWithUpload(vi.fn());
-      expect(screen.queryByText(DROP_HINT)).toBeNull();
+      expect(highlightsDocumentsPanel()).toBe(false);
 
       const dataTransfer = dataTransferOf([new File(['x'], 'a.txt')]);
-      fireEvent.dragEnter(somewhereOnThePage(), { dataTransfer });
+      // Over the Chat card, not the panel: anywhere on the page points at the Documents panel.
+      fireEvent.dragEnter(elsewhereOnThePage(), { dataTransfer });
       // `dragover` has to be cancelled or the browser refuses the drop.
-      expect(fireEvent.dragOver(somewhereOnThePage(), { dataTransfer })).toBe(false);
-      expect(screen.getByText(DROP_HINT)).toBeTruthy();
+      expect(fireEvent.dragOver(elsewhereOnThePage(), { dataTransfer })).toBe(false);
+      expect(highlightsDocumentsPanel()).toBe(true);
 
       // Moving between elements of the page fires leave/enter pairs that must
       // not flicker the state off...
-      fireEvent.dragEnter(elsewhereOnThePage(), { dataTransfer });
-      fireEvent.dragLeave(somewhereOnThePage(), { dataTransfer });
-      expect(screen.getByText(DROP_HINT)).toBeTruthy();
+      fireEvent.dragEnter(somewhereOnThePage(), { dataTransfer });
+      fireEvent.dragLeave(elsewhereOnThePage(), { dataTransfer });
+      expect(highlightsDocumentsPanel()).toBe(true);
 
       // ...while leaving the page clears it.
-      fireEvent.dragLeave(elsewhereOnThePage(), { dataTransfer });
-      expect(screen.queryByText(DROP_HINT)).toBeNull();
+      fireEvent.dragLeave(somewhereOnThePage(), { dataTransfer });
+      expect(highlightsDocumentsPanel()).toBe(false);
+    });
+
+    it('does not light up for a drag that carries no files', async () => {
+      await renderWithUpload(vi.fn());
+
+      const dataTransfer = { ...dataTransferOf([]), types: ['text/plain'] };
+      fireEvent.dragEnter(somewhereOnThePage(), { dataTransfer });
+      fireEvent.dragOver(somewhereOnThePage(), { dataTransfer });
+      expect(highlightsDocumentsPanel()).toBe(false);
     });
 
     it('uploads dropped files as the same batch the picker would start, skipping included', async () => {

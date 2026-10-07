@@ -12,34 +12,6 @@
   box-sizing: border-box;
   height: calc(100vh - var(--app-title-bar-height));
 
-  // The drop target is still the whole page (NBK-18, until NBK-36 moves it
-  // to the Documents panel), so the whole workspace shows it: a dashed
-  // outline while files are dragged over it, drawn inside the edge because
-  // the page meets the viewport, plus a hint pinned over the content saying
-  // what a drop will do.
-  &--drag-over {
-    outline: 2px dashed var(--mat-sys-primary);
-    outline-offset: -4px;
-  }
-
-  &__drop-hint {
-    position: absolute;
-    inset: 0;
-    z-index: 1;
-    margin: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-weight: 600;
-    background: var(--mat-sys-primary-container);
-    color: var(--mat-sys-on-primary-container);
-    opacity: 0.92;
-    border-radius: inherit;
-    // The hint sits over the content, but the drop must still reach the
-    // page beneath it, not get swallowed by the hint.
-    pointer-events: none;
-  }
-
   // The page header: as high as the title bar, so the two read as one chrome.
   &__header {
     flex: none;
@@ -130,6 +102,35 @@
 
   &__panel {
     @include workspace-card.card;
+
+    // The Documents panel is the drop target (NBK-36): tinted and outlined
+    // while files are dragged anywhere over the page, with the hint laid
+    // over its content. The card is already `position: relative`, and the
+    // outline is drawn inside its border so the rounded corners hold.
+    &--drag-over {
+      background: var(--mat-sys-primary-container);
+      outline: 2px dashed var(--mat-sys-primary);
+      outline-offset: -3px;
+    }
+  }
+
+  &__drop-hint {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    text-align: center;
+    font-weight: 600;
+    background: var(--mat-sys-primary-container);
+    color: var(--mat-sys-on-primary-container);
+    opacity: 0.92;
+    // The hint sits over the panel, but the drop must still reach the page
+    // beneath it, not get swallowed by the hint.
+    pointer-events: none;
   }
 
   &__panel-head {
