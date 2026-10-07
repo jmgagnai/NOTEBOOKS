@@ -2,9 +2,15 @@ import { Component, computed, inject, OnDestroy, OnInit, signal } from '@angular
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
+import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { ChatPanel } from '../chat/chat-panel';
-import { Document, DocumentsStore, UploadItemStatus } from '../documents/documents.store';
+import {
+  ConflictChoice,
+  Document,
+  DocumentsStore,
+  UploadItemStatus,
+} from '../documents/documents.store';
 import { UPLOAD_ACCEPT } from '../documents/upload-rules';
 import { NotebooksStore } from './notebooks.store';
 
@@ -68,7 +74,14 @@ function droppedEntries(dataTransfer: DataTransfer | null): {
 @Component({
   selector: 'app-notebook-detail-page',
   standalone: true,
-  imports: [ChatPanel, MatButtonModule, MatCardModule, MatProgressSpinnerModule, RouterLink],
+  imports: [
+    ChatPanel,
+    MatButtonModule,
+    MatCardModule,
+    MatCheckboxModule,
+    MatProgressSpinnerModule,
+    RouterLink,
+  ],
   templateUrl: './notebook-detail-page.html',
   styleUrl: './notebook-detail-page.scss',
   // The whole page is the drop target (NBK-18), so the drag events are
@@ -130,6 +143,19 @@ export class NotebookDetailPage implements OnInit, OnDestroy {
     if (files.length === 0) return;
     void this.store.uploadDocuments(this.notebookId, files);
     input.value = '';
+  }
+
+  /**
+   * The conflict dialog's "apply to all remaining conflicts" tick (NBK-19).
+   * Page state, not store state: it is part of the answer being composed,
+   * and is sent with it.
+   */
+  protected readonly applyToAll = signal(false);
+
+  /** Answers the open conflict dialog, with the tick as it stands. */
+  protected answerConflict(choice: ConflictChoice): void {
+    this.store.answerConflict(choice, this.applyToAll());
+    this.applyToAll.set(false);
   }
 
   /**

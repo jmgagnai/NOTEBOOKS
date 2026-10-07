@@ -75,6 +75,39 @@
         @if (batchSummaryLine(); as summary) {
           <p class="notebook-detail-page__batch-summary">{{ summary }}</p>
         }
+
+        <!--
+          The conflict dialog (NBK-19): a file whose name is an existing
+          Document is held back until the user says whether it becomes a new
+          Version of that Document or is skipped. Inline rather than an
+          overlay, next to the file it is about, because the rest of the
+          batch keeps moving in the panel above while the question is open
+          — the user is asked, not blocked.
+        -->
+        @if (store.conflict(); as conflict) {
+          <div
+            class="notebook-detail-page__conflict"
+            role="dialog"
+            aria-labelledby="conflict-dialog-title"
+          >
+            <h3 id="conflict-dialog-title" class="notebook-detail-page__conflict-title">
+              Document already exists
+            </h3>
+            <p>
+              "{{ conflict.filename }}" already exists in this Notebook. Upload this file as a new
+              Version of that Document, or skip it?
+            </p>
+            <mat-checkbox [checked]="applyToAll()" (change)="applyToAll.set($event.checked)">
+              Apply to all remaining conflicts
+            </mat-checkbox>
+            <div class="notebook-detail-page__conflict-actions">
+              <button mat-button type="button" (click)="answerConflict('skip')">Skip</button>
+              <button mat-flat-button type="button" (click)="answerConflict('new-version')">
+                New Version
+              </button>
+            </div>
+          </div>
+        }
       </section>
     }
 
