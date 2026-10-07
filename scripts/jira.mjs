@@ -76,7 +76,9 @@ async function api(method, path, body) {
   if (!response.ok) {
     // Never echo the request body: a create/comment carries no secret, but the
     // headers do, and a stack trace that quotes them would leak the token.
-    throw new Error(`Jira ${method} ${path} → ${response.status}\n${JSON.stringify(payload, null, 2)}`);
+    throw new Error(
+      `Jira ${method} ${path} → ${response.status}\n${JSON.stringify(payload, null, 2)}`,
+    );
   }
   return payload;
 }
@@ -161,7 +163,11 @@ export function markdownToAdf(markdown) {
 
     if (/^[-*]\s+/.test(line)) {
       const items = [];
-      while (i < lines.length && /^[-*]\s+/.test(lines[i].trim()) && !/^-\s+\[[ xX]\]/.test(lines[i].trim())) {
+      while (
+        i < lines.length &&
+        /^[-*]\s+/.test(lines[i].trim()) &&
+        !/^-\s+\[[ xX]\]/.test(lines[i].trim())
+      ) {
         items.push(listItem(lines[i].trim().replace(/^[-*]\s+/, '')));
         i += 1;
       }
@@ -232,10 +238,15 @@ function blocksToMarkdown(nodes = [], indent = '') {
         case 'bulletList':
           return node.content.map((item) => listItemToMarkdown(item, '- ', indent)).join('\n');
         case 'orderedList':
-          return node.content.map((item, i) => listItemToMarkdown(item, `${i + 1}. `, indent)).join('\n');
+          return node.content
+            .map((item, i) => listItemToMarkdown(item, `${i + 1}. `, indent))
+            .join('\n');
         case 'taskList':
           return node.content
-            .map((item) => `${indent}- [${item.attrs?.state === 'DONE' ? 'x' : ' '}] ${inlineToMarkdown(item.content)}`)
+            .map(
+              (item) =>
+                `${indent}- [${item.attrs?.state === 'DONE' ? 'x' : ' '}] ${inlineToMarkdown(item.content)}`,
+            )
             .join('\n');
         case 'codeBlock':
           return `${indent}\`\`\`${node.attrs?.language ?? ''}\n${inlineToMarkdown(node.content)}\n${indent}\`\`\``;
@@ -302,7 +313,9 @@ const commands = {
     }
     const f = issue.fields;
     const links = (f.issuelinks ?? []).map((l) =>
-      l.outwardIssue ? `${l.type.outward} ${l.outwardIssue.key}` : `${l.type.inward} ${l.inwardIssue.key}`,
+      l.outwardIssue
+        ? `${l.type.outward} ${l.outwardIssue.key}`
+        : `${l.type.inward} ${l.inwardIssue.key}`,
     );
     const lines = [
       `# ${issue.key}: ${f.summary}`,
@@ -317,7 +330,12 @@ const commands = {
       const comments = f.comment?.comments ?? [];
       lines.push('', `## Comments (${comments.length})`);
       for (const c of comments) {
-        lines.push('', `### ${c.author?.displayName ?? '?'} — ${c.created}`, '', adfToMarkdown(c.body));
+        lines.push(
+          '',
+          `### ${c.author?.displayName ?? '?'} — ${c.created}`,
+          '',
+          adfToMarkdown(c.body),
+        );
       }
     }
     console.log(lines.join('\n'));
@@ -361,7 +379,9 @@ const commands = {
     const { transitions } = await api('GET', `/rest/api/3/issue/${key}/transitions`);
     const match = transitions.find((t) => t.to.name.toLowerCase() === target?.toLowerCase());
     if (!match) {
-      throw new Error(`${key}: no transition to "${target}". Available: ${transitions.map((t) => t.to.name).join(', ')}`);
+      throw new Error(
+        `${key}: no transition to "${target}". Available: ${transitions.map((t) => t.to.name).join(', ')}`,
+      );
     }
     await api('POST', `/rest/api/3/issue/${key}/transitions`, { transition: { id: match.id } });
     console.log(`${key}: → ${match.to.name}`);
@@ -370,20 +390,29 @@ const commands = {
   /**
    * `link NBK-6 blocked-by NBK-5` reads as the sentence it asserts;
    * `link NBK-15 relates-to NBK-14` ties a ticket to the spec it came from.
+   *
+   * Jira's issueLink body is the reverse of how it reads: for a "Blocks"
+   * link the *inward* issue is the blocker (it "blocks") and the *outward*
+   * issue is the blocked one (it "is blocked by"). Verified against the
+   * API on NBK-29..33: posting inward=A, outward=B shows "A blocks B" on A
+   * and "B is blocked by A" on B. So the sentence's subject (the blocked
+   * ticket) goes in `outwardIssue`. "Relates" is symmetric, so the order
+   * does not matter there.
    */
-  async link([inward, relation, outward]) {
+  async link([subject, relation, object]) {
     const relations = {
       'blocked-by': { type: 'Blocks', sentence: 'is blocked by' },
       'relates-to': { type: 'Relates', sentence: 'relates to' },
     };
     const link = relations[relation];
-    if (!link) throw new Error(`unknown relation "${relation}"; use ${Object.keys(relations).join(' or ')}`);
+    if (!link)
+      throw new Error(`unknown relation "${relation}"; use ${Object.keys(relations).join(' or ')}`);
     await api('POST', '/rest/api/3/issueLink', {
       type: { name: link.type },
-      inwardIssue: { key: inward },
-      outwardIssue: { key: outward },
+      inwardIssue: { key: object },
+      outwardIssue: { key: subject },
     });
-    console.log(`${inward} ${link.sentence} ${outward}`);
+    console.log(`${subject} ${link.sentence} ${object}`);
   },
 };
 
