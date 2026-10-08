@@ -19,9 +19,19 @@ export interface SearchResult extends Document {
    * 1 being identical. Results arrive ordered by it, best first.
    */
   score: number;
+  /** The title Stage 2 extracted, or null when there is none (NBK-96). */
+  title: string | null;
+  /**
+   * Where the Document's best-matching Chunk sits — the pin a Citation
+   * carries — so the result opens at that passage (NBK-96). The range is
+   * null when the Chunk could not be located.
+   */
+  match: { versionId: string; chunkId: string; charStart: number | null; charEnd: number | null };
 }
 
 interface SearchState {
+  /** The Notebook the results belong to; null before any search. */
+  notebookId: string | null;
   /** The query the currently-displayed results answer. '' before any search. */
   query: string;
   results: SearchResult[];
@@ -36,6 +46,7 @@ interface SearchState {
 }
 
 const initialState: SearchState = {
+  notebookId: null,
   query: '',
   results: [],
   searching: false,
@@ -61,7 +72,7 @@ export const SearchStore = signalStore(
         return;
       }
 
-      patchState(store, { query: trimmed, searching: true, error: null });
+      patchState(store, { notebookId, query: trimmed, searching: true, error: null });
       try {
         const results = (await searchService.searchNotebook({
           notebookId,
@@ -76,6 +87,21 @@ export const SearchStore = signalStore(
           error: errorMessage(err, 'Search failed.'),
         });
       }
+    },
+
+    /**
+     * Whether the results on hand answer this Notebook and query — coming
+     * Back from a Document they were opened from (NBK-96) — so they can be
+     * shown again rather than paid for twice. A failed search is not kept.
+     */
+    holds(notebookId: string, query: string): boolean {
+      return (
+        store.notebookId() === notebookId &&
+        store.query() === query.trim() &&
+        store.searched() &&
+        !store.searching() &&
+        store.error() === null
+      );
     },
 
     /** Drops the results, so opening a different Notebook starts clean. */

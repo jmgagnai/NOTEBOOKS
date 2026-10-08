@@ -1,73 +1,154 @@
+// The Search page (NBK-9) in Copilot's look (NBK-96): a header row like the
+// Document page's, then one centred column — the Chat Thread's reading
+// width — holding the pill and the flat result rows.
 .search-page {
-  max-width: 640px;
-  margin: 2rem auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  background: var(--mat-sys-surface);
 
-  &__back {
-    display: inline-block;
-    margin-bottom: 1rem;
-  }
-
-  &__form {
+  &__header {
     display: flex;
-    align-items: flex-end;
+    align-items: center;
     gap: 0.5rem;
-    margin-bottom: 1rem;
+    padding: 0.5rem 1rem;
+    border-bottom: 1px solid var(--mat-sys-outline-variant);
   }
 
-  &__field {
-    display: flex;
+  &__header-title {
     flex: 1;
-    flex-direction: column;
-    gap: 0.25rem;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font: var(--mat-sys-body-medium);
+    color: var(--mat-sys-on-surface-variant);
+  }
+
+  &__column {
+    box-sizing: border-box;
+    width: min(760px, 100%);
+    margin: 0 auto;
+    padding: 2rem 1rem 4rem;
+  }
+
+  // The composer's pill (spec 07): one bordered box, the input borderless
+  // inside it, so the whole box reads as the control; its border darkens
+  // on focus instead of a ring around it.
+  &__box {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    height: 56px;
+    padding: 0 20px;
+    border: 1px solid var(--mat-sys-outline);
+    border-radius: var(--app-corner-pill);
+    background: var(--mat-sys-surface);
+
+    &:focus-within {
+      border-color: var(--app-outline-focus);
+    }
+  }
+
+  &__box-icon {
+    flex: none;
+    color: var(--mat-sys-on-surface-variant);
+  }
+
+  &__input {
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    background: transparent;
+    font: var(--mat-sys-body-large);
+    color: var(--mat-sys-on-surface);
+
+    // The box shows focus (its border), as the composer's does (spec 04).
+    &:focus-visible {
+      outline: none;
+    }
+
+    &::placeholder {
+      color: var(--mat-sys-on-surface-variant);
+    }
+  }
+
+  &__spinner {
+    margin: 2rem auto;
+  }
+
+  &__hint,
+  &__error {
+    margin: 1.5rem 4px 0;
+    font: var(--mat-sys-body-medium);
+    color: var(--mat-sys-on-surface-variant);
   }
 
   &__error {
     color: var(--mat-sys-error);
   }
 
-  &__hint,
-  &__empty {
-    color: var(--mat-sys-on-surface-variant);
-  }
-
-  // Result cards, not list rows: each one has to hold an Abstract, which is
-  // a line or two of prose (GLOSSARY.md: 50-100 words).
   &__results {
     list-style: none;
-    margin: 0;
+    margin: 1.5rem 0 0;
     padding: 0;
+  }
+
+  // One flat row per Document, the whole row the link (Copilot's results).
+  &__result {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    padding: 14px 12px;
+    border-radius: var(--mat-sys-corner-medium);
+    color: inherit;
+    text-decoration: none;
+
+    &:hover {
+      background: var(--mat-sys-surface-container-low);
+    }
+  }
+
+  &__result-icon {
+    flex: none;
+    margin-top: 2px;
+    color: var(--mat-sys-on-surface-variant);
+  }
+
+  &__result-body {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: 2px;
+    min-width: 0;
   }
 
-  &__result {
-    border: 1px solid var(--mat-sys-outline-variant);
-    border-radius: var(--mat-sys-corner-medium);
-    padding: 0.75rem 1rem;
+  &__result-title {
+    font: var(--mat-sys-title-medium);
+    color: var(--mat-sys-on-surface);
+    overflow-wrap: anywhere;
   }
 
-  &__result-head {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
+  &__result:hover &__result-title {
+    text-decoration: underline;
   }
 
-  &__filename {
-    flex: 1;
-  }
-
-  &__version {
-    color: var(--mat-sys-on-surface-variant);
+  &__result-meta {
     font: var(--mat-sys-body-small);
+    color: var(--mat-sys-on-surface-variant);
   }
 
-  &__abstract {
-    margin: 0.5rem 0;
+  // The Abstract, cut to three lines (NBK-96): enough to judge, not to read.
+  &__result-abstract {
+    margin-top: 4px;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    overflow: hidden;
     font: var(--mat-sys-body-medium);
+    color: var(--mat-sys-on-surface-variant);
 
     &--pending {
-      color: var(--mat-sys-on-surface-variant);
       font-style: italic;
     }
   }
