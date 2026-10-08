@@ -70,16 +70,101 @@ interface ChatCompletionResponse {
 }
 
 /**
- * HTTP statuses worth another attempt. 429 is the one that actually happens
- * (NBK-1 names "a rate-limited OpenRouter call" as the motivating transient
- * failure); 5xx covers a provider blip.
+ * HTTP statuses worth another attempt, for every OpenRouter client — the
+ * completer, the streamer and the embedder share this one set so their retry
+ * policies cannot drift. 429 is the one that actually happens (NBK-1 names "a
+ * rate-limited OpenRouter call" as the motivating transient failure); 5xx
+ * covers a provider blip.
  *
- * Everything else — 400 on a malformed request, 401 on a bad key, 404 on a
- * retired model id — is a configuration problem that will fail identically
- * forever, so it fails fast rather than burning the job's retry budget.
+ * Everything else — 400 on a malformed request, 401 on a bad key, 402 on an
+ * empty account, 404 on a retired model id — is a configuration problem that
+ * will fail identically forever, so it fails fast rather than burning the
+ * job's retry budget.
  */
-function isRetryableStatus(status: number): boolean {
+export function isRetryableStatus(status: number): boolean {
   return status === 408 || status === 429 || status >= 500;
+}
+
+/**
+ * The provider could not be reached or could not do the work right now, as
+ * opposed to refusing or answering badly (NBK-66). Callers that have to tell a
+ * user which of the two happened — ingestion stages 2 and 3 — test for this
+ * class; everything else reads it as a plain `Error`, with the same message as
+ * before.
+ *
+ * The rule, shared by the completer and the embedder:
+ *
+ * - **Unavailable:** the request never got an answer (a thrown `fetch`: DNS,
+ *   socket, timeout), the provider said it could not do the work now (408,
+ *   429, 5xx), or it reported an upstream failure in a 200 body. Nothing
+ *   about the Document caused these, and the same request may succeed later
+ *   — so "try uploading a New Version later" is honest advice.
+ * - **Not unavailable (a plain `Error`):** any other 4xx — including 401, 402
+ *   and 403 (a bad key, no credits, a refusal), which an operator has to fix
+ *   and which a user retrying later would not cure — and a 200 whose answer
+ *   is empty or malformed. Those are this app's problem to fix, so a user is
+ *   told "unexpected" rather than "try later".
+ *
+ * An unavailable status is exactly a {@link isRetryableStatus} one; the two
+ * differ only on a 200 that answered badly, which is worth a retry but is not
+ * an outage.
+ */
+export class ProviderUnavailableError extends Error {
+  override readonly name = 'ProviderUnavailableError';
+}
+
+/**
+ * One in-process attempt at a provider call, as both clients' retry loops
+ * see it — one of three outcomes:
+ *
+ * - `answered`: the value to return.
+ * - `unavailable`: an outage (see {@link ProviderUnavailableError}). Always
+ *   worth another attempt; thrown as that class once the attempts run out.
+ * - `failed`: anything else that went wrong, thrown as a plain `Error`.
+ *   `retryable` separates a bad answer (worth another try) from a request
+ *   the provider will never accept.
+ */
+export type ProviderAttempt<T> =
+  | { outcome: 'answered'; value: T }
+  | { outcome: 'unavailable'; error: string }
+  | { outcome: 'failed'; retryable: boolean; error: string };
+
+/**
+ * The attempt a non-2xx response amounts to, for both clients: the
+ * {@link ProviderUnavailableError} rule's HTTP half, written once.
+ */
+export function httpFailure(status: number, error: string): ProviderAttempt<never> {
+  return isRetryableStatus(status)
+    ? { outcome: 'unavailable', error }
+    : { outcome: 'failed', retryable: false, error };
+}
+
+/**
+ * Runs `attempt` with the clients' shared retry policy, throwing a
+ * {@link ProviderUnavailableError} or a plain `Error` according to the last
+ * attempt's outcome.
+ */
+export async function withProviderRetries<T>(
+  attempt: () => Promise<ProviderAttempt<T>>,
+  { retries, retryDelayMs, neverRan }: { retries: number; retryDelayMs: number; neverRan: string },
+): Promise<T> {
+  let last: ProviderAttempt<T> = { outcome: 'failed', retryable: false, error: neverRan };
+  for (let i = 0; i <= retries; i += 1) {
+    try {
+      last = await attempt();
+    } catch (err) {
+      // A thrown fetch is a transport problem (DNS, socket, timeout) —
+      // always worth another attempt, and the provider never answered.
+      last = { outcome: 'unavailable', error: err instanceof Error ? err.message : String(err) };
+    }
+    if (last.outcome === 'answered') return last.value;
+    const retryable = last.outcome === 'unavailable' || last.retryable;
+    if (!retryable || i === retries) break;
+    await new Promise((resolve) => setTimeout(resolve, retryDelayMs * 2 ** i));
+  }
+  throw last.outcome === 'unavailable'
+    ? new ProviderUnavailableError(last.error)
+    : new Error(last.error);
 }
 
 /** The option defaults both clients share, resolved once. */
@@ -148,9 +233,7 @@ function chatCompletionRequestInit(
 export function createOpenRouterCompleter(options: OpenRouterOptions): ChatCompleter {
   const { apiKey, url, doFetch, retries, retryDelayMs, timeoutMs } = resolveOptions(options);
 
-  async function attempt(
-    request: ChatCompletionRequest,
-  ): Promise<{ text?: string; retryable: boolean; error?: string }> {
+  async function attempt(request: ChatCompletionRequest): Promise<ProviderAttempt<string>> {
     const response = await doFetch(
       url,
       chatCompletionRequestInit(apiKey, request, { stream: false, timeoutMs }),
@@ -158,48 +241,37 @@ export function createOpenRouterCompleter(options: OpenRouterOptions): ChatCompl
 
     if (!response.ok) {
       const body = await response.text().catch(() => '');
-      return {
-        retryable: isRetryableStatus(response.status),
-        error: `OpenRouter returned ${response.status} for model ${request.model}: ${body.slice(0, 500)}`,
-      };
+      return httpFailure(
+        response.status,
+        `OpenRouter returned ${response.status} for model ${request.model}: ${body.slice(0, 500)}`,
+      );
     }
 
     const payload = (await response.json()) as ChatCompletionResponse;
     if (payload.error?.message) {
       // OpenRouter can report an upstream provider failure in a 200 body.
       return {
-        retryable: true,
+        outcome: 'unavailable',
         error: `OpenRouter error for model ${request.model}: ${payload.error.message}`,
       };
     }
     const text = payload.choices?.[0]?.message?.content;
     if (typeof text !== 'string' || text.trim() === '') {
       return {
+        outcome: 'failed',
         retryable: true,
         error: `OpenRouter returned no content for model ${request.model}.`,
       };
     }
-    return { retryable: false, text };
+    return { outcome: 'answered', value: text };
   }
 
-  return async function complete(request: ChatCompletionRequest): Promise<string> {
-    let lastError = `OpenRouter call for model ${request.model} never ran.`;
-    for (let i = 0; i <= retries; i += 1) {
-      let outcome: Awaited<ReturnType<typeof attempt>>;
-      try {
-        outcome = await attempt(request);
-      } catch (err) {
-        // A thrown fetch is a transport problem (DNS, socket, timeout) —
-        // always worth another attempt.
-        outcome = { retryable: true, error: err instanceof Error ? err.message : String(err) };
-      }
-
-      if (outcome.text !== undefined) return outcome.text;
-      lastError = outcome.error ?? lastError;
-      if (!outcome.retryable || i === retries) break;
-      await new Promise((resolve) => setTimeout(resolve, retryDelayMs * 2 ** i));
-    }
-    throw new Error(lastError);
+  return function complete(request: ChatCompletionRequest): Promise<string> {
+    return withProviderRetries(() => attempt(request), {
+      retries,
+      retryDelayMs,
+      neverRan: `OpenRouter call for model ${request.model} never ran.`,
+    });
   };
 }
 

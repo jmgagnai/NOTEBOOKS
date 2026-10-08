@@ -116,6 +116,7 @@ function documentFor(filename: string, overrides: Partial<Record<string, unknown
     notebookId: NOTEBOOK_ID,
     filename,
     status: 'queued',
+    failure: null,
     abstract: null,
     createdAt: '2026-01-01T00:00:00.000Z',
     latestVersion: {
@@ -1414,17 +1415,130 @@ describe('NotebookDetailPage', () => {
       expect(within(done).queryByRole('img', { name: 'Ingestion failed' })).toBeNull();
     });
 
-    it('marks a failed Document with a warning that carries the reason', async () => {
-      await renderWithUpload(vi.fn(), [documentFor('broken.pdf', { status: 'failed' })]);
+    // NBK-64: the sentence is the failure reason's, so the user knows what
+    // to do next; the wording is spec NBK-63's.
+    it('marks a scanned PDF with a warning that says it has no selectable text', async () => {
+      await renderWithUpload(vi.fn(), [
+        documentFor('scan.pdf', {
+          status: 'failed',
+          failure: { reason: 'no-text-layer', failedAt: 'converting' },
+        }),
+      ]);
 
-      const row = documentRow('broken.pdf');
+      const row = documentRow('scan.pdf');
       const warning = within(row).getByRole('img', {
         name: 'Ingestion failed',
-        description: 'Ingestion failed for the latest Version of this Document.',
+        description:
+          'This PDF has no selectable text (it looks like a scan). Upload a PDF whose text can be selected.',
       });
       expect(warning).toBeTruthy();
       expect(within(row).queryByRole('progressbar')).toBeNull();
       expect(within(row).queryByText('Failed')).toBeNull();
+    });
+
+    it('marks an unexplained failure with a warning that owns up to it', async () => {
+      await renderWithUpload(vi.fn(), [
+        documentFor('broken.pdf', {
+          status: 'failed',
+          failure: { reason: 'unexpected', failedAt: null },
+        }),
+      ]);
+
+      const warning = within(documentRow('broken.pdf')).getByRole('img', {
+        name: 'Ingestion failed',
+        description: 'Something went wrong on our side while ingesting this Document.',
+      });
+      expect(warning).toBeTruthy();
+    });
+
+    // Spec NBK-63 story 7: which part of Ingestion failed, where that helps —
+    // an unexplained failure and a timeout say which step it was.
+    it.each([
+      [
+        { reason: 'unexpected', failedAt: 'converting' },
+        'Something went wrong on our side while converting this Document.',
+      ],
+      [
+        { reason: 'unexpected', failedAt: 'summarizing' },
+        'Something went wrong on our side while summarizing this Document.',
+      ],
+      [
+        { reason: 'unexpected', failedAt: 'indexing' },
+        'Something went wrong on our side while indexing this Document.',
+      ],
+      [
+        { reason: 'timed-out', failedAt: 'converting' },
+        'Converting this file took too long. Try a smaller file, or split it.',
+      ],
+      [
+        { reason: 'timed-out', failedAt: 'summarizing' },
+        'Summarizing this file took too long. Try a smaller file, or split it.',
+      ],
+      [
+        { reason: 'timed-out', failedAt: null },
+        'Converting this file took too long. Try a smaller file, or split it.',
+      ],
+    ] as const)('names the step in the warning for %j', async (failure, description) => {
+      await renderWithUpload(vi.fn(), [
+        documentFor('step.pdf', { status: 'failed', failure: { ...failure } }),
+      ]);
+
+      expect(
+        within(documentRow('step.pdf')).getByRole('img', { name: 'Ingestion failed', description }),
+      ).toBeTruthy();
+    });
+
+    // NBK-67: a user watching an upload learns why it failed the moment it
+    // does, and a reason never outlives the failure it explained.
+    it('takes the failure reason from the status App Event and drops it once the Version moves on', async () => {
+      const appEvents = appEventsStub();
+      const scan = documentFor('live-scan.pdf', { status: 'converting' });
+      await render(NotebookDetailPage, {
+        providers: pageProviders({
+          documents: { listDocuments: vi.fn().mockResolvedValue([scan]) },
+          appEvents,
+        }),
+      });
+      await screen.findByText('live-scan.pdf');
+      const announce = (status: string, failure?: unknown) =>
+        appEvents.events.next({
+          id: `event-${status}`,
+          type: 'document-version-status-changed',
+          topic: `notebook:${NOTEBOOK_ID}`,
+          occurredAt: '2026-01-01T00:00:01.000Z',
+          data: {
+            documentId: scan.id,
+            versionId: scan.latestVersion.id,
+            status,
+            ...(failure ? { failure } : {}),
+          },
+        });
+
+      announce('failed', { reason: 'no-text-layer', failedAt: 'converting' });
+      expect(
+        await within(documentRow('live-scan.pdf')).findByRole('img', {
+          name: 'Ingestion failed',
+          description:
+            'This PDF has no selectable text (it looks like a scan). Upload a PDF whose text can be selected.',
+        }),
+      ).toBeTruthy();
+
+      announce('queued');
+      await waitFor(() =>
+        expect(
+          within(documentRow('live-scan.pdf')).queryByRole('img', { name: 'Ingestion failed' }),
+        ).toBeNull(),
+      );
+
+      // A failure announced without a reason must not resurrect the earlier
+      // one: the scan sentence would tell the user to fix the wrong thing.
+      announce('failed');
+      expect(
+        await within(documentRow('live-scan.pdf')).findByRole('img', {
+          name: 'Ingestion failed',
+          description: 'Something went wrong on our side while ingesting this Document.',
+        }),
+      ).toBeTruthy();
     });
 
     it('shows the version only once a Document has more than one Version', async () => {

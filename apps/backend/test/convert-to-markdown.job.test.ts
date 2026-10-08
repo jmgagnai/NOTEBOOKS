@@ -13,10 +13,17 @@ import {
   type AppEvent,
   type AppEventSubscriber,
 } from '../src/events/bus.js';
+import { listDocuments } from '../src/documents/repository.js';
+import type { FailureReason } from '../src/documents/schema.js';
 import { runConvertToMarkdownJob } from '../src/ingestion/convert-to-markdown.js';
-import type { MarkdownConversionRequest } from '../src/ingestion/docling.js';
+import { IngestionFailure } from '../src/ingestion/stage.js';
+import {
+  createDoclingConverter,
+  type MarkdownConversionRequest,
+} from '../src/ingestion/docling.js';
 import { createS3Client, ensureBucket, getObject, putObject } from '../src/storage/s3-client.js';
 import { startMinio } from './support/minio-container.js';
+import { missingDocker, scriptedDocker } from './support/scripted-docker.js';
 
 const DOCUMENTS_BUCKET = 'rag-notebook-documents-job-test';
 
@@ -133,6 +140,197 @@ describe('convert-to-Markdown job', () => {
     );
     return rows[0];
   }
+
+  /** The Document's `failure` as the Documents API publishes it. */
+  async function publishedFailure(seeded: SeededVersion) {
+    const documents = await listDocuments(pool, seeded.notebookId);
+    return documents.find((d) => d.id === seeded.documentId)!.failure;
+  }
+
+  /** Runs one stage-1 attempt whose converter throws `error`, swallowing the rethrow. */
+  async function failAttempt(seeded: SeededVersion, error: Error, willRetry: boolean) {
+    await expect(
+      runConvertToMarkdownJob(
+        {
+          pool,
+          s3,
+          documentsBucket: DOCUMENTS_BUCKET,
+          tempDir: tempRoot,
+          convertToMarkdown: async () => {
+            throw error;
+          },
+        },
+        { payload: { documentId: seeded.documentId, versionId: seeded.versionId }, willRetry },
+      ),
+    ).rejects.toBe(error);
+  }
+
+  const scanRefusal = () =>
+    new IngestionFailure('no-text-layer', 'scan.pdf has no text layer (a scanned PDF).');
+
+  describe('NBK-64: failure reason', () => {
+    it("records 'no-text-layer' and where it failed when a scanned PDF exhausts its retries", async () => {
+      const seeded = await seedUploadedVersion('scan.pdf', 'pictures of text');
+
+      await failAttempt(seeded, scanRefusal(), false);
+
+      expect(await publishedFailure(seeded)).toEqual({
+        reason: 'no-text-layer',
+        failedAt: 'converting',
+      });
+    });
+
+    it('records no reason while a retry is still pending', async () => {
+      const seeded = await seedUploadedVersion('scan-retry.pdf', 'pictures of text');
+
+      await failAttempt(seeded, scanRefusal(), true);
+
+      expect((await readVersion(seeded.versionId)).ingestion_status).toBe('queued');
+      expect(await publishedFailure(seeded)).toBeNull();
+    });
+
+    it("records 'unexpected' for an error that carries no reason", async () => {
+      const seeded = await seedUploadedVersion('odd.txt', 'whatever');
+
+      await failAttempt(seeded, new Error('something nobody classified'), false);
+
+      expect(await publishedFailure(seeded)).toEqual({
+        reason: 'unexpected',
+        failedAt: 'converting',
+      });
+    });
+
+    it('clears the reason once a later run of the Version succeeds', async () => {
+      const seeded = await seedUploadedVersion('second-try.txt', 'fine after all');
+      await failAttempt(seeded, scanRefusal(), false);
+
+      await runConvertToMarkdownJob(
+        {
+          pool,
+          s3,
+          documentsBucket: DOCUMENTS_BUCKET,
+          tempDir: tempRoot,
+          convertToMarkdown: async ({ outputPath }) => {
+            await writeFile(outputPath, '# Fine after all\n', 'utf8');
+          },
+        },
+        {
+          payload: { documentId: seeded.documentId, versionId: seeded.versionId },
+          willRetry: false,
+        },
+      );
+
+      expect((await readVersion(seeded.versionId)).ingestion_status).toBe('converted');
+      expect(await publishedFailure(seeded)).toBeNull();
+    });
+  });
+
+  /**
+   * NBK-65: the real converter, run against a scripted `docker` binary, so
+   * what the user is shown is checked from the way Docling actually failed
+   * rather than from an error the test classified itself.
+   */
+  describe('NBK-65: stage 1 names its failures', () => {
+    async function convertWithDocling(
+      seeded: SeededVersion,
+      docling: { docker: string; timeoutMs?: number },
+      willRetry: boolean,
+    ) {
+      await expect(
+        runConvertToMarkdownJob(
+          {
+            pool,
+            s3,
+            documentsBucket: DOCUMENTS_BUCKET,
+            tempDir: tempRoot,
+            convertToMarkdown: createDoclingConverter(docling),
+          },
+          { payload: { documentId: seeded.documentId, versionId: seeded.versionId }, willRetry },
+        ),
+      ).rejects.toBeInstanceOf(IngestionFailure);
+    }
+
+    const cases: {
+      reason: FailureReason;
+      when: string;
+      docling: () => Promise<{ docker: string; timeoutMs?: number }>;
+    }[] = [
+      {
+        reason: 'unreadable',
+        when: 'Docling exits with an error',
+        docling: async () => ({ docker: await scriptedDocker("echo 'damaged' >&2; exit 1") }),
+      },
+      {
+        reason: 'unreadable',
+        when: 'Docling exits 0 without writing Markdown',
+        docling: async () => ({ docker: await scriptedDocker("echo 'failed to convert'") }),
+      },
+      {
+        reason: 'timed-out',
+        when: 'Docling is killed after its timeout',
+        docling: async () => ({ docker: await scriptedDocker('exec sleep 30'), timeoutMs: 200 }),
+      },
+      {
+        reason: 'service-unavailable',
+        when: 'Docling cannot be started',
+        docling: async () => ({ docker: missingDocker() }),
+      },
+    ];
+
+    for (const { reason, when, docling } of cases) {
+      it(`records '${reason}' at 'converting' when ${when} on the final attempt`, async () => {
+        const seeded = await seedUploadedVersion('report.txt', 'Quarterly report');
+
+        await convertWithDocling(seeded, await docling(), false);
+
+        expect((await readVersion(seeded.versionId)).ingestion_status).toBe('failed');
+        expect(await publishedFailure(seeded)).toEqual({ reason, failedAt: 'converting' });
+      });
+
+      it(`records no reason when ${when} and a retry is pending`, async () => {
+        const seeded = await seedUploadedVersion('report-retry.txt', 'Quarterly report');
+
+        await convertWithDocling(seeded, await docling(), true);
+
+        expect((await readVersion(seeded.versionId)).ingestion_status).toBe('queued');
+        expect(await publishedFailure(seeded)).toBeNull();
+      });
+    }
+  });
+
+  describe('NBK-67: the status App Event carries the failure reason', () => {
+    /** Every status-changed event published for `seeded`, once `count` have arrived. */
+    async function eventsFor(seeded: SeededVersion, count: number) {
+      const mine = (all: AppEvent[]) =>
+        all.filter((e) => (e.data as { versionId?: string }).versionId === seeded.versionId);
+      return mine(await waitForEvents((all) => mine(all).length >= count));
+    }
+
+    it('announces a final failure with its reason and where it failed, and no raw error text', async () => {
+      const seeded = await seedUploadedVersion('scan-live.pdf', 'pictures of text');
+
+      await failAttempt(seeded, scanRefusal(), false);
+
+      const [converting, failed] = await eventsFor(seeded, 2);
+      expect(failed.data).toMatchObject({
+        status: 'failed',
+        failure: { reason: 'no-text-layer', failedAt: 'converting' },
+      });
+      expect(failed.data).not.toHaveProperty('error');
+      expect(converting.data).not.toHaveProperty('failure');
+    });
+
+    it('announces a retry with neither a reason nor the raw error text', async () => {
+      const seeded = await seedUploadedVersion('scan-live-retry.pdf', 'pictures of text');
+
+      await failAttempt(seeded, scanRefusal(), true);
+
+      const [, queued] = await eventsFor(seeded, 2);
+      expect(queued.data).toMatchObject({ status: 'queued' });
+      expect(queued.data).not.toHaveProperty('failure');
+      expect(queued.data).not.toHaveProperty('error');
+    });
+  });
 
   it('converts the stored upload and saves the Markdown on the Document Version', async () => {
     const seeded = await seedUploadedVersion('handbook.txt', 'the original bytes');
@@ -262,7 +460,7 @@ describe('convert-to-Markdown job', () => {
     expect(version.ingestion_error).toContain('transient docling crash');
   });
 
-  it('records a failure whose message is too long for an event, with the full text on the row', async () => {
+  it('records a failure whose message is too long for an event, with the full text on the row only', async () => {
     const seeded = await seedUploadedVersion('verbose.txt', 'noisy converter');
     // Stage 1 attaches up to 8000 bytes of Docling's own output to its error.
     // Before NBK-14's follow-up this blew the event bus's payload cap inside
@@ -305,9 +503,12 @@ describe('convert-to-Markdown job', () => {
         (e.data as { versionId?: string }).versionId === seeded.versionId &&
         (e.data as { status?: string }).status === 'failed',
     )!;
-    const announced = (failure.data as { error: string }).error;
-    expect(announced.startsWith('Docling exited with code 1')).toBe(true);
-    expect(announced.length).toBeLessThan(traceback.length);
+    // NBK-67: the event names the reason, never the raw text, so its size no
+    // longer depends on what the converter printed.
+    expect(failure.data).toMatchObject({
+      failure: { reason: 'unexpected', failedAt: 'converting' },
+    });
+    expect(failure.data).not.toHaveProperty('error');
   });
 
   // Per ADR-0004 and GLOSSARY.md, Ingestion is "a chain of independently

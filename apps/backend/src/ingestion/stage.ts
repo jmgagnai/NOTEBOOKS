@@ -1,7 +1,12 @@
 import { z } from 'zod';
 import type { AppEventDraft } from '../events/bus.js';
 import { notebookTopic } from '../events/schema.js';
-import type { DocumentStatus } from '../documents/schema.js';
+import type {
+  DocumentFailure,
+  DocumentStatus,
+  FailedAt,
+  FailureReason,
+} from '../documents/schema.js';
 
 /**
  * What the three ingestion Stages have genuinely in common, and nothing else.
@@ -20,6 +25,10 @@ import type { DocumentStatus } from '../documents/schema.js';
  * - the App Event a status change is announced as. That envelope is a
  *   *published contract* — `documents.store.ts` parses it — so three copies of
  *   it is three ways for one of them to drift out of what the frontend reads.
+ * - turning a caught error into a failure reason (`IngestionFailure`,
+ *   `attemptFailed`, NBK-64). Users see that reason, so three ways of
+ *   deciding it would be three ways to tell them different things about the
+ *   same failure.
  *
  * **Not shared, deliberately:**
  *
@@ -29,9 +38,11 @@ import type { DocumentStatus } from '../documents/schema.js';
  *   so a retry finds exactly the state it expects. That is three different
  *   answers to the same question, each one correct only for its own Stage,
  *   and getting one wrong is silent: the pipeline stalls or re-runs an
- *   expensive earlier Stage. It stays spelled out at each call site, where a
- *   reader of that handler can see it, rather than being passed as a
- *   parameter to something shared.
+ *   expensive earlier Stage. Each Stage names its consumed status at its own
+ *   call site, where a reader of that handler can see it; only the
+ *   retry-or-`failed` choice between that status and `failed` is shared
+ *   (`attemptFailed`), since it is the same `willRetry` that also decides
+ *   whether a reason is recorded, and two readings of it could disagree.
  * - **Each Stage's `UPDATE`**, which writes that Stage's own output columns
  *   and stamps its own completion timestamp (`converted_at`,
  *   `summarized_at`, `embedded_at`). Sharing it would mean passing SQL
@@ -82,17 +93,25 @@ export interface IngestionVersion extends DocumentVersionRef {
  * `pg_notify` is transactional, so a status nobody committed is never
  * announced, and an announcement is never lost after a commit.
  *
- * `error` is included only when there is one, so a client can treat its
- * presence as meaningful rather than having to test for null. Per ADR-0004 an
- * event carries *what changed* and never bulk data — a NOTIFY payload has to
- * stay well inside Postgres's 8000-byte cap — which is why nothing here
- * carries Markdown, a summary, or metadata, and why the error is cut to a
- * headline (see `eventErrorSummary`). The full text is on the Version row.
+ * `failure` is included only on a final failure, so a client can treat its
+ * presence as meaningful rather than having to test for null; a client that
+ * sees an event without it clears whatever reason it showed before, which is
+ * what a New Version leaving `failed` needs (NBK-67).
+ *
+ * The raw error text is deliberately not here (NBK-67). It is written for
+ * developers, can carry a subprocess's whole captured output, and no client
+ * read it; the user is told the `failure` reason instead, and the full text
+ * stays on the Version row (`ingestion_error`). Per ADR-0004 an event carries
+ * *what changed* and never bulk data — a NOTIFY payload has to stay well
+ * inside Postgres's 8000-byte cap — which is also why nothing here carries
+ * Markdown, a summary, or metadata. Carrying the raw text once let a
+ * Docling traceback blow that cap inside the transaction recording the
+ * failure, so the failure was never recorded; a reason cannot.
  */
 export function versionStatusChanged(
   version: IngestionVersion,
   status: DocumentStatus,
-  error?: string | null,
+  failure?: DocumentFailure | null,
 ): AppEventDraft {
   return {
     type: DOCUMENT_VERSION_STATUS_CHANGED,
@@ -103,29 +122,68 @@ export function versionStatusChanged(
       versionId: version.versionId,
       filename: version.filename,
       status,
-      ...(error ? { error: eventErrorSummary(error) } : {}),
+      ...(failure ? { failure } : {}),
     },
   };
 }
 
 /**
- * The most of a Stage's error that fits in an event.
+ * A Stage's error that knows why, in user terms, the work could not be done
+ * (NBK-63).
  *
- * A failure message can carry a subprocess's whole captured output — stage
- * 1 attaches up to 8000 bytes of Docling diagnostics — and an event that
- * size is refused by the bus. That refusal used to happen *inside* the
- * transaction recording the failure, so the failure was never recorded: the
- * Version stayed at "converting", the event bus's complaint replaced the
- * real error in the job table, and nothing told the user. The event gets
- * the headline; `ingestion_error` keeps everything.
+ * Raised where the cause is recognised — the converter seeing a scan, a
+ * provider call failing — so the reason is decided at the source instead of
+ * guessed later from the message, which is written for developers and free
+ * to change. Anything thrown that is not one of these is recorded as
+ * `unexpected`.
  */
-export function eventErrorSummary(error: string): string {
-  if (error.length <= MAX_EVENT_ERROR_CHARS) return error;
-  return `${error.slice(0, MAX_EVENT_ERROR_CHARS)}…`;
+export class IngestionFailure extends Error {
+  override readonly name = 'IngestionFailure';
+
+  constructor(
+    readonly reason: FailureReason,
+    message: string,
+    options?: ErrorOptions,
+  ) {
+    super(message, options);
+  }
 }
 
 /**
- * Well under the bus's 7000-byte cap even for multi-byte text, with room
- * left for the rest of the envelope.
+ * What a Stage writes when an attempt throws: the status to move the Version
+ * to, the full error for operators, and the failure reason for users.
  */
-const MAX_EVENT_ERROR_CHARS = 500;
+export interface AttemptFailure {
+  /** The Stage's consumed status while a retry is pending, `failed` once none is. */
+  status: DocumentStatus;
+  error: string;
+  /** Null while a retry is pending: only the final transition to `failed` carries a reason. */
+  failure: DocumentFailure | null;
+}
+
+/**
+ * Turns what a Stage caught into what it records, given whether pg_boss will
+ * retry, the Stage's consumed status (where a retry has to find the Version)
+ * and the step it was working in.
+ *
+ * The one place a thrown error becomes a failure reason, shared by all three
+ * Stages so a new classification is a new `IngestionFailure` at its source and
+ * nothing here. It also picks the status, from the same `willRetry`, so the
+ * status and the reason cannot disagree — a reason on a Version that is not
+ * `failed` is exactly what migration 0012 refuses. Each Stage writes the
+ * result in its own `UPDATE`, setting the reason columns on every transition,
+ * so moving to any status but `failed` clears them.
+ */
+export function attemptFailed(
+  err: unknown,
+  {
+    willRetry,
+    retryStatus,
+    failedAt,
+  }: { willRetry: boolean; retryStatus: DocumentStatus; failedAt: FailedAt },
+): AttemptFailure {
+  const error = err instanceof Error ? err.message : String(err);
+  if (willRetry) return { status: retryStatus, error, failure: null };
+  const reason = err instanceof IngestionFailure ? err.reason : 'unexpected';
+  return { status: 'failed', error, failure: { reason, failedAt } };
+}

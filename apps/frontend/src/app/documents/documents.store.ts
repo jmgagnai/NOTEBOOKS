@@ -8,6 +8,7 @@ import {
   withState,
 } from '@ngrx/signals';
 import { Subscription } from 'rxjs';
+import type { DocumentFailure } from '../api/models';
 import { DocumentsService } from '../api/services/documents.service';
 import { AppEvent, AppEventsService } from '../events/app-events.service';
 import { errorMessage } from '../shared/error-message';
@@ -61,6 +62,9 @@ export interface Document {
   notebookId: string;
   filename: string;
   status: DocumentStatus;
+  // Why the latest Version failed Ingestion: null unless `status` is
+  // `failed` (NBK-64). Never the backend's raw error text, which stays there.
+  failure: DocumentFailure | null;
   abstract: string | null;
   createdAt: string;
   latestVersion: DocumentVersion;
@@ -68,12 +72,16 @@ export interface Document {
 
 /**
  * The payload of a `document-version-status-changed` app event (NBK-6).
- * Mirrors what `apps/backend/src/ingestion/convert-to-markdown.ts` publishes.
+ * Mirrors what `versionStatusChanged` in `apps/backend/src/ingestion/stage.ts`
+ * publishes. `failure` is there only on a final failure (NBK-67); its absence
+ * means the Version has no reason to show, so it is null here rather than
+ * optional and applying an event always replaces the row's reason.
  */
 interface DocumentVersionStatusChanged {
   documentId: string;
   versionId: string;
   status: DocumentStatus;
+  failure: DocumentFailure | null;
 }
 
 const DOCUMENT_VERSION_STATUS_CHANGED = 'document-version-status-changed';
@@ -81,7 +89,9 @@ const DOCUMENT_VERSION_STATUS_CHANGED = 'document-version-status-changed';
 /** Narrows a generic app event to a Document Version status change, or null. */
 function asStatusChange(event: AppEvent): DocumentVersionStatusChanged | null {
   if (event.type !== DOCUMENT_VERSION_STATUS_CHANGED) return null;
-  const { documentId, versionId, status } = event.data as Partial<DocumentVersionStatusChanged>;
+  const { documentId, versionId, status, failure } = event.data as Partial<
+    Record<keyof DocumentVersionStatusChanged, unknown>
+  >;
   if (
     typeof documentId !== 'string' ||
     typeof versionId !== 'string' ||
@@ -89,7 +99,18 @@ function asStatusChange(event: AppEvent): DocumentVersionStatusChanged | null {
   ) {
     return null;
   }
-  return { documentId, versionId, status: status as DocumentStatus };
+  return {
+    documentId,
+    versionId,
+    status: status as DocumentStatus,
+    // Only a failed status can have a reason, matching what the Documents API
+    // returns; anything malformed falls back to the generic sentence rather
+    // than dropping the event's status change.
+    failure:
+      status === 'failed' && typeof failure === 'object' && failure !== null
+        ? (failure as DocumentFailure)
+        : null,
+  };
 }
 
 // A Document opened on its own (NBK-7): the Document plus its latest
@@ -155,6 +176,12 @@ export interface OpenDocument {
   version: DocumentVersion;
   isLatestVersion: boolean;
   latestVersionNumber: number;
+  /**
+   * Why `version` failed Ingestion, when it did (NBK-68). Null from the
+   * Version-scoped read, which does not carry a reason yet; the page then
+   * falls back to the `unexpected` sentence rather than saying nothing.
+   */
+  failure: DocumentFailure | null;
 }
 
 /** The latest-Version read, as the page's view model. */
@@ -174,6 +201,7 @@ function fromDocumentDetail(detail: DocumentDetail): OpenDocument {
     // construction, not a claim needing a second lookup.
     isLatestVersion: true,
     latestVersionNumber: detail.latestVersion.versionNumber,
+    failure: detail.failure,
   };
 }
 
@@ -192,6 +220,10 @@ function fromVersionDetail(detail: DocumentVersionDetail): OpenDocument {
     version: detail.version,
     isLatestVersion: detail.isLatestVersion,
     latestVersionNumber: detail.latestVersionNumber,
+    // The Version-scoped read carries no failure reason, deliberately: it is
+    // what following a Citation opens, and a Citation only ever points into a
+    // `ready` Version, which has no failure to show.
+    failure: null,
   };
 }
 
@@ -866,7 +898,9 @@ export const DocumentsStore = signalStore(
               documents: store
                 .documents()
                 .map((document) =>
-                  document === target ? { ...document, status: change.status } : document,
+                  document === target
+                    ? { ...document, status: change.status, failure: change.failure }
+                    : document,
                 ),
             });
 

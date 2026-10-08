@@ -1,4 +1,9 @@
-import { OPENROUTER_BASE_URL } from './openrouter.js';
+import {
+  httpFailure,
+  OPENROUTER_BASE_URL,
+  withProviderRetries,
+  type ProviderAttempt,
+} from './openrouter.js';
 
 /**
  * The seam between everything that needs embeddings and OpenRouter: hand it
@@ -55,16 +60,6 @@ interface EmbeddingsResponse {
 }
 
 /**
- * HTTP statuses worth another attempt — the same set, and the same reasoning,
- * as `openrouter.ts`: 429 is the one that actually happens, 5xx covers a
- * provider blip, and everything else is a configuration problem that would
- * fail identically forever.
- */
-function isRetryableStatus(status: number): boolean {
-  return status === 408 || status === 429 || status >= 500;
-}
-
-/**
  * Builds the real OpenRouter-backed embedder (ADR-0002).
  *
  * Retries live here, inside one job attempt, as well as in pg_boss around the
@@ -84,9 +79,7 @@ export function createOpenRouterEmbedder(options: OpenRouterEmbedderOptions): Em
     throw new Error('An OpenRouter API key is required. Set OPENROUTER_API_KEY.');
   }
 
-  async function attempt(
-    batch: string[],
-  ): Promise<{ vectors?: number[][]; retryable: boolean; error?: string }> {
+  async function attempt(batch: string[]): Promise<ProviderAttempt<number[][]>> {
     const response = await doFetch(`${baseUrl}/embeddings`, {
       method: 'POST',
       headers: {
@@ -105,17 +98,17 @@ export function createOpenRouterEmbedder(options: OpenRouterEmbedderOptions): Em
 
     if (!response.ok) {
       const body = await response.text().catch(() => '');
-      return {
-        retryable: isRetryableStatus(response.status),
-        error: `OpenRouter returned ${response.status} for embedding model ${options.model}: ${body.slice(0, 500)}`,
-      };
+      return httpFailure(
+        response.status,
+        `OpenRouter returned ${response.status} for embedding model ${options.model}: ${body.slice(0, 500)}`,
+      );
     }
 
     const payload = (await response.json()) as EmbeddingsResponse;
     if (payload.error?.message) {
       // OpenRouter can report an upstream provider failure in a 200 body.
       return {
-        retryable: true,
+        outcome: 'unavailable',
         error: `OpenRouter error for embedding model ${options.model}: ${payload.error.message}`,
       };
     }
@@ -123,6 +116,8 @@ export function createOpenRouterEmbedder(options: OpenRouterEmbedderOptions): Em
     const entries = payload.data;
     if (!Array.isArray(entries) || entries.length !== batch.length) {
       return {
+        // A wrong count is a malformed answer, not an outage (NBK-66).
+        outcome: 'failed',
         retryable: true,
         error:
           `OpenRouter returned ${entries?.length ?? 0} embeddings for ${batch.length} inputs ` +
@@ -144,33 +139,22 @@ export function createOpenRouterEmbedder(options: OpenRouterEmbedderOptions): Em
         vectors[index] !== undefined
       ) {
         return {
+          outcome: 'failed',
           retryable: true,
           error: `OpenRouter returned a malformed embedding for model ${options.model}.`,
         };
       }
       vectors[index] = entry.embedding;
     }
-    return { retryable: false, vectors };
+    return { outcome: 'answered', value: vectors };
   }
 
-  async function embedBatch(batch: string[]): Promise<number[][]> {
-    let lastError = `OpenRouter embedding call for model ${options.model} never ran.`;
-    for (let i = 0; i <= retries; i += 1) {
-      let outcome: Awaited<ReturnType<typeof attempt>>;
-      try {
-        outcome = await attempt(batch);
-      } catch (err) {
-        // A thrown fetch is a transport problem (DNS, socket, timeout) —
-        // always worth another attempt.
-        outcome = { retryable: true, error: err instanceof Error ? err.message : String(err) };
-      }
-
-      if (outcome.vectors !== undefined) return outcome.vectors;
-      lastError = outcome.error ?? lastError;
-      if (!outcome.retryable || i === retries) break;
-      await new Promise((resolve) => setTimeout(resolve, retryDelayMs * 2 ** i));
-    }
-    throw new Error(lastError);
+  function embedBatch(batch: string[]): Promise<number[][]> {
+    return withProviderRetries(() => attempt(batch), {
+      retries,
+      retryDelayMs,
+      neverRan: `OpenRouter embedding call for model ${options.model} never ran.`,
+    });
   }
 
   return async function embed(texts: string[]): Promise<number[][]> {

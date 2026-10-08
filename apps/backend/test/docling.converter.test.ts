@@ -1,9 +1,10 @@
 import { execFile } from 'node:child_process';
-import { chmod, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { IngestionFailure } from '../src/ingestion/stage.js';
 import {
   DOCLING_ARTIFACTS_PATH,
   DOCLING_IMAGE,
@@ -11,6 +12,7 @@ import {
   looksScanned,
   markdownOutputPath,
 } from '../src/ingestion/docling.js';
+import { missingDocker, scriptedDocker } from './support/scripted-docker.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -70,11 +72,8 @@ async function fakeDocker(
   await writeFile(outputFile, output, 'utf8');
   await writeFile(log, '', 'utf8');
 
-  const script = join(directory, 'docker');
-  await writeFile(
-    script,
-    `#!/bin/sh
-printf '%s\\n' "$@" >> '${log}'
+  const script = await scriptedDocker(
+    `printf '%s\\n' "$@" >> '${log}'
 printf -- '---\\n' >> '${log}'
 out=''
 prev=''
@@ -86,11 +85,8 @@ last=''
 for a in "$@"; do last="$a"; done
 stem=$(basename "$last")
 stem="\${stem%.*}"
-cp '${outputFile}' "$out/$stem.md"
-`,
-    'utf8',
+cp '${outputFile}' "$out/$stem.md"`,
   );
-  await chmod(script, 0o755);
 
   return {
     docker: script,
@@ -137,9 +133,12 @@ describe('Docling converter: arguments and OCR policy (fake docker)', () => {
     // OCR is never run: it costs a model load per conversion and more memory
     // than a book-length PDF leaves. A scan is a clear failure the user can
     // act on, not an empty Document for stage 2 to summarise.
-    await expect(
-      createDoclingConverter({ docker: fake.docker })({ inputPath, outputPath }),
-    ).rejects.toThrow(/no text layer/);
+    const refusal = createDoclingConverter({ docker: fake.docker })({ inputPath, outputPath });
+    await expect(refusal).rejects.toThrow(/no text layer/);
+    // NBK-64: classified here, where the scan is recognised, so the reason a
+    // user is shown never depends on how this message is worded.
+    await expect(refusal).rejects.toBeInstanceOf(IngestionFailure);
+    await expect(refusal).rejects.toMatchObject({ reason: 'no-text-layer' });
 
     const invocations = await fake.invocations();
     expect(invocations).toHaveLength(1);
@@ -158,6 +157,58 @@ describe('Docling converter: arguments and OCR policy (fake docker)', () => {
 
     expect(await fake.invocations()).toHaveLength(1);
     expect(await readFile(outputPath, 'utf8')).toBe('');
+  });
+});
+
+/**
+ * NBK-65: every way stage 1 knows it failed carries its reason on the typed
+ * failure. The assertions are on `reason` alone, never the message, so the
+ * diagnostics can be reworded without changing what the user is told.
+ */
+describe('Docling converter: named failures (scripted docker)', () => {
+  async function convertWith(docker: string, timeoutMs?: number): Promise<unknown> {
+    const workDir = await mkdtemp(join(tmpdir(), 'nbk-docling-fail-'));
+    const inputPath = join(workDir, 'report.pdf');
+    await writeFile(inputPath, textPdf('Quarterly report'));
+    return createDoclingConverter({ docker, timeoutMs })({
+      inputPath,
+      outputPath: markdownOutputPath(workDir),
+    }).then(
+      () => {
+        throw new Error('expected the conversion to fail');
+      },
+      (err: unknown) => err,
+    );
+  }
+
+  it("is 'unreadable' when Docling exits with an error", async () => {
+    const failure = await convertWith(
+      await scriptedDocker("echo 'RuntimeError: PDF is damaged' >&2; exit 1"),
+    );
+
+    expect(failure).toBeInstanceOf(IngestionFailure);
+    expect(failure).toMatchObject({ reason: 'unreadable' });
+  });
+
+  it("is 'unreadable' when Docling exits 0 but writes no Markdown", async () => {
+    const failure = await convertWith(await scriptedDocker("echo 'failed to convert'; exit 0"));
+
+    expect(failure).toBeInstanceOf(IngestionFailure);
+    expect(failure).toMatchObject({ reason: 'unreadable' });
+  });
+
+  it("is 'timed-out' when Docling is killed after its timeout", async () => {
+    const failure = await convertWith(await scriptedDocker('exec sleep 30'), 200);
+
+    expect(failure).toBeInstanceOf(IngestionFailure);
+    expect(failure).toMatchObject({ reason: 'timed-out' });
+  });
+
+  it("is 'service-unavailable' when Docling cannot be started", async () => {
+    const failure = await convertWith(missingDocker());
+
+    expect(failure).toBeInstanceOf(IngestionFailure);
+    expect(failure).toMatchObject({ reason: 'service-unavailable' });
   });
 });
 

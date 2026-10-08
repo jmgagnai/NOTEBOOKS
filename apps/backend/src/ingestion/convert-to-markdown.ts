@@ -11,8 +11,10 @@ import { getObject } from '../storage/s3-client.js';
 import type { DocumentStatus } from '../documents/schema.js';
 import { markdownOutputPath, type MarkdownConverter } from './docling.js';
 import {
+  attemptFailed,
   documentVersionRefSchema,
   versionStatusChanged,
+  type AttemptFailure,
   type DocumentVersionRef,
   type IngestionVersion,
 } from './stage.js';
@@ -87,7 +89,7 @@ async function transitionTo(
   pool: Pool,
   version: IngestionVersion,
   status: DocumentStatus,
-  fields: { markdown?: string; error?: string | null } = {},
+  fields: { markdown?: string } & Partial<Omit<AttemptFailure, 'status'>> = {},
 ): Promise<void> {
   await inTransaction(pool, async (client) => {
     await client.query(
@@ -95,11 +97,20 @@ async function transitionTo(
        SET ingestion_status = $2,
            markdown = COALESCE($3, markdown),
            ingestion_error = $4,
+           failure_reason = $5,
+           failed_at = $6,
            converted_at = CASE WHEN $2 = 'converted' THEN now() ELSE converted_at END
        WHERE id = $1`,
-      [version.versionId, status, fields.markdown ?? null, fields.error ?? null],
+      [
+        version.versionId,
+        status,
+        fields.markdown ?? null,
+        fields.error ?? null,
+        fields.failure?.reason ?? null,
+        fields.failure?.failedAt ?? null,
+      ],
     );
-    await publishAppEvent(client, versionStatusChanged(version, status, fields.error));
+    await publishAppEvent(client, versionStatusChanged(version, status, fields.failure));
   });
 }
 
@@ -160,7 +171,7 @@ export async function runConvertToMarkdownJob(
     await convertToMarkdown({ inputPath, outputPath });
 
     const markdown = await readFile(outputPath, 'utf8');
-    await transitionTo(pool, version, 'converted', { markdown, error: null });
+    await transitionTo(pool, version, 'converted', { markdown });
 
     // Enqueued after the Converted Markdown is committed, never before: a
     // stage-2 job that out-ran its own input would find nothing to read.
@@ -180,8 +191,12 @@ export async function runConvertToMarkdownJob(
       });
     }
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    await transitionTo(pool, version, willRetry ? 'queued' : 'failed', { error: message });
+    const failed = attemptFailed(err, {
+      willRetry,
+      retryStatus: 'queued',
+      failedAt: 'converting',
+    });
+    await transitionTo(pool, version, failed.status, failed);
     throw err;
   } finally {
     await rm(workDir, { recursive: true, force: true });

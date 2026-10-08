@@ -12,9 +12,12 @@ import {
   type GeneratedArtifacts,
   type SectionSummaryStore,
 } from './generated-artifacts.js';
+import { classifyProviderFailure } from './provider-failure.js';
 import {
+  attemptFailed,
   documentVersionRefSchema,
   versionStatusChanged,
+  type AttemptFailure,
   type DocumentVersionRef,
   type IngestionVersion,
 } from './stage.js';
@@ -70,10 +73,9 @@ interface VersionRow {
   section_summaries: CachedSectionSummaries | null;
 }
 
-interface TransitionFields {
+interface TransitionFields extends Partial<Omit<AttemptFailure, 'status'>> {
   metadata?: DocumentMetadata;
   artifacts?: GeneratedArtifacts;
-  error?: string | null;
   /**
    * Artifacts that shipped outside their required size. `undefined` leaves
    * the column alone; an empty array clears it. See migration 0011.
@@ -192,6 +194,8 @@ async function transitionTo(
            executive_summary = COALESCE($5, executive_summary),
            abstract = COALESCE($6, abstract),
            ingestion_error = $7,
+           failure_reason = $11,
+           failed_at = $12,
            -- NULL for "nothing to report", so an operator querying this
            -- column never has to tell NULL and [] apart. $8 is NULL both
            -- when no artifacts were generated on this transition and when
@@ -213,9 +217,11 @@ async function transitionTo(
         fields.warnings && fields.warnings.length > 0 ? JSON.stringify(fields.warnings) : null,
         fields.warnings !== undefined,
         fields.clearSectionSummaries === true,
+        fields.failure?.reason ?? null,
+        fields.failure?.failedAt ?? null,
       ],
     );
-    await publishAppEvent(client, versionStatusChanged(version, status, fields.error));
+    await publishAppEvent(client, versionStatusChanged(version, status, fields.failure));
   });
 }
 
@@ -268,9 +274,14 @@ export async function runSummarizeDocumentJob(
     // Stage 2's input is missing, which means stage 1 either hasn't run or
     // produced nothing. Recorded as an error and thrown so it retries — a
     // re-enqueued stage 1 can still fill this in.
-    const message = 'Stage 2 found no Converted Markdown on this Document Version.';
-    await transitionTo(pool, version, willRetry ? 'converted' : 'failed', { error: message });
-    throw new Error(message);
+    const missing = new Error('Stage 2 found no Converted Markdown on this Document Version.');
+    const failed = attemptFailed(missing, {
+      willRetry,
+      retryStatus: 'converted',
+      failedAt: 'summarizing',
+    });
+    await transitionTo(pool, version, failed.status, failed);
+    throw missing;
   }
 
   await transitionTo(pool, version, 'summarizing');
@@ -295,7 +306,6 @@ export async function runSummarizeDocumentJob(
     await transitionTo(pool, version, 'summarized', {
       metadata: result.metadata,
       artifacts: result.artifacts,
-      error: null,
       warnings: result.warnings,
       clearSectionSummaries: true,
     });
@@ -313,8 +323,12 @@ export async function runSummarizeDocumentJob(
       });
     }
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    await transitionTo(pool, version, willRetry ? 'converted' : 'failed', { error: message });
+    const failed = attemptFailed(classifyProviderFailure(err), {
+      willRetry,
+      retryStatus: 'converted',
+      failedAt: 'summarizing',
+    });
+    await transitionTo(pool, version, failed.status, failed);
     throw err;
   }
 }

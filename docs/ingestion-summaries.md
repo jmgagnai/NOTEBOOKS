@@ -131,7 +131,9 @@ right and is also how a size guarantee quietly stops being one — it is the
 difference between "stored anyway" and "stored anyway, and nobody can tell".
 The column is `NULL` when everything fitted, so "nothing to report" is one
 value rather than two, and it is deliberately *not* `ingestion_error`, which
-means the stage failed and is read as such by the UI's status badge.
+records why a stage failed — for operators; what the UI shows a user is the
+Version's failure reason (ADR-0009), and a stored-anyway artifact is not a
+failure at all.
 
 The residual case is a real one: an over-long Executive Summary with no
 internal structure at all is one section, so there is no boundary to cut at

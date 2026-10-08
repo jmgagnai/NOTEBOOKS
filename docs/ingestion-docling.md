@@ -86,9 +86,10 @@ document with `--no-ocr`, always.
 A scanned PDF — pages that are pictures of text — then converts to nothing
 but `<!-- image -->` placeholders. Rather than let that through as an empty
 Document that stage 2 summarises and stage 3 indexes, the converter refuses
-it (`looksScanned` in `docling.ts`): the Version fails with
-`<file> has no text layer (a scanned PDF), and OCR is disabled`. The check
-is a heuristic on the output, not a probe of the input, so it needs no PDF
+it (`looksScanned` in `docling.ts`): the Version fails with the failure
+reason `no-text-layer`, which is what the user is told, and
+`<file> has no text layer (a scanned PDF), and OCR is disabled` in
+`ingestion_error` for operators. The check is a heuristic on the output, not a probe of the input, so it needs no PDF
 library on the host, and its threshold is low so a sparse but genuine text
 PDF is not refused.
 
@@ -96,6 +97,25 @@ Supporting scans is a feature, not a flag: it needs an OCR pass with its own
 memory budget (per-page, or on a machine with more than 8GB for Docker),
 and a decision about which engine. The EasyOCR weights are in the image if
 that day comes.
+
+### What the user is told when conversion fails
+
+Each way stage 1 can fail is recorded with a failure reason (NBK-65,
+ADR-0009), decided where the converter recognises the cause rather than
+guessed from the error text, which is written for operators and stays in
+`ingestion_error`:
+
+| What happened                                                        | Failure reason        |
+| -------------------------------------------------------------------- | --------------------- |
+| A PDF converted to nothing but image placeholders (a scan)           | `no-text-layer`       |
+| The container ran past `DOCLING_TIMEOUT_MS` and was killed           | `timed-out`           |
+| `docker` could not be started at all (not installed, not on `PATH`)  | `service-unavailable` |
+| Docling exited non-zero, or was killed (an OOM, a crash)             | `unreadable`          |
+| Docling exited 0 but wrote no Markdown (e.g. a legacy `.xls`)        | `unreadable`          |
+| Anything else thrown in stage 1 (S3 read, filesystem)                | `unexpected`          |
+
+A reason is recorded only once pg_boss has no retry left; until then the
+Version goes back to `queued` with no reason.
 
 The `-cpu` variant is deliberate: the CUDA variant is much larger and buys
 nothing without a GPU.
@@ -148,9 +168,10 @@ Input document report.xls with format None does not match any allowed format
 
 writes no output file, **and exits 0** — which stage 1 catches as "exited 0 but
 produced no Markdown" (that guard exists for exactly this class of input; see
-`createDoclingConverter`). Accepting `.xls` would therefore trade an immediate,
-actionable 400 at upload for a Document that sits in `converting` and then
-`failed` several minutes later.
+`createDoclingConverter`) and records as the failure reason `unreadable`.
+Accepting `.xls` would therefore trade an immediate, actionable 400 at upload
+for a Document that sits in `converting` and then `failed` several minutes
+later.
 
 Note that Docling sniffs *content*, not only the extension: a CSV or an actual
 `.xlsx` renamed to `.xls` converts fine. That is not a reason to accept the
@@ -174,7 +195,9 @@ The timeout is an hour because the layout model runs on every page on CPU:
 a 540-page novel takes the pinned image well over ten minutes on a
 four-core Docker Desktop, and conversions run one at a time. Expect a batch
 of book-length PDFs to take hours; a Document is "converting" for as long
-as its container runs, and the ones behind it are "queued".
+as its container runs, and the ones behind it are "queued". A conversion
+that outlives the timeout is killed and, once its retries are spent, fails
+with the failure reason `timed-out`.
 
 The job queue's expiry follows this timeout (`jobExpirySeconds` in
 `jobs/queue.ts`: the timeout plus five minutes, on every stage queue).

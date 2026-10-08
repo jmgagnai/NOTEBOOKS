@@ -10,6 +10,7 @@ import {
 } from '../src/events/bus.js';
 import { createOpenRouterEmbedder } from '../src/llm/embeddings.js';
 import { DEFAULT_EMBEDDING_MODEL, EMBEDDING_DIMENSIONS } from '../src/llm/models.js';
+import { listDocuments } from '../src/documents/repository.js';
 import { runEmbedChunksJob } from '../src/ingestion/embed-chunks.js';
 
 /**
@@ -632,7 +633,9 @@ describe('embed-chunks job', () => {
       'indexing',
       'summarized',
     ]);
-    expect(mine[1].data).toMatchObject({ error: expect.stringMatching(/429/) });
+    // NBK-67: the raw error stays on the row; a retry has no reason to show.
+    expect(mine[1].data).not.toHaveProperty('error');
+    expect(mine[1].data).not.toHaveProperty('failure');
   });
 
   it("marks the Version failed when embedding can't be retried", async () => {
@@ -690,6 +693,10 @@ describe('embed-chunks job', () => {
     expect(version.ingestion_status).toBe('failed');
     expect(version.ingestion_error).toMatch(new RegExp(`vector\\(${EMBEDDING_DIMENSIONS}\\)`));
     expect(await readChunks(seeded.versionId)).toEqual([]);
+    // NBK-64: an internal inconsistency is nothing a user can fix by changing
+    // their file, so it is reported as the honest fallback.
+    const [document] = await listDocuments(pool, seeded.notebookId);
+    expect(document.failure).toEqual({ reason: 'unexpected', failedAt: 'indexing' });
   });
 
   it('fails rather than embedding nothing when the Converted Markdown is missing', async () => {
@@ -711,6 +718,114 @@ describe('embed-chunks job', () => {
     const version = await readVersion(seeded.versionId);
     expect(version.ingestion_status).toBe('failed');
     expect(await readChunks(seeded.versionId)).toEqual([]);
+  });
+
+  /**
+   * NBK-66: which failures of stage 3 a user is told were a service outage.
+   * The rule lives beside `ProviderUnavailableError` in src/llm/openrouter.ts;
+   * these cases pin it at the job seam, through the real embedder.
+   */
+  describe('NBK-66: failure reason', () => {
+    const json = (status: number, body: unknown): Response =>
+      new Response(JSON.stringify(body), {
+        status,
+        headers: { 'content-type': 'application/json' },
+      });
+
+    const seedOutageVersion = () =>
+      seedSummarizedVersion('outage.md', `# Outage\n\n${prose('outage', 2)}\n`);
+
+    /** Runs one stage-3 attempt against `fetchStub` on `seeded`, swallowing the rethrow. */
+    async function failAttempt(
+      seeded: SeededVersion,
+      fetchStub: typeof globalThis.fetch,
+      { willRetry }: { willRetry: boolean },
+    ) {
+      await expect(
+        runEmbedChunksJob(
+          {
+            pool,
+            embed: createOpenRouterEmbedder({
+              apiKey: 'test-key',
+              model: DEFAULT_EMBEDDING_MODEL,
+              fetch: fetchStub,
+              retries: 0,
+            }),
+          },
+          { payload: { documentId: seeded.documentId, versionId: seeded.versionId }, willRetry },
+        ),
+      ).rejects.toThrow();
+    }
+
+    async function failureAfter(
+      fetchStub: typeof globalThis.fetch,
+      { willRetry }: { willRetry: boolean },
+    ) {
+      const seeded = await seedOutageVersion();
+      await failAttempt(seeded, fetchStub, { willRetry });
+      const [document] = await listDocuments(pool, seeded.notebookId);
+      return document.failure;
+    }
+
+    it.each<[string, typeof globalThis.fetch]>([
+      [
+        'the provider cannot be reached',
+        async () => {
+          throw new TypeError('fetch failed');
+        },
+      ],
+      ['the provider is rate-limited', async () => json(429, { error: { message: 'slow down' } })],
+      ['the provider errors', async () => json(503, { error: { message: 'unavailable' } })],
+      [
+        'the provider reports an upstream failure in a 200',
+        async () => json(200, { error: { message: 'upstream provider down' } }),
+      ],
+    ])("records 'service-unavailable' when %s and no retry is left", async (_, fetchStub) => {
+      expect(await failureAfter(fetchStub, { willRetry: false })).toEqual({
+        reason: 'service-unavailable',
+        failedAt: 'indexing',
+      });
+    });
+
+    // A bad key, no credits or a refusal is the operator's to fix, not an
+    // outage: telling the user to try a New Version later would mislead them.
+    it.each<[string, typeof globalThis.fetch]>([
+      ['the provider refuses the key', async () => json(401, { error: { message: 'no auth' } })],
+      [
+        'the account has no credits left',
+        async () => json(402, { error: { message: 'insufficient credits' } }),
+      ],
+      ['the provider forbids the request', async () => json(403, { error: { message: 'no' } })],
+      ['the provider returns the wrong number of embeddings', async () => json(200, { data: [] })],
+      [
+        'the request names a model the provider does not know',
+        async () => json(404, { error: { message: 'no such model' } }),
+      ],
+    ])("records 'unexpected' when %s", async (_, fetchStub) => {
+      expect(await failureAfter(fetchStub, { willRetry: false })).toEqual({
+        reason: 'unexpected',
+        failedAt: 'indexing',
+      });
+    });
+
+    it('records no reason while a retry is pending', async () => {
+      const outage: typeof globalThis.fetch = async () => json(503, {});
+      expect(await failureAfter(outage, { willRetry: true })).toBeNull();
+    });
+
+    it('clears the reason once a later run of the Version succeeds', async () => {
+      const seeded = await seedOutageVersion();
+      await failAttempt(seeded, async () => json(503, {}), { willRetry: false });
+
+      await runEmbedChunksJob(depsWith(stubEmbeddings().fetchStub), {
+        payload: { documentId: seeded.documentId, versionId: seeded.versionId },
+        willRetry: false,
+      });
+
+      const [document] = await listDocuments(pool, seeded.notebookId);
+      expect(document.status).toBe('ready');
+      expect(document.failure).toBeNull();
+    });
   });
 
   it('does nothing for a Document Version that no longer exists', async () => {

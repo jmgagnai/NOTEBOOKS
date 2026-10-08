@@ -9,6 +9,7 @@ import { BaseService } from '../base-service';
 import { ApiConfiguration } from '../api-configuration';
 import { StrictHttpResponse } from '../strict-http-response';
 
+import { DocumentFailure } from '../models/document-failure';
 import { searchNotebook } from '../fn/search/search-notebook';
 import { SearchNotebook$Params } from '../fn/search/search-notebook';
 
@@ -36,6 +37,7 @@ export class SearchService extends BaseService {
 'notebookId': string;
 'filename': string;
 'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'indexing' | 'ready' | 'failed';
+'failure': DocumentFailure | null;
 'abstract': string | null;
 'createdAt': string;
 'latestVersion': {
@@ -70,6 +72,7 @@ export class SearchService extends BaseService {
 'notebookId': string;
 'filename': string;
 'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'indexing' | 'ready' | 'failed';
+'failure': DocumentFailure | null;
 'abstract': string | null;
 'createdAt': string;
 'latestVersion': {
@@ -91,6 +94,7 @@ export class SearchService extends BaseService {
 'notebookId': string;
 'filename': string;
 'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'indexing' | 'ready' | 'failed';
+'failure': DocumentFailure | null;
 'abstract': string | null;
 'createdAt': string;
 'latestVersion': {
@@ -110,6 +114,7 @@ export class SearchService extends BaseService {
 'notebookId': string;
 'filename': string;
 'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'indexing' | 'ready' | 'failed';
+'failure': DocumentFailure | null;
 'abstract': string | null;
 'createdAt': string;
 'latestVersion': {

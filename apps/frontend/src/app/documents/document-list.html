@@ -67,7 +67,7 @@
           class="document-row__warning"
           role="img"
           aria-label="Ingestion failed"
-          [matTooltip]="failureReason"
+          [matTooltip]="failureSentence(document.failure)"
         >
           <mat-icon svgIcon="warning" />
         </span>

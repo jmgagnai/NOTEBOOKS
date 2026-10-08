@@ -10,6 +10,7 @@ import {
 } from '../src/events/bus.js';
 import { createOpenRouterCompleter } from '../src/llm/openrouter.js';
 import { DEFAULT_TASK_MODELS } from '../src/llm/models.js';
+import { listDocuments } from '../src/documents/repository.js';
 import { runSummarizeDocumentJob } from '../src/ingestion/summarize-document.js';
 
 /**
@@ -1166,6 +1167,109 @@ describe('summarize-document job', () => {
       const reduce = second.calls.find((c) => c.task === 'executiveSummary')!;
       expect(reduce.user).toContain('A summary of the new text.');
       expect(reduce.user).not.toContain('A summary of the old text.');
+    });
+  });
+
+  // NBK-64: missing input is an internal inconsistency, nothing a user can fix
+  // by changing their file, so it is reported as the honest fallback.
+  it("records 'unexpected' when the Converted Markdown is missing and no retry is left", async () => {
+    const seeded = await seedConvertedVersion('hollow.md', '   ');
+    const neverCalled: typeof globalThis.fetch = async () => {
+      throw new Error('should never be called');
+    };
+
+    await expect(
+      runSummarizeDocumentJob(
+        { pool, complete: createOpenRouterCompleter({ apiKey: 'k', fetch: neverCalled }) },
+        {
+          payload: { documentId: seeded.documentId, versionId: seeded.versionId },
+          willRetry: false,
+        },
+      ),
+    ).rejects.toThrow(/no Converted Markdown/);
+
+    const [document] = await listDocuments(pool, seeded.notebookId);
+    expect(document.status).toBe('failed');
+    expect(document.failure).toEqual({ reason: 'unexpected', failedAt: 'summarizing' });
+  });
+
+  /**
+   * NBK-66: which failures of stage 2 a user is told were a service outage.
+   * The rule lives beside `ProviderUnavailableError` in src/llm/openrouter.ts;
+   * these cases pin it at the job seam, through the real completer.
+   */
+  describe('NBK-66: failure reason', () => {
+    const json = (status: number, body: unknown): Response =>
+      new Response(JSON.stringify(body), {
+        status,
+        headers: { 'content-type': 'application/json' },
+      });
+
+    async function failureAfter(
+      fetchStub: typeof globalThis.fetch,
+      { willRetry }: { willRetry: boolean },
+    ) {
+      const seeded = await seedConvertedVersion('outage.md', '# Outage\n\nShort.\n');
+      await expect(
+        runSummarizeDocumentJob(
+          {
+            pool,
+            complete: createOpenRouterCompleter({ apiKey: 'k', fetch: fetchStub, retries: 0 }),
+          },
+          { payload: { documentId: seeded.documentId, versionId: seeded.versionId }, willRetry },
+        ),
+      ).rejects.toThrow();
+      const [document] = await listDocuments(pool, seeded.notebookId);
+      return document.failure;
+    }
+
+    it.each<[string, typeof globalThis.fetch]>([
+      [
+        'the provider cannot be reached',
+        async () => {
+          throw new TypeError('fetch failed');
+        },
+      ],
+      ['the provider is rate-limited', async () => json(429, { error: { message: 'slow down' } })],
+      ['the provider errors', async () => json(502, { error: { message: 'bad gateway' } })],
+      [
+        'the provider reports an upstream failure in a 200',
+        async () => json(200, { error: { message: 'upstream provider down' } }),
+      ],
+    ])("records 'service-unavailable' when %s and no retry is left", async (_, fetchStub) => {
+      expect(await failureAfter(fetchStub, { willRetry: false })).toEqual({
+        reason: 'service-unavailable',
+        failedAt: 'summarizing',
+      });
+    });
+
+    // A bad key, no credits or a refusal is the operator's to fix, not an
+    // outage: telling the user to try a New Version later would mislead them.
+    it.each<[string, typeof globalThis.fetch]>([
+      ['the provider refuses the key', async () => json(401, { error: { message: 'no auth' } })],
+      [
+        'the account has no credits left',
+        async () => json(402, { error: { message: 'insufficient credits' } }),
+      ],
+      ['the provider forbids the request', async () => json(403, { error: { message: 'no' } })],
+    ])("records 'unexpected' when %s", async (_, fetchStub) => {
+      expect(await failureAfter(fetchStub, { willRetry: false })).toEqual({
+        reason: 'unexpected',
+        failedAt: 'summarizing',
+      });
+    });
+
+    it("records 'unexpected' when the model's answer is malformed", async () => {
+      const { fetchStub } = stubOpenRouter(() => 'Sorry, I cannot produce JSON today.');
+      expect(await failureAfter(fetchStub, { willRetry: false })).toEqual({
+        reason: 'unexpected',
+        failedAt: 'summarizing',
+      });
+    });
+
+    it('records no reason while a retry is pending', async () => {
+      const outage: typeof globalThis.fetch = async () => json(503, {});
+      expect(await failureAfter(outage, { willRetry: true })).toBeNull();
     });
   });
 
