@@ -1,0 +1,60 @@
+// The inline-editable title (NBK-41): the button reads as text — no border,
+// a subtle hover so it is discoverable as a control — and the box it swaps
+// to has the same height and type step, so nothing jumps. The owner places
+// the host; it shrinks to its text and, while editing, takes the width its
+// flex parent gives it.
+:host {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  font: var(--mat-sys-title-large);
+}
+
+:host(.editable-title--medium) {
+  font: var(--mat-sys-title-medium);
+}
+
+:host(.editable-title--small) {
+  font: var(--mat-sys-title-small);
+}
+
+:host(.editable-title--editing) {
+  flex: 1 1 auto;
+}
+
+.editable-title__button,
+.editable-title__input {
+  box-sizing: border-box;
+  min-width: 0;
+  height: var(--app-control-height);
+  padding: 0 6px;
+  border-radius: var(--mat-sys-corner-extra-small);
+  font: inherit;
+  color: var(--mat-sys-on-surface);
+}
+
+.editable-title__button {
+  border: 0;
+  background: transparent;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: text;
+
+  &:hover {
+    background: var(--mat-sys-surface-container-high);
+  }
+}
+
+.editable-title__input {
+  width: 100%;
+  border: 1px solid var(--mat-sys-primary);
+  background: var(--mat-sys-surface);
+}
+
+// A page title's box is wide enough to type a sentence into even when the
+// title it replaces is a word; the card sizes take the card's width.
+:host(.editable-title--large) .editable-title__input {
+  min-width: min(320px, 100%);
+}
