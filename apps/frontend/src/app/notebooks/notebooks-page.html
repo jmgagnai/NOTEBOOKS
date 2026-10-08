@@ -12,6 +12,8 @@
     <p class="notebooks-page__error">{{ error }}</p>
   } @else if (store.notebooks().length === 0) {
     <div class="notebooks-page__empty">
+      <!-- NBK-62 (spec 06 "Empty states"): the mascot over the sentence. -->
+      <app-copycat-mark />
       <p>No Notebooks yet.</p>
       <ng-container *ngTemplateOutlet="createButton" />
     </div>

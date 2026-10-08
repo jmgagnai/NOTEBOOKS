@@ -19,6 +19,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatMenuModule } from '@angular/material/menu';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { EditableTitle } from '../shared/editable-title';
+import { CopycatMark } from '../shared/copycat-mark';
 import { UndoSnackBar } from '../shared/undo-snack-bar';
 import { NotebooksStore } from './notebooks.store';
 
@@ -41,6 +42,7 @@ const UNTITLED_NOTEBOOK = 'Untitled Notebook';
   selector: 'app-notebooks-page',
   standalone: true,
   imports: [
+    CopycatMark,
     DatePipe,
     EditableTitle,
     MatButtonModule,

@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, output } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
+import { CopycatMark } from '../shared/copycat-mark';
 
 /**
  * What an empty Notebook's Documents panel shows where the list would be
@@ -10,14 +11,17 @@ import { MatIconModule } from '@angular/material/icon';
  * that same input; a second file input here would have to duplicate the
  * accepted types and the disabled-while-a-batch-runs rule.
  *
+ * The cat mark stands where spec 03 had a Documents icon (NBK-62, spec 06
+ * "Empty states").
+ *
  * "No Documents yet." stays a text node of its own: it is the line the page
  * specs wait on for an empty Notebook to have loaded.
  */
 @Component({
   selector: 'app-documents-empty-state',
-  imports: [MatButtonModule, MatIconModule],
+  imports: [MatButtonModule, MatIconModule, CopycatMark],
   template: `
-    <mat-icon class="documents-empty-state__icon" svgIcon="document" aria-hidden="true" />
+    <app-copycat-mark />
     <p class="documents-empty-state__text">
       <span>No Documents yet.</span> Add Documents to start asking questions.
     </p>
@@ -34,12 +38,6 @@ import { MatIconModule } from '@angular/material/icon';
       gap: 12px;
       padding: 32px 16px;
       text-align: center;
-    }
-
-    .documents-empty-state__icon {
-      width: 32px;
-      height: 32px;
-      color: var(--mat-sys-on-surface-variant);
     }
 
     .documents-empty-state__text {

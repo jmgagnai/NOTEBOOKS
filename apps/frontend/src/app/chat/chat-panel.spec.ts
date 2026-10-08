@@ -1193,6 +1193,22 @@ describe('Chat panel (ThreadNavigator + ThreadView)', () => {
       expect(screen.queryByText('Open a Chat Thread, or start one, to ask a question.')).toBeNull();
     });
 
+    // NBK-62 (spec 06 "Empty states"): the cat mark replaces the sparkle
+    // above the sentence; the sparkle is left to the assistant's avatar.
+    it('shows the cat mark above the sentence instead of the sparkle, hidden from assistive technology', async () => {
+      await renderPanel({ listChatThreads: vi.fn().mockResolvedValue([]) as never });
+
+      const sentence = await screen.findByText(INVITATION);
+      const mark = screen.getByTestId('copycat-mark') as HTMLImageElement;
+      expect(mark.getAttribute('src')).toBe('/copycat-mark.svg');
+      expect(mark.alt).toBe('');
+      expect(mark.closest('[aria-hidden="true"]')).toBeTruthy();
+      expect(
+        mark.compareDocumentPosition(sentence) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      expect(document.querySelector('mat-icon[svgicon="sparkle"]')).toBeNull();
+    });
+
     it('gives way to the Chat Thread once the open Thread has messages', async () => {
       await renderPanel({
         listChatThreads: vi.fn().mockResolvedValue([thread()]) as never,

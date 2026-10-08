@@ -2470,6 +2470,23 @@ describe('NotebookDetailPage', () => {
       expect(screen.getAllByRole('button', { name: 'Add Documents' })).toHaveLength(2);
     });
 
+    // NBK-62 (spec 06 "Empty states"): the cat mark replaces the Documents
+    // icon above the sentence, decorative so a screen reader skips it.
+    it('shows the cat mark above the sentence, hidden from assistive technology', async () => {
+      await renderWithUpload(vi.fn());
+      const panel = documentsPanel();
+      const sentence = within(panel).getByText('No Documents yet.');
+      const mark = within(panel).getByTestId('copycat-mark') as HTMLImageElement;
+
+      expect(mark.getAttribute('src')).toBe('/copycat-mark.svg');
+      expect(mark.alt).toBe('');
+      expect(mark.closest('[aria-hidden="true"]')).toBeTruthy();
+      expect(
+        mark.compareDocumentPosition(sentence) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      expect(panel.querySelector('mat-icon[svgicon="document"]')).toBeNull();
+    });
+
     it("the empty state's Add Documents opens the same picker, which starts a batch", async () => {
       const request = deferred<Record<string, unknown>>();
       const uploadDocument = vi.fn().mockReturnValue(request.promise);
