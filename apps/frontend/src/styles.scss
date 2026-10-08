@@ -72,6 +72,31 @@ $type-scale: (
     ),
 );
 
+// Spec 07's larger roles (NBK-78), outside Material's role set because no
+// Material component reads them: they are for the pages that copy Copilot's
+// big type. Same parts as the roles above, under `--app-type-<role>`.
+// - page-title: the home's "Notebooks" and the Notebook landing title.
+// - row-title: a Notebook's title in a row of the home list.
+// - reading: questions and answers in a Chat Thread, with the generous line
+//   height long prose needs; the Documents pane keeps the 14 px body.
+$app-type-scale: (
+  page-title: (
+    600,
+    40px,
+    52px,
+  ),
+  row-title: (
+    400,
+    20px,
+    28px,
+  ),
+  reading: (
+    400,
+    16px,
+    26px,
+  ),
+);
+
 html {
   // `theme-type: light` rather than Material's default `color-scheme`: dark
   // mode is out of scope for spec 01, and `light-dark()` values would let an
@@ -113,9 +138,11 @@ html {
   --mat-sys-on-error: #ffffff;
   --mat-sys-error-container: #fde7e9;
   --mat-sys-on-error-container: #c50f1f;
-  // Page canvas vs. pane/card surface, then the subtle surfaces for hover
-  // and the user bubble, from lightest to darkest.
-  --mat-sys-background: #f5f5f5;
+  // The page behind the panes, then the pane surface, then the subtle
+  // surfaces for hover and the user bubble, from lightest to darkest. The
+  // page was a grey canvas under bordered cards until spec 07 (NBK-78): now
+  // everything is flat white split by 1 px lines, as in Copilot.
+  --mat-sys-background: #ffffff;
   --mat-sys-on-background: #242424;
   --mat-sys-surface: #ffffff;
   --mat-sys-surface-container-lowest: #ffffff;
@@ -169,6 +196,16 @@ html {
     --mat-sys-#{$role}-tracking: 0;
   }
 
+  @each $role, $spec in $app-type-scale {
+    $weight: list.nth($spec, 1);
+    $size: list.nth($spec, 2);
+    $line-height: list.nth($spec, 3);
+    --app-type-#{$role}: #{$weight} #{$size} / #{$line-height} #{meta.inspect($system-font)};
+    --app-type-#{$role}-weight: #{$weight};
+    --app-type-#{$role}-size: #{$size};
+    --app-type-#{$role}-line-height: #{$line-height};
+  }
+
   // App-level tokens for the spec values Material has no system slot for.
   --app-primary-hover: #115ea3;
   --app-primary-pressed: #0c3b5e;
@@ -190,6 +227,10 @@ html {
   // and `primary-container` beside that outline reads as unfilled.
   --app-selected-fill: #d6e8f9;
   --app-selected-fill-hover: #c7def6;
+  // The sidebar (spec 07, NBK-78): the one surface that is not white, the
+  // subtle grey Copilot puts its navigation on, reused rather than a new
+  // colour so it stays one of the theme's greys.
+  --app-sidebar-surface: var(--mat-sys-surface-container);
 }
 
 html,
@@ -275,19 +316,21 @@ app-root > :not(mat-toolbar):not(router-outlet) {
   border-bottom: 1px solid var(--mat-sys-outline-variant);
 }
 
-// Cards: white, 8 px corners, a border instead of the raised shadow. The
-// pages keep Material's default (raised) appearance, so the border is given
-// to every card rather than only the `outlined` appearance.
+// Cards: flat white, no corner, border or shadow (spec 07, NBK-78). The
+// Document and Search pages hold their content in a `mat-card`, which on a
+// white page now reads as the page itself rather than a card on a canvas.
 .mat-mdc-card {
   @include mat.card-overrides(
     (
       elevated-container-color: var(--mat-sys-surface),
       elevated-container-elevation: none,
-      filled-container-color: var(--mat-sys-surface-container-low),
+      elevated-container-shape: 0,
+      filled-container-color: var(--mat-sys-surface),
+      filled-container-shape: 0,
       outlined-outline-color: var(--mat-sys-outline-variant),
+      outlined-container-shape: 0,
     )
   );
-  border: 1px solid var(--mat-sys-outline-variant);
 }
 
 // Buttons. The four named variants later specs refer to map onto Material's
@@ -339,7 +382,7 @@ app-root > :not(mat-toolbar):not(router-outlet) {
   }
 }
 
-// Secondary buttons are white, not transparent, so they read on the canvas.
+// Secondary buttons are white, not transparent, so they read on any subtle surface (the sidebar, a hovered row).
 .mat-mdc-outlined-button:not(:disabled) {
   background-color: var(--mat-sys-surface);
 }

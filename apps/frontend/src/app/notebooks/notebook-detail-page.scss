@@ -1,7 +1,7 @@
 @use '../workspace-card';
 
-// The Notebook workspace (NBK-35): a column of header and card grid filling
-// the viewport under the title bar, so the cards scroll and the page never
+// The Notebook workspace (NBK-35): a column of header and pane grid filling
+// the viewport under the title bar, so the panes scroll and the page never
 // does. `100vh` minus the bar rather than `height: 100%`: the routed element
 // is a flex child of an `app-root` with only a min-height, so a percentage
 // would have nothing definite to resolve against.
@@ -43,17 +43,21 @@
     white-space: nowrap;
   }
 
-  // The three cards: navigator 240 px, Thread view the rest, Documents
+  // The three panes: navigator 240 px, Thread view the rest, Documents
   // 300 px (200/260 under 1100 px); one column under 900 px, the navigator at
   // its natural height, the Thread view taking the rest, Documents a strip
-  // of about a third (spec 02 "Page structure").
+  // of about a third (spec 02 "Page structure"). Flat since spec 07
+  // (NBK-78): the panes are white and touch, and the 1 px gaps between them
+  // let the grid's border-colour background through as the dividing lines —
+  // one rule that holds for the columns and for the stacked rows alike.
   &__workspace {
     flex: 1 1 auto;
     min-height: 0;
     display: grid;
     grid-template-columns: 240px 1fr 300px;
-    gap: 8px;
-    padding: 0 8px 8px;
+    gap: 1px;
+    border-top: 1px solid var(--mat-sys-outline-variant);
+    background: var(--mat-sys-outline-variant);
 
     @media (max-width: 1100px) {
       grid-template-columns: 200px 1fr 260px;
@@ -72,11 +76,11 @@
     }
 
     // Documents hidden (NBK-37): its column shrinks to nothing and the gap
-    // with it, so the Thread view takes the width; under 900 px it is the
-    // strip's row that goes. The card itself slides out below.
+    // (the line) with it, so the Thread view takes the width; under 900 px
+    // it is the strip's row that goes. The pane itself slides out below.
     &--documents-hidden {
       grid-template-columns: 240px 1fr 0;
-      gap: 8px 0;
+      gap: 1px 0;
 
       @media (max-width: 1100px) {
         grid-template-columns: 200px 1fr 0;
@@ -94,12 +98,13 @@
 
     // The Documents panel is the drop target (NBK-36): tinted and outlined
     // while files are dragged anywhere over the page, with the hint laid
-    // over its content. The card is already `position: relative`, and the
-    // outline is drawn inside its border so the rounded corners hold.
+    // over its content. The pane is already `position: relative`, and the
+    // outline is drawn inside its edge so the pane's own `overflow` and its
+    // neighbours do not clip it.
     &--drag-over {
       background: var(--mat-sys-primary-container);
       outline: 2px dashed var(--mat-sys-primary);
-      outline-offset: -3px;
+      outline-offset: -2px;
     }
 
     // Sliding out (NBK-37): a short translate and fade, then `visibility`
@@ -117,7 +122,6 @@
       transform: translateX(16px);
       opacity: 0;
       visibility: hidden;
-      border-width: 0;
       pointer-events: none;
 
       @media (prefers-reduced-motion: no-preference) {

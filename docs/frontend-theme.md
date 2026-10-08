@@ -30,8 +30,9 @@ form fields. Material hides the floating label at this density only for the
 | Primary hover / pressed | `--app-primary-hover` / `--app-primary-pressed` | `#115EA3` / `#0C3B5E` |
 | Selected navigator row / its hover | `--app-selected-fill` / `--app-selected-fill-hover` | `#D6E8F9` / `#C7DEF6` |
 | Accent tint (selected rows, chips, in-progress badge) | `--mat-sys-primary-container` / `--mat-sys-on-primary-container` | `#EBF3FC` / `#0C3B5E` |
-| Page canvas | `--mat-sys-background` (`--mat-sys-on-background`) | `#F5F5F5` (`#242424`) |
+| Page background (white since spec 07; was the grey canvas) | `--mat-sys-background` (`--mat-sys-on-background`) | `#FFFFFF` (`#242424`) |
 | Pane / card surface | `--mat-sys-surface` | `#FFFFFF` |
+| Sidebar surface (spec 07) | `--app-sidebar-surface` | `var(--mat-sys-surface-container)`, `#F5F5F5` |
 | Subtle surfaces, lightest to darkest | `--mat-sys-surface-container-low` / `-container` / `-container-high` / `-container-highest` | `#FAFAFA` / `#F5F5F5` / `#F0F0F0` / `#EBEBEB` |
 | Neutral chip / badge | `--mat-sys-secondary-container` / `--mat-sys-on-secondary-container` | `#F0F0F0` / `#424242` |
 | Text / secondary text | `--mat-sys-on-surface` / `--mat-sys-on-surface-variant` | `#242424` / `#616161` |
@@ -55,7 +56,7 @@ colour role; nothing else in the app uses tertiary.
 | Intent | Token | Value |
 |---|---|---|
 | Controls (buttons, inputs, badges, menus' items) | `--mat-sys-corner-extra-small`, `--mat-sys-corner-small`, `--mat-sys-corner-full` | 4 px |
-| Cards, panes, menus | `--mat-sys-corner-medium`, `--mat-sys-corner-large` | 8 px |
+| Menus, the composer, inner blocks (panes and `mat-card` are square since spec 07) | `--mat-sys-corner-medium`, `--mat-sys-corner-large` | 8 px |
 | Chat bubbles | `--mat-sys-corner-extra-large` | 12 px |
 | Fully round: avatars, Citation chips | `--app-corner-round` | 9999 px |
 | Elevation | `--mat-sys-level0` to `--mat-sys-level2` | `none` (a 1 px border instead) |
@@ -64,8 +65,22 @@ colour role; nothing else in the app uses tertiary.
 `corner-full` at 4 px is what keeps Material's filled and outlined buttons
 from rendering as pills, which is also why anything drawn as a circle
 (`<app-avatar>`, `<app-sparkle-avatar>`, the account button) or a round chip
-(Citation chips, spec 04) takes `--app-corner-round` instead. Every `mat-card` gets a 1 px `outline-variant`
-border and no shadow, whatever its appearance.
+(Citation chips, spec 04) takes `--app-corner-round` instead.
+
+## Flat surfaces
+
+Since spec 07 (NBK-78) the app has no grey canvas and no pane cards: every
+page is flat white, and panes are separated by 1 px `outline-variant` lines,
+the way Copilot Notebooks looks. `mat-card` is overridden to match (white,
+square, no border, no shadow, whatever its appearance), so the Document and
+Search pages' cards read as the page itself. On the Notebook page the panes
+come from the `card`/`head`/`title`/`body` mixins in
+`apps/frontend/src/app/_workspace-card.scss` (white, no border, no corner);
+the workspace grid draws the lines by having a 1 px gap over an
+`outline-variant` background, plus a 1 px top border under the page header.
+The only surface that is not white is the sidebar, on
+`--app-sidebar-surface`. Items inside a pane (Notebook cards on the home,
+search results, the upload batch block) keep their own borders.
 
 ## Type scale
 
@@ -89,6 +104,23 @@ sit on the scale without per-page rules. Rendered Markdown
 (`markdown-view.scss`) keeps a taller hierarchy for document headings
 (`headline-small` 24 px, then `title-large`, `title-medium`).
 
+### Spec 07 roles
+
+Three larger roles for the pages that copy Copilot's big type (spec 07,
+NBK-78). No Material component reads them, so they are app tokens:
+`--app-type-<role>` is the shorthand (`font: var(--app-type-page-title)`),
+with `-weight`, `-size` and `-line-height` parts. They are defined from the
+`$app-type-scale` map in `styles.scss`.
+
+| Role | Token | Value | Used by |
+|---|---|---|---|
+| Page title | `--app-type-page-title` | 600 40/52 | the Notebooks home title and the Notebook landing title only |
+| Row title | `--app-type-row-title` | 400 20/28 | a Notebook's title in a row of the home list |
+| Reading | `--app-type-reading` | 400 16/26 | questions and answers in a Chat Thread: long prose, generous line height |
+
+The Documents pane does not take the reading role: it keeps the dense 14 px
+body (`body-medium`).
+
 ## Layout tokens
 
 | Token | Value | Meaning |
@@ -104,7 +136,7 @@ height for a percentage to resolve against, so a page that wants panes
 scrolling inside the viewport sets
 `height: calc(100vh - var(--app-title-bar-height))` on its own root (as
 `notebook-detail-page.scss` does) and lets the children scroll. `body`
-carries the page canvas colour.
+carries the page background (`--mat-sys-background`, white since spec 07).
 
 ## Focus
 
@@ -223,7 +255,7 @@ replaced them (NBK-62). Both icons stay registered for their other uses.
 
 - `mat-toolbar`: white, text colour, 48 px (`--app-title-bar-height`), 1 px
   bottom border.
-- `mat-card`: white, 8 px, 1 px border, no shadow.
+- `mat-card`: flat white, square, no border, no shadow (spec 07; was 8 px with a 1 px border).
 - Menus (`.mat-mdc-menu-panel`): white, 8 px, 1 px border, `level3` shadow.
 - Tooltips: dark `inverse-surface` on light, via the system tokens alone.
 - Snack bar (the undo offer after a delete, `shared/undo-snack-bar.ts`):
