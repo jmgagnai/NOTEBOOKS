@@ -10,6 +10,7 @@ import {
 } from '../src/events/bus.js';
 import { createOpenRouterCompleter } from '../src/llm/openrouter.js';
 import { DEFAULT_TASK_MODELS } from '../src/llm/models.js';
+import { listDocuments } from '../src/documents/repository.js';
 import { runSummarizeDocumentJob } from '../src/ingestion/summarize-document.js';
 
 /**
@@ -1167,6 +1168,29 @@ describe('summarize-document job', () => {
       expect(reduce.user).toContain('A summary of the new text.');
       expect(reduce.user).not.toContain('A summary of the old text.');
     });
+  });
+
+  // NBK-64: missing input is an internal inconsistency, nothing a user can fix
+  // by changing their file, so it is reported as the honest fallback.
+  it("records 'unexpected' when the Converted Markdown is missing and no retry is left", async () => {
+    const seeded = await seedConvertedVersion('hollow.md', '   ');
+    const neverCalled: typeof globalThis.fetch = async () => {
+      throw new Error('should never be called');
+    };
+
+    await expect(
+      runSummarizeDocumentJob(
+        { pool, complete: createOpenRouterCompleter({ apiKey: 'k', fetch: neverCalled }) },
+        {
+          payload: { documentId: seeded.documentId, versionId: seeded.versionId },
+          willRetry: false,
+        },
+      ),
+    ).rejects.toThrow(/no Converted Markdown/);
+
+    const [document] = await listDocuments(pool, seeded.notebookId);
+    expect(document.status).toBe('failed');
+    expect(document.failure).toEqual({ reason: 'unexpected', failedAt: 'summarizing' });
   });
 
   it('does nothing for a Document Version that no longer exists', async () => {

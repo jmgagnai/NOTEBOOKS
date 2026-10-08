@@ -13,7 +13,9 @@ import {
   type AppEvent,
   type AppEventSubscriber,
 } from '../src/events/bus.js';
+import { listDocuments } from '../src/documents/repository.js';
 import { runConvertToMarkdownJob } from '../src/ingestion/convert-to-markdown.js';
+import { IngestionFailure } from '../src/ingestion/stage.js';
 import type { MarkdownConversionRequest } from '../src/ingestion/docling.js';
 import { createS3Client, ensureBucket, getObject, putObject } from '../src/storage/s3-client.js';
 import { startMinio } from './support/minio-container.js';
@@ -133,6 +135,90 @@ describe('convert-to-Markdown job', () => {
     );
     return rows[0];
   }
+
+  /** The Document's `failure` as the Documents API publishes it. */
+  async function publishedFailure(seeded: SeededVersion) {
+    const documents = await listDocuments(pool, seeded.notebookId);
+    return documents.find((d) => d.id === seeded.documentId)!.failure;
+  }
+
+  /** Runs one stage-1 attempt whose converter throws `error`, swallowing the rethrow. */
+  async function failAttempt(seeded: SeededVersion, error: Error, willRetry: boolean) {
+    await expect(
+      runConvertToMarkdownJob(
+        {
+          pool,
+          s3,
+          documentsBucket: DOCUMENTS_BUCKET,
+          tempDir: tempRoot,
+          convertToMarkdown: async () => {
+            throw error;
+          },
+        },
+        { payload: { documentId: seeded.documentId, versionId: seeded.versionId }, willRetry },
+      ),
+    ).rejects.toBe(error);
+  }
+
+  const scanRefusal = () =>
+    new IngestionFailure('no-text-layer', 'scan.pdf has no text layer (a scanned PDF).');
+
+  describe('NBK-64: failure reason', () => {
+    it("records 'no-text-layer' and where it failed when a scanned PDF exhausts its retries", async () => {
+      const seeded = await seedUploadedVersion('scan.pdf', 'pictures of text');
+
+      await failAttempt(seeded, scanRefusal(), false);
+
+      expect(await publishedFailure(seeded)).toEqual({
+        reason: 'no-text-layer',
+        failedAt: 'converting',
+      });
+    });
+
+    it('records no reason while a retry is still pending', async () => {
+      const seeded = await seedUploadedVersion('scan-retry.pdf', 'pictures of text');
+
+      await failAttempt(seeded, scanRefusal(), true);
+
+      expect((await readVersion(seeded.versionId)).ingestion_status).toBe('queued');
+      expect(await publishedFailure(seeded)).toBeNull();
+    });
+
+    it("records 'unexpected' for an error that carries no reason", async () => {
+      const seeded = await seedUploadedVersion('odd.txt', 'whatever');
+
+      await failAttempt(seeded, new Error('something nobody classified'), false);
+
+      expect(await publishedFailure(seeded)).toEqual({
+        reason: 'unexpected',
+        failedAt: 'converting',
+      });
+    });
+
+    it('clears the reason once a later run of the Version succeeds', async () => {
+      const seeded = await seedUploadedVersion('second-try.txt', 'fine after all');
+      await failAttempt(seeded, scanRefusal(), false);
+
+      await runConvertToMarkdownJob(
+        {
+          pool,
+          s3,
+          documentsBucket: DOCUMENTS_BUCKET,
+          tempDir: tempRoot,
+          convertToMarkdown: async ({ outputPath }) => {
+            await writeFile(outputPath, '# Fine after all\n', 'utf8');
+          },
+        },
+        {
+          payload: { documentId: seeded.documentId, versionId: seeded.versionId },
+          willRetry: false,
+        },
+      );
+
+      expect((await readVersion(seeded.versionId)).ingestion_status).toBe('converted');
+      expect(await publishedFailure(seeded)).toBeNull();
+    });
+  });
 
   it('converts the stored upload and saves the Markdown on the Document Version', async () => {
     const seeded = await seedUploadedVersion('handbook.txt', 'the original bytes');

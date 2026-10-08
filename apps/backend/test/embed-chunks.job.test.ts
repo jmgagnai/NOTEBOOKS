@@ -10,6 +10,7 @@ import {
 } from '../src/events/bus.js';
 import { createOpenRouterEmbedder } from '../src/llm/embeddings.js';
 import { DEFAULT_EMBEDDING_MODEL, EMBEDDING_DIMENSIONS } from '../src/llm/models.js';
+import { listDocuments } from '../src/documents/repository.js';
 import { runEmbedChunksJob } from '../src/ingestion/embed-chunks.js';
 
 /**
@@ -690,6 +691,10 @@ describe('embed-chunks job', () => {
     expect(version.ingestion_status).toBe('failed');
     expect(version.ingestion_error).toMatch(new RegExp(`vector\\(${EMBEDDING_DIMENSIONS}\\)`));
     expect(await readChunks(seeded.versionId)).toEqual([]);
+    // NBK-64: an internal inconsistency is nothing a user can fix by changing
+    // their file, so it is reported as the honest fallback.
+    const [document] = await listDocuments(pool, seeded.notebookId);
+    expect(document.failure).toEqual({ reason: 'unexpected', failedAt: 'indexing' });
   });
 
   it('fails rather than embedding nothing when the Converted Markdown is missing', async () => {

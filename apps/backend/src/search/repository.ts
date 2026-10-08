@@ -67,6 +67,10 @@ const SEARCH_NOTEBOOK_SQL = `
     s.size_bytes,
     s.version_created_at,
     s.ingestion_status,
+    -- Only \`ready\` Versions are searchable, so there is never a failure
+    -- reason to report.
+    NULL AS failure_reason,
+    NULL AS failed_at,
     s.abstract,
     1 - scored.distance AS score
   FROM scored

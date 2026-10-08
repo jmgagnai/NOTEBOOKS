@@ -17,6 +17,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import type { FluentIconName } from '../shared/fluent-icons';
 import { statusLabel } from '../shared/status-badge';
 import type { Document, DocumentStatus } from './documents.store';
+import { failureSentence } from './failure-reason';
 
 /** What the type icon at the start of a row says: which icon, and its accessible name. */
 export interface DocumentKind {
@@ -66,14 +67,6 @@ export function isInProgress(status: DocumentStatus): boolean {
   return status !== 'ready' && status !== 'failed';
 }
 
-/**
- * What the warning on a `failed` row says. Generic on purpose: the list
- * payload carries no reason (the backend keeps `ingestion_error` on the
- * Version and does not expose it), so this names what failed and where to
- * look rather than inventing a cause.
- */
-export const FAILURE_REASON = 'Ingestion failed for the latest Version of this Document.';
-
 /** What the Abstract popover says until stage 2 has written the Abstract (spec 03). */
 export const NO_ABSTRACT = 'Abstract not generated yet.';
 
@@ -114,7 +107,7 @@ export class DocumentList {
   protected readonly kind = documentKind;
   protected readonly inProgress = isInProgress;
   protected readonly stage = statusLabel;
-  protected readonly failureReason = FAILURE_REASON;
+  protected readonly failureSentence = failureSentence;
 
   /** The Abstract popover's text: the full filename, then the Abstract. */
   protected popover(document: Document): string {

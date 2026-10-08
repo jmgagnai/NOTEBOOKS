@@ -7,6 +7,7 @@ import { filter, map } from 'rxjs/operators';
 import { StrictHttpResponse } from '../../strict-http-response';
 import { RequestBuilder } from '../../request-builder';
 
+import { DocumentFailure } from '../../models/document-failure';
 
 export interface GetDocument$Params {
   notebookId: string;
@@ -18,6 +19,7 @@ export function getDocument(http: HttpClient, rootUrl: string, params: GetDocume
 'notebookId': string;
 'filename': string;
 'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'indexing' | 'ready' | 'failed';
+'failure': DocumentFailure | null;
 'abstract': string | null;
 'createdAt': string;
 'latestVersion': {
@@ -49,6 +51,7 @@ export function getDocument(http: HttpClient, rootUrl: string, params: GetDocume
       'notebookId': string;
       'filename': string;
       'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'indexing' | 'ready' | 'failed';
+      'failure': DocumentFailure | null;
       'abstract': string | null;
       'createdAt': string;
       'latestVersion': {

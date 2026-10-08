@@ -36,6 +36,36 @@ export const documentStatusSchema = z.enum([
 ]);
 export type DocumentStatus = z.infer<typeof documentStatusSchema>;
 
+// Why a `failed` Document Version failed, in terms a user can act on (NBK-63).
+// A closed set, decided by the Stage where it fails rather than read off the
+// error text afterwards, so rewording a developer-facing message can never
+// change what a user is told. The full error stays in `ingestion_error` and
+// never reaches a response. `unexpected` is the honest fallback, and what a
+// failure recorded before this column existed reports. Declared in full here
+// so the published contract lists every value; a new one is an additive
+// change. Mirrored by the check constraint in migration 0012.
+export const failureReasonSchema = z.enum([
+  'no-text-layer',
+  'unreadable',
+  'timed-out',
+  'service-unavailable',
+  'unexpected',
+]);
+export type FailureReason = z.infer<typeof failureReasonSchema>;
+
+// The status a Document Version was in when its Stage gave up: the existing
+// in-progress status names, so no second vocabulary for "stage" appears.
+export const failedAtSchema = z.enum(['converting', 'summarizing', 'indexing']);
+export type FailedAt = z.infer<typeof failedAtSchema>;
+
+// `failedAt` is null only for a failure recorded before NBK-64, when nobody
+// noted where it happened.
+export const documentFailureSchema = z.object({
+  reason: failureReasonSchema,
+  failedAt: failedAtSchema.nullable(),
+});
+export type DocumentFailure = z.infer<typeof documentFailureSchema>;
+
 // A Document as returned over the API. See GLOSSARY.md: "a source file
 // uploaded into a Notebook, tracked through successive Document Versions."
 // `latestVersion` is the only Version surfaced here because, per GLOSSARY.md,
@@ -55,6 +85,8 @@ export const documentSchema = z.object({
   notebookId: z.string().uuid(),
   filename: z.string(),
   status: documentStatusSchema,
+  // Null unless `status` is `failed` (NBK-63).
+  failure: documentFailureSchema.nullable(),
   abstract: z.string().nullable(),
   createdAt: z.string().datetime({ offset: true }),
   latestVersion: documentVersionSchema,
