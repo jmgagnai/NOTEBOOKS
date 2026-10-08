@@ -64,10 +64,12 @@
     min-width: 0;
   }
 
-  // A question sent but not yet recorded (NBK-70): the same bubble, muted,
-  // so it reads as the user's own and as not there yet.
-  &__message--pending {
-    opacity: 0.6;
+  // A question sent but not yet recorded (NBK-70): the same bubble and
+  // avatar, so it reads as the user's own, with its text in the secondary
+  // colour so it reads as not there yet. Muted by token rather than by
+  // opacity, which would fade the avatar and the "Sending…" note with it.
+  &__message--pending p.thread-view__message-content {
+    color: var(--mat-sys-on-surface-variant);
   }
 
   &__sending {

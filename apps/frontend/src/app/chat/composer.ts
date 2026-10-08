@@ -8,6 +8,7 @@ import {
   Injector,
   input,
   linkedSignal,
+  untracked,
   viewChild,
 } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
@@ -49,8 +50,8 @@ export class Composer {
 
   /**
    * The question being typed. Moves out of the box on send (NBK-70) and
-   * back in if the ask fails, so asking again works; dropped when another
-   * Thread is opened: it was asked of this one.
+   * back in if the ask fails (`restoreFailedQuestion`); dropped when
+   * another Thread is opened: it was typed into this one.
    */
   protected readonly draft = linkedSignal<string | null, string>({
     source: () => this.store.activeThreadId(),
@@ -102,27 +103,40 @@ export class Composer {
   private wasAnswering = false;
 
   /**
+   * Takes back the text of a question that failed in the open Thread, so
+   * asking again is the retry (spec 04, "a failed ask keeps the draft").
+   * Driven by the store rather than by `ask`'s result because the ask can
+   * fail while another Thread is open: the text then waits with its own
+   * Thread and comes back here when that Thread is next opened (NBK-69
+   * story 7), instead of landing in the wrong box or being dropped.
+   */
+  private readonly restoreFailedQuestion = effect(() => {
+    const threadId = this.store.activeThreadId();
+    const failed = threadId === null ? undefined : this.store.failedQuestions()[threadId];
+    if (!failed) return;
+    untracked(() => {
+      this.setDraft(failed.content);
+      this.store.forgetFailedQuestion(threadId!);
+    });
+  });
+
+  /**
    * Sends `content` as this user's question in the open Thread and reports
    * whether the exchange landed. Public so a caller outside the box — the
    * empty state's starter prompts (spec 04) — sends through the same path
    * the keyboard does.
    *
    * The text leaves the box as it is sent, since it now shows in the Thread
-   * as the pending question (NBK-70), and comes back if the ask fails: a
-   * failed ask records nothing, so asking again is the retry (spec 04, "a
-   * failed ask keeps the draft"). A starter prompt lands in the box the
-   * same way, ready to be asked again.
+   * as the pending question (NBK-70), and comes back through
+   * `restoreFailedQuestion` if the ask fails. A starter prompt fails the
+   * same way, landing in the box ready to be asked again.
    */
   async ask(content: string): Promise<boolean> {
     const threadId = this.store.activeThreadId();
     const question = content.trim();
     if (!threadId || !question || this.store.sending()) return false;
     this.setDraft('');
-    const landed = await this.store.sendMessage(this.notebookId(), threadId, question);
-    // Not into another Thread's box, if one was opened meanwhile: the
-    // question was asked of this one.
-    if (!landed && this.store.activeThreadId() === threadId) this.setDraft(content);
-    return landed;
+    return this.store.sendMessage(this.notebookId(), threadId, question);
   }
 
   /**

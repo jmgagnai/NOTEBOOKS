@@ -118,10 +118,26 @@ export interface StreamingAnswer {
 export interface PendingQuestion {
   threadId: string;
   content: string;
-  /** The signed-in user; null only if no session is known, which a guarded page never has. */
-  askedBy: ChatParticipant | null;
+  /**
+   * The signed-in user. Never null: chat is only on pages behind the auth
+   * guard, which signs the session in before they render, so a preview
+   * can always be attributed — there is no anonymous author line to draw.
+   */
+  askedBy: ChatParticipant;
   /** When it was sent, by this client's clock: there is no server time yet. */
   sentAt: string;
+}
+
+/**
+ * A question whose ask failed, kept with the Chat Thread it was asked in
+ * until that Thread's question box takes the text back (NBK-69 story 7).
+ * The ask may fail while another Thread is open, so neither the text nor
+ * the error can simply go to whatever box is on screen.
+ */
+export interface FailedQuestion {
+  content: string;
+  /** Shown as the error row when its Thread is next opened. */
+  error: string;
 }
 
 interface ChatState {
@@ -146,6 +162,8 @@ interface ChatState {
    * its Thread is the open one.
    */
   pendingQuestion: PendingQuestion | null;
+  /** Failed questions not yet back in their Thread's box, by Thread id. */
+  failedQuestions: Record<string, FailedQuestion>;
   error: string | null;
 }
 
@@ -159,6 +177,7 @@ const initialState: ChatState = {
   creatingThread: false,
   streamingAnswer: null,
   pendingQuestion: null,
+  failedQuestions: {},
   error: null,
 };
 
@@ -246,13 +265,26 @@ export const ChatStore = signalStore(
         messages: [],
         streamingAnswer: null,
         messagesLoading: true,
-        error: null,
+        // An ask that failed here while another Thread was open explains
+        // itself now, beside the text the box takes back.
+        error: store.failedQuestions()[threadId]?.error ?? null,
       });
       try {
-        const messages = (await chatService.listChatMessages({
+        const fetched = (await chatService.listChatMessages({
           notebookId,
           threadId,
         })) as ChatMessage[];
+        // An ask in this Thread can land while the read is out — the user
+        // switched back mid-answer — and `sendMessage` has then appended an
+        // exchange the snapshot predates. Keep it rather than let the older
+        // snapshot overwrite it.
+        const ids = new Set(fetched.map((m) => m.id));
+        const recordedMeanwhile = store
+          .messages()
+          .filter((m) => m.threadId === threadId && !ids.has(m.id));
+        const messages = [...fetched, ...recordedMeanwhile].sort((a, b) =>
+          a.createdAt.localeCompare(b.createdAt),
+        );
         patchState(store, { messages, messagesLoading: false });
       } catch (err) {
         patchState(store, {
@@ -342,10 +374,11 @@ export const ChatStore = signalStore(
        * nothing is re-fetched, and the preview is cleared in the same update
        * that appends them — replaced by the server's copy, with its id and
        * attribution, rather than promoted, and never shown beside it.
-       * Resolves `true` when the exchange landed; on `false` the caller puts
-       * the text back in the box — a failed ask records nothing server-side,
-       * which makes asking again the retry, and that only works if the text
-       * survives.
+       * Resolves `true` when the exchange landed. On failure the text is kept
+       * as a `FailedQuestion` of its Thread for the box to take back — a
+       * failed ask records nothing server-side, which makes asking again the
+       * retry, and that only works if the text survives, even when another
+       * Thread is open by the time the ask fails.
        *
        * While this request is out, the answer's chunks are arriving on the
        * live stream and `streamingAnswer` is being rendered (NBK-11). That
@@ -354,14 +387,15 @@ export const ChatStore = signalStore(
        * to show — the backend persisted no half answer.
        */
       async sendMessage(notebookId: string, threadId: string, content: string): Promise<boolean> {
-        const user = auth.user();
+        // Asserted, not checked: see `PendingQuestion.askedBy`.
+        const { id, email } = auth.user()!;
         patchState(store, {
           sending: true,
           error: null,
           pendingQuestion: {
             threadId,
             content,
-            askedBy: user ? { id: user.id, email: user.email } : null,
+            askedBy: { id, email },
             sentAt: new Date().toISOString(),
           },
         });
@@ -383,11 +417,16 @@ export const ChatStore = signalStore(
           });
           return true;
         } catch (err) {
+          const error = errorMessage(err, 'Failed to send the message.');
           patchState(store, {
             sending: false,
             pendingQuestion: null,
             streamingAnswer: null,
-            error: errorMessage(err, 'Failed to send the message.'),
+            failedQuestions: { ...store.failedQuestions(), [threadId]: { content, error } },
+            // The error row sits above the open Thread's box, so it is only
+            // raised there if this is that Thread; otherwise it waits with
+            // the question for its Thread to be opened.
+            ...(store.activeThreadId() === threadId ? { error } : {}),
           });
           return false;
         }
@@ -496,6 +535,12 @@ export const ChatStore = signalStore(
        */
       dismissError(): void {
         patchState(store, { error: null });
+      },
+
+      /** Called once a Thread's box has taken back its failed question's text. */
+      forgetFailedQuestion(threadId: string): void {
+        const { [threadId]: _restored, ...rest } = store.failedQuestions();
+        patchState(store, { failedQuestions: rest });
       },
     };
   }),

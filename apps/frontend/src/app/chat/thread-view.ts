@@ -9,9 +9,10 @@ import {
   input,
   viewChild,
 } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
-import { ChatMessage, ChatStore, ChatThread, PendingQuestion } from './chat.store';
+import { ChatStore, ChatThread, PendingQuestion } from './chat.store';
 import { Avatar } from '../shared/avatar';
 import { SparkleAvatar } from '../shared/sparkle-avatar';
 import { Composer } from './composer';
@@ -66,6 +67,7 @@ interface AnswerBlock {
     EditableTitle,
     MatProgressSpinnerModule,
     MatTooltipModule,
+    NgTemplateOutlet,
     Avatar,
     SparkleAvatar,
     ThreadEmptyState,
@@ -179,18 +181,7 @@ export class ThreadView {
     return streaming.chunks.map((text, index) => ({ index, text }));
   });
 
-  /**
-   * The visible attribution (NBK-44): the asker's short name — the e-mail's
-   * local part — or "Assistant". The full e-mail is the avatar's tooltip
-   * instead, so a shared Thread stays attributed without "@example.com" on
-   * every line; an answer no longer names its asker, since the question it
-   * follows already does.
-   */
-  protected author(message: ChatMessage): string {
-    return message.role === 'assistant' ? 'Assistant' : this.shortName(message.askedBy.email);
-  }
-
-  /** The e-mail's local part: how a question's author line names its asker. */
+  /** The e-mail's local part: how a question's author line names its asker (NBK-44). */
   protected shortName(email: string): string {
     return email.split('@')[0];
   }
