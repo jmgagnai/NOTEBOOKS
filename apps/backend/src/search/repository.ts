@@ -1,5 +1,6 @@
 import type { Pool } from 'pg';
 import { toVectorLiteral } from '../db/vector.js';
+import { locateChunkRanges } from '../documents/chunk-ranges.js';
 import { toDocument, type DocumentRow } from '../documents/repository.js';
 import { SEARCHABLE_VERSIONS_CTE } from '../documents/searchable-versions.js';
 import type { SearchResult } from './schema.js';
@@ -19,8 +20,8 @@ import type { SearchResult } from './schema.js';
  *    is written down. It consumes `$1` (the Notebook id), so this query's own
  *    parameters start at `$2`.
  *
- * 2. `scored` ranks Chunks and **rolls them up to their Version** with
- *    `MIN(distance)`: a Document's score is its single best Chunk, not an
+ * 2. `scored` ranks Chunks and **rolls them up to their Version**, keeping
+ *    the closest (`DISTINCT ON`): a Document's score is its single best Chunk, not an
  *    average, because one strongly matching Chunk is exactly what makes a
  *    long document worth opening. Grouping is what makes a Document appear
  *    once however many of its Chunks matched.
@@ -49,10 +50,14 @@ import type { SearchResult } from './schema.js';
 const SEARCH_NOTEBOOK_SQL = `
   WITH ${SEARCHABLE_VERSIONS_CTE},
   scored AS (
-    SELECT s.version_id, MIN(c.embedding <=> $2::vector) AS distance
+    -- One row per Version: its best Chunk and that Chunk's distance. Same
+    -- score as \`MIN(distance) ... GROUP BY\` gave, but the Chunk comes
+    -- with it (NBK-96); ties fall to the earlier Chunk.
+    SELECT DISTINCT ON (s.version_id)
+      s.version_id, c.id AS chunk_id, c.embedding <=> $2::vector AS distance
     FROM searchable_versions s
     JOIN chunks c ON c.document_version_id = s.version_id
-    GROUP BY s.version_id
+    ORDER BY s.version_id, distance ASC, c.chunk_index ASC
   )
   -- Aliased back to the column names a Document card is built from, so one
   -- row maps through \`toDocument\` exactly as a listed Document does.
@@ -72,9 +77,14 @@ const SEARCH_NOTEBOOK_SQL = `
     NULL AS failure_reason,
     NULL AS failed_at,
     s.abstract,
+    scored.chunk_id AS match_chunk_id,
+    -- Read here rather than added to \`searchable_versions\`, which chat
+    -- retrieval shares and has no use for it.
+    NULLIF(v.metadata ->> 'title', '') AS title,
     1 - scored.distance AS score
   FROM scored
   JOIN searchable_versions s ON s.version_id = scored.version_id
+  JOIN document_versions v ON v.id = s.version_id
   -- Ties broken by age, oldest first, so an identical query twice running
   -- never shuffles its own results.
   ORDER BY scored.distance ASC, s.document_created_at ASC, s.document_id ASC
@@ -91,13 +101,31 @@ export async function searchNotebook(
   queryEmbedding: number[],
   limit: number,
 ): Promise<SearchResult[]> {
-  const { rows } = await pool.query<DocumentRow & { score: string }>(SEARCH_NOTEBOOK_SQL, [
-    notebookId,
-    toVectorLiteral(queryEmbedding),
-    limit,
-  ]);
+  const { rows } = await pool.query<
+    DocumentRow & { score: string; match_chunk_id: string; title: string | null }
+  >(SEARCH_NOTEBOOK_SQL, [notebookId, toVectorLiteral(queryEmbedding), limit]);
+  // Each result's best Chunk located in its Version's Converted Markdown, so
+  // the result opens at that Chunk (NBK-96). Read per query: one pass over
+  // the results' Versions (see `docs/search.md`).
+  const ranges = await locateChunkRanges(
+    pool,
+    rows.map((row) => row.version_id),
+  );
   // `score` arrives as a string: it is a `numeric` expression over pgvector's
   // double, and node-postgres hands numerics over as text to avoid losing
   // precision it can't represent.
-  return rows.map((row) => ({ ...toDocument(row), score: Number(row.score) }));
+  return rows.map((row) => {
+    const range = ranges.get(row.match_chunk_id);
+    return {
+      ...toDocument(row),
+      title: row.title,
+      match: {
+        versionId: row.version_id,
+        chunkId: row.match_chunk_id,
+        charStart: range?.charStart ?? null,
+        charEnd: range?.charEnd ?? null,
+      },
+      score: Number(row.score),
+    };
+  });
 }

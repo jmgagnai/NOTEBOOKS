@@ -1,4 +1,5 @@
 import { Citation } from './chat.store';
+import { chunkLinkParams } from '../documents/chunk-link';
 
 /**
  * One piece of an answer's prose: either plain text, or a Citation marker
@@ -100,14 +101,8 @@ export function citationParams(
   citation: Citation,
   threadId: string,
 ): Record<string, string | number> {
-  const params: Record<string, string | number> = {
-    version: citation.documentVersionId,
-    chunk: citation.chunkId,
+  return {
+    ...chunkLinkParams({ ...citation, versionId: citation.documentVersionId }),
     thread: threadId,
   };
-  // Omitted rather than sent as null when the Chunk could not be located in
-  // the Converted Markdown: the Version still opens, just not scrolled.
-  if (citation.charStart !== null) params['from'] = citation.charStart;
-  if (citation.charEnd !== null) params['to'] = citation.charEnd;
-  return params;
 }

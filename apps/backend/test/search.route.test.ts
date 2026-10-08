@@ -127,6 +127,10 @@ describe('Search routes', () => {
     /** One embedding per Chunk of this Version. */
     chunks?: number[][];
     deleted?: boolean;
+    /** The Converted Markdown; defaults to a placeholder no Chunk is found in. */
+    markdown?: string;
+    /** The title Stage 2 extracted, if any. */
+    title?: string;
   }
 
   /**
@@ -153,7 +157,7 @@ describe('Search routes', () => {
         `INSERT INTO document_versions
            (document_id, version_number, mime_type, size_bytes, storage_key,
             markdown, ingestion_status, abstract, deleted_at)
-         VALUES ($1, $2, 'text/markdown', 100, $3, 'seeded', $4, $5, $6)
+         VALUES ($1, $2, 'text/markdown', 100, $3, $7, $4, $5, $6)
          RETURNING id`,
         [
           documentId,
@@ -162,9 +166,16 @@ describe('Search routes', () => {
           version.status,
           version.abstract ?? null,
           version.deleted ? new Date() : null,
+          version.markdown ?? 'seeded',
         ],
       );
       const versionId = versionRows[0].id;
+      if (version.title !== undefined) {
+        await pool.query('UPDATE document_versions SET metadata = $2 WHERE id = $1', [
+          versionId,
+          { title: version.title },
+        ]);
+      }
 
       for (const [chunkIndex, embedding] of (version.chunks ?? []).entries()) {
         await pool.query(
@@ -230,6 +241,73 @@ describe('Search routes', () => {
     ]);
     expect(results[0].score).toBeCloseTo(1, 5);
     expect(results[1].score).toBeCloseTo(0, 5);
+  });
+
+  // NBK-96: a result opens at its best-matching Chunk, so the response names
+  // that Chunk and its range in the Version's Converted Markdown — the same
+  // pin a Citation carries.
+  it("names each Document's best-matching Chunk and where it sits in the Converted Markdown", async () => {
+    const session = await loginAsNewUser('searcher-match@example.com');
+    const notebookId = await createNotebook(session, 'Ranges');
+    const markdown =
+      '# Atlas\n\nchunk 0 of atlas.md\n\nchunk 1 of atlas.md\n\nchunk 2 of atlas.md\n';
+    const documentId = await seedDocument(notebookId, 'atlas.md', [
+      { status: 'ready', chunks: [axis(0), axis(1), axis(2)], markdown },
+    ]);
+    queryVectors.set('the middle', axis(1));
+
+    const [result] = (await search(session, notebookId, 'the middle')).json() as {
+      latestVersion: { id: string };
+      match: { versionId: string; chunkId: string; charStart: number; charEnd: number };
+    }[];
+
+    const { rows } = await pool.query<{ id: string }>(
+      `SELECT c.id FROM chunks c JOIN document_versions v ON v.id = c.document_version_id
+       WHERE v.document_id = $1 AND c.chunk_index = 1`,
+      [documentId],
+    );
+    const at = markdown.indexOf('chunk 1 of atlas.md');
+    expect(result.match).toEqual({
+      versionId: result.latestVersion.id,
+      chunkId: rows[0].id,
+      charStart: at,
+      charEnd: at + 'chunk 1 of atlas.md'.length,
+    });
+  });
+
+  // NBK-96: a result is headed by its extracted title, as the Document page is.
+  it('carries the title Stage 2 extracted, or null when there is none', async () => {
+    const session = await loginAsNewUser('searcher-title@example.com');
+    const notebookId = await createNotebook(session, 'Titles');
+    await seedDocument(notebookId, 'q3.pdf', [
+      { status: 'ready', chunks: [axis(0)], title: 'Quarterly Report' },
+    ]);
+    await seedDocument(notebookId, 'untitled.pdf', [{ status: 'ready', chunks: [axis(1)] }]);
+    queryVectors.set('report', axis(0));
+
+    const results = (await search(session, notebookId, 'report')).json() as {
+      filename: string;
+      title: string | null;
+    }[];
+
+    expect(results.map((r) => [r.filename, r.title])).toEqual([
+      ['q3.pdf', 'Quarterly Report'],
+      ['untitled.pdf', null],
+    ]);
+  });
+
+  it('gives a best Chunk not found in the Converted Markdown no range', async () => {
+    const session = await loginAsNewUser('searcher-nomatch@example.com');
+    const notebookId = await createNotebook(session, 'No ranges');
+    await seedDocument(notebookId, 'loose.md', [{ status: 'ready', chunks: [axis(0)] }]);
+    queryVectors.set('loose', axis(0));
+
+    const [result] = (await search(session, notebookId, 'loose')).json() as {
+      match: { charStart: number | null; charEnd: number | null };
+    }[];
+
+    expect(result.match.charStart).toBeNull();
+    expect(result.match.charEnd).toBeNull();
   });
 
   it('embeds the query itself, through the configured embedding model', async () => {

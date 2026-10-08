@@ -37,7 +37,32 @@ export type SearchNotebookQuery = z.infer<typeof searchNotebookQuerySchema>;
 // search-result previews, and document cards" — plus the score. Reusing that
 // shape is deliberate: a search result and a document card show the same
 // thing, so the frontend renders one type in both places.
+// `match` is where that best Chunk sits (NBK-96): the same pin a Citation
+// carries, so a result links to the Document page the way a Citation does
+// and opens its Converted Markdown at that Chunk.
+export const searchMatchSchema = z
+  .object({
+    versionId: z.string().uuid().describe('The Document Version the Chunk belongs to.'),
+    chunkId: z.string().uuid().describe("The Document's best-matching Chunk."),
+    charStart: z
+      .number()
+      .int()
+      .nullable()
+      .describe(
+        "Start of the Chunk in the Version's Converted Markdown; null when it could not be located.",
+      ),
+    charEnd: z.number().int().nullable().describe('End of that range, exclusive.'),
+  })
+  .describe("Where the Document's best-matching Chunk sits — what opening the result shows.");
+
 export const searchResultSchema = documentSchema.extend({
+  title: z
+    .string()
+    .nullable()
+    .describe(
+      "The title Stage 2 extracted from the Document's latest Version, or null when it stated none — what a result is headed by (NBK-96).",
+    ),
+  match: searchMatchSchema,
   score: z
     .number()
     .describe(

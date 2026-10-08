@@ -1,30 +1,40 @@
-<mat-card class="search-page">
-  <mat-card-header>
-    <mat-card-title>Search {{ notebook()?.title ?? 'this Notebook' }}</mat-card-title>
-  </mat-card-header>
-
-  <mat-card-content>
-    <a class="search-page__back" [routerLink]="['/notebooks', notebookId]"
-      >&larr; Back to the Notebook</a
+<div class="search-page">
+  <!--
+    The header row (NBK-96), as the Document page's: what is searched, and
+    ✕ back to the Notebook in place of the old text link.
+  -->
+  <div class="search-page__header" data-testid="search-page-header">
+    <span class="search-page__header-title"
+      >Search · {{ notebook()?.title ?? 'this Notebook' }}</span
     >
+    <a
+      mat-icon-button
+      [routerLink]="['/notebooks', notebookId]"
+      aria-label="Back to the Notebook"
+      matTooltip="Back to the Notebook"
+    >
+      <mat-icon svgIcon="dismiss" />
+    </a>
+  </div>
 
-    <form class="search-page__form" (submit)="$event.preventDefault(); submit()">
-      <label class="search-page__field">
-        Search this Notebook
-        <input
-          type="search"
-          name="q"
-          aria-label="Search this Notebook"
-          placeholder="Keywords or a topic"
-          [value]="draft()"
-          (input)="onDraftInput($event)"
-        />
-      </label>
-      <button mat-button type="submit">Search</button>
+  <div class="search-page__column">
+    <!-- The pill (Copilot's search box, the composer's shape): Enter searches. -->
+    <form class="search-page__box" role="search" (submit)="$event.preventDefault(); submit()">
+      <mat-icon class="search-page__box-icon" svgIcon="search" aria-hidden="true" />
+      <input
+        class="search-page__input"
+        type="search"
+        name="q"
+        aria-label="Search this Notebook"
+        placeholder="Search this Notebook's Documents"
+        [value]="draft()"
+        (input)="onDraftInput($event)"
+        (keydown.enter)="onEnter($any($event))"
+      />
     </form>
 
     @if (store.searching()) {
-      <mat-progress-spinner mode="indeterminate" diameter="32" />
+      <mat-progress-spinner class="search-page__spinner" mode="indeterminate" diameter="28" />
     } @else if (store.error(); as error) {
       <p class="search-page__error">{{ error }}</p>
     } @else if (!store.searched()) {
@@ -33,40 +43,46 @@
         finished ingesting are searched.
       </p>
     } @else if (store.results().length === 0) {
-      <p class="search-page__empty">No Documents in this Notebook match "{{ store.query() }}".</p>
+      <p class="search-page__hint">No Documents in this Notebook match "{{ store.query() }}".</p>
     } @else {
       <!--
-        Result cards, each led by its Abstract: per GLOSSARY.md the Abstract
-        is the artifact "used in search results, search-result previews, and
-        document cards", and NBK-1's story is judging relevance before
-        opening the document.
+        One flat row per Document, the whole row a link to it at its best
+        Chunk (NBK-96). Headed by its extracted title, as the Document page
+        is, and led by its Abstract — per GLOSSARY.md the artifact "used in
+        search results".
       -->
       <ul class="search-page__results">
         @for (result of store.results(); track result.id) {
-          <li class="search-page__result">
-            <div class="search-page__result-head">
-              <span class="search-page__filename">{{ result.filename }}</span>
-              <span class="search-page__version">v{{ result.latestVersion.versionNumber }}</span>
-            </div>
-
-            @if (result.abstract) {
-              <p class="search-page__abstract">{{ result.abstract }}</p>
-            } @else {
-              <p class="search-page__abstract search-page__abstract--pending">
-                Abstract not generated yet.
-              </p>
-            }
-
+          <li>
             <a
-              mat-button
+              class="search-page__result"
               [routerLink]="['/notebooks', notebookId, 'documents', result.id]"
-              [attr.aria-label]="'Open ' + result.filename"
+              [queryParams]="chunkLink(result.match)"
             >
-              Open
+              <mat-icon class="search-page__result-icon" [svgIcon]="kind(result).icon" />
+              <span class="search-page__result-body">
+                <span class="search-page__result-title">{{ result.title ?? result.filename }}</span>
+                @if (result.title) {
+                  <span class="search-page__result-meta"
+                    >{{ result.filename }} · v{{ result.latestVersion.versionNumber }}</span
+                  >
+                } @else {
+                  <span class="search-page__result-meta"
+                    >v{{ result.latestVersion.versionNumber }}</span
+                  >
+                }
+                @if (result.abstract) {
+                  <span class="search-page__result-abstract">{{ result.abstract }}</span>
+                } @else {
+                  <span class="search-page__result-abstract search-page__result-abstract--pending"
+                    >Abstract not generated yet.</span
+                  >
+                }
+              </span>
             </a>
           </li>
         }
       </ul>
     }
-  </mat-card-content>
-</mat-card>
+  </div>
+</div>

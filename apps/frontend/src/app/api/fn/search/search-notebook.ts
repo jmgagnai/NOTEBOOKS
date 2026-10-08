@@ -40,6 +40,37 @@ export function searchNotebook(http: HttpClient, rootUrl: string, params: Search
 };
 
 /**
+ * The title Stage 2 extracted from the Document's latest Version, or null when it stated none — what a result is headed by (NBK-96).
+ */
+'title': string | null;
+
+/**
+ * Where the Document's best-matching Chunk sits — what opening the result shows.
+ */
+'match': {
+
+/**
+ * The Document Version the Chunk belongs to.
+ */
+'versionId': string;
+
+/**
+ * The Document's best-matching Chunk.
+ */
+'chunkId': string;
+
+/**
+ * Start of the Chunk in the Version's Converted Markdown; null when it could not be located.
+ */
+'charStart': number | null;
+
+/**
+ * End of that range, exclusive.
+ */
+'charEnd': number | null;
+};
+
+/**
  * Cosine similarity of this Document's best-matching Chunk to the query, 1 being identical. Results are ordered by it, best first.
  */
 'score': number;
@@ -70,6 +101,37 @@ export function searchNotebook(http: HttpClient, rootUrl: string, params: Search
       'mimeType': string;
       'sizeBytes': number;
       'createdAt': string;
+      };
+      
+      /**
+       * The title Stage 2 extracted from the Document's latest Version, or null when it stated none — what a result is headed by (NBK-96).
+       */
+      'title': string | null;
+      
+      /**
+       * Where the Document's best-matching Chunk sits — what opening the result shows.
+       */
+      'match': {
+      
+      /**
+       * The Document Version the Chunk belongs to.
+       */
+      'versionId': string;
+      
+      /**
+       * The Document's best-matching Chunk.
+       */
+      'chunkId': string;
+      
+      /**
+       * Start of the Chunk in the Version's Converted Markdown; null when it could not be located.
+       */
+      'charStart': number | null;
+      
+      /**
+       * End of that range, exclusive.
+       */
+      'charEnd': number | null;
       };
       
       /**

@@ -61,7 +61,7 @@ colour role; nothing else in the app uses tertiary.
 | Menus, inner blocks (panes and `mat-card` are square since spec 07) | `--mat-sys-corner-medium`, `--mat-sys-corner-large` | 8 px |
 | Chat bubbles | `--mat-sys-corner-extra-large` | 12 px |
 | Fully round: avatars, Citation chips, the composer's send button | `--app-corner-round` | 9999 px |
-| The composer's pill (spec 07, the app's one pill) | `--app-corner-pill` | 28 px |
+| The pills: the composer (spec 07) and the Search page's box (NBK-96) | `--app-corner-pill` | 28 px |
 | Elevation | `--mat-sys-level0` to `--mat-sys-level2` | `none` (a 1 px border instead) |
 | Floating overlays (menus, dialogs) | `--mat-sys-level3` to `--mat-sys-level5` | soft shadow |
 
@@ -161,10 +161,12 @@ resets `outline`. `matInput` inside a `mat-form-field` is excluded: the field
 draws its own focused outline. `mat-checkbox` keeps its native input
 invisible over the box it draws, so there the ring goes on
 `.mdc-checkbox__background` (through `:has(:focus-visible)`) instead. The
-chat composer (spec 04) is the intended
-exception and opts out with its own `.<class>:focus-visible { outline: none }`
-rule, darkening its border to `--app-outline-focus` through `:focus-within`
-instead (`chat/composer.scss`, NBK-45).
+two pills are the intended exceptions — the chat composer (spec 04,
+`chat/composer.scss`, NBK-45) and the Search page's box (NBK-96,
+`search/search-page.scss`): each opts out with its own
+`.<class>:focus-visible { outline: none }` rule on the input and darkens the
+pill's border to `--app-outline-focus` through `:focus-within` instead, so the
+ring is not drawn around the whole box being typed in.
 
 ## Button variants
 
