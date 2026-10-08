@@ -1974,6 +1974,8 @@ describe('NotebookDetailPage', () => {
       });
       expect(await screen.findByRole('button', { name: 'Research 2026' })).toBeTruthy();
       expect(screen.queryByLabelText('Notebook title')).toBeNull();
+      // NBK-61: the browser tab follows the rename.
+      expect(document.title).toBe(`Research 2026 – ${APP_NAME}`);
     });
 
     // Spec 05 story 3: "Create Notebook" names the Notebook "Untitled
@@ -2067,8 +2069,10 @@ describe('NotebookDetailPage', () => {
       ).toBe(false);
     });
 
-    it('puts the Notebook title in the browser tab while open, and restores it on leaving', async () => {
-      document.title = APP_NAME;
+    // NBK-61: leaving puts back the default, not whatever the tab said on
+    // arrival — hence a stale title to start from.
+    it('puts the Notebook title in the browser tab while open, and the default back on leaving', async () => {
+      document.title = 'A stale title';
       const listNotebooks = vi.fn().mockResolvedValue([RESEARCH]);
       const listDocuments = vi.fn().mockResolvedValue([]);
       const { navigate } = await render(RouterShell, {
