@@ -20,11 +20,11 @@ Communication to and from subagents should be sparse. Communicate primarily thro
 
 1. Read the spec and tickets to understand the task graph.
 
-2. (optional) Use an **exploration subagent** to conduct any exploration required by the tickets - relevant codebase files or external documentation. Ensure the exploration subagent can save files - it should save its markdown notes in a directory outside the repo, accessible by all future subagents. This lets **implementer subagents** focus on implementation rather than exploration.
+2. (optional) Use an **exploration subagent** to conduct any exploration required by the tickets - relevant codebase files or external documentation. Ensure the exploration subagent can save files - it should save its markdown notes in the **notes directory** (see Reference), accessible by all future subagents. This lets **implementer subagents** focus on implementation rather than exploration.
 
 3. Create the integration branch. If the issue tracker closes work through PRs, or the user asks for one, open a draft PR after the first merge in step 5 (a branch with no commits ahead of main can't open one), marked as closing the spec and tickets.
 
-4. Use **implementer subagents** to implement each ticket, each in its own worktree on its own branch. Each implementer subagent:
+4. Use **implementer subagents** to implement each ticket, each in its own worktree on its own branch, provisioned as in Reference. Each implementer subagent:
    - confirms its worktree is based on the integration branch before starting, and resets onto it if not;
    - calls the Skill tool with `tdd` to build the ticket, running the test files it touches while it works and the full suite once at the end (parallel full suites overload the machine — see `docs/environment-gotchas.md`);
    - merges the integration branch tip into its own branch before reporting done
@@ -38,3 +38,31 @@ Communication to and from subagents should be sparse. Communicate primarily thro
 8. If a draft PR exists, mark it ready for review. Otherwise, resolve each ticket the way the issue tracker closes work, and report the integration branch.
 
 9. Clean up all **implementer subagent** worktrees.
+
+## Reference
+
+### Worktrees
+
+Provision each ticket's worktree by hand: the Agent tool's `isolation: "worktree"` branches from the default branch, never from the integration branch.
+
+```bash
+git worktree add .claude/worktrees/<ticket> -b ticket/<ticket-slug> <integration-branch>
+(cd .claude/worktrees/<ticket> && pnpm install --offline --frozen-lockfile)
+```
+
+A fresh worktree has no `node_modules`, and its tests fail until the install runs (about 10 s from the pnpm store). Provision the next wave while the current one runs, then `git -C <worktree> reset --hard <integration-branch>` just before launching its implementer, so it starts from the latest tip. Removing a worktree with `node_modules` takes minutes: run cleanup in the background, removing only worktrees whose branch is merged and whose status is clean.
+
+### Notes directory
+
+Keep shared notes in `$CLAUDE_JOB_DIR/tmp/notes` (outside the repo, readable by every subagent), and point every subagent prompt at it rather than restating its content:
+
+- **`IMPLEMENTER-BRIEF.md`**: the integration branch, how to confirm and reset the worktree, which commands test what, the commit trailer, and the hand-off (merge the integration tip, comment the ticket, report names later tickets need).
+- **`STATE.md`**: the map of the code the spec touches, written once from exploration.
+- **`LANDED.md`**: one section appended per merged ticket, with the components, class names, helpers and decisions later tickets build on.
+
+Use a `general-purpose` subagent for exploration: the `Explore` type has no write access, so its notes arrive only as a report the orchestrator then has to save.
+
+### Parallel tickets
+
+Tell each implementer which files the tickets running beside it own, and to keep its edits in shared files (a page template, a spec file) to its own block. Most merge conflicts come from parallel tickets appending a `describe` block to the end of the same spec file: resolve them by keeping both blocks. Merge a ticket inline when it merges cleanly, and keep the **merger subagent** for real conflicts.
+
