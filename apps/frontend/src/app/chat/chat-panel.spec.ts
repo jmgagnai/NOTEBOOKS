@@ -327,9 +327,13 @@ describe('Chat panel (ThreadNavigator + ThreadView)', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Open Untitled' }));
 
-    const renameInput = await screen.findByLabelText('Rename Chat Thread');
+    // NBK-51: the title in the header is the rename control.
+    fireEvent.click(
+      within(await screen.findByRole('heading', { name: 'Untitled' })).getByRole('button'),
+    );
+    const renameInput = screen.getByLabelText('Rename Chat Thread');
     fireEvent.input(renameInput, { target: { value: 'Q3 revenue' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Rename' }));
+    fireEvent.keyDown(renameInput, { key: 'Enter' });
 
     expect(renameChatThread).toHaveBeenCalledWith({
       notebookId: NOTEBOOK_ID,
@@ -949,6 +953,74 @@ describe('Chat panel (ThreadNavigator + ThreadView)', () => {
 
       await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
       expect(questionBox().value).toBe(ASK);
+    });
+  });
+
+  describe('NBK-51: Thread title', () => {
+    /** Activates the open Thread's title in the header, opening the rename box. */
+    async function startRenaming(title: string) {
+      const heading = await screen.findByRole('heading', { name: title });
+      fireEvent.click(within(heading).getByRole('button', { name: title }));
+      return screen.getByLabelText('Rename Chat Thread') as HTMLInputElement;
+    }
+
+    it('heads the open Thread with its title and who started it, with no rename form', async () => {
+      await renderPanel({
+        listChatThreads: vi.fn().mockResolvedValue([thread()]) as never,
+        listChatMessages: vi.fn().mockResolvedValue([]) as never,
+      });
+
+      const heading = await screen.findByRole('heading', { name: 'Revenue questions' });
+      expect(within(heading).getByRole('button', { name: 'Revenue questions' })).toBeTruthy();
+      expect(screen.getByText('Started by alice@example.com')).toBeTruthy();
+      expect(screen.queryByLabelText('Rename Chat Thread')).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Rename' })).toBeNull();
+    });
+
+    it('discards the typed title on Escape', async () => {
+      const renameChatThread = vi.fn();
+      await renderPanel({
+        listChatThreads: vi.fn().mockResolvedValue([thread()]) as never,
+        listChatMessages: vi.fn().mockResolvedValue([]) as never,
+        renameChatThread: renameChatThread as never,
+      });
+
+      const box = await startRenaming('Revenue questions');
+      fireEvent.input(box, { target: { value: 'Q3 revenue' } });
+      fireEvent.keyDown(box, { key: 'Escape' });
+
+      expect(screen.queryByLabelText('Rename Chat Thread')).toBeNull();
+      expect(screen.getByRole('heading', { name: 'Revenue questions' })).toBeTruthy();
+      expect(renameChatThread).not.toHaveBeenCalled();
+    });
+
+    // A Thread starts as "New Chat Thread" (NBK-43), so renaming it is the
+    // very next thing a user does — it must not wait on a reload.
+    it('renames a Thread created a moment ago', async () => {
+      const created = thread({ id: 'thread-new', title: 'New Chat Thread' });
+      const renameChatThread = vi
+        .fn()
+        .mockResolvedValue(thread({ id: 'thread-new', title: 'Supply chain' }));
+      await renderPanel({
+        listChatThreads: vi.fn().mockResolvedValue([]) as never,
+        listChatMessages: vi.fn().mockResolvedValue([]) as never,
+        createChatThread: vi.fn().mockResolvedValue(created) as never,
+        renameChatThread: renameChatThread as never,
+      });
+      await screen.findByText('No Chat Threads yet.');
+
+      fireEvent.click(screen.getByRole('button', { name: 'New Chat Thread' }));
+      const box = await startRenaming('New Chat Thread');
+      fireEvent.input(box, { target: { value: 'Supply chain' } });
+      fireEvent.keyDown(box, { key: 'Enter' });
+
+      expect(renameChatThread).toHaveBeenCalledWith({
+        notebookId: NOTEBOOK_ID,
+        threadId: 'thread-new',
+        body: { title: 'Supply chain' },
+      });
+      expect(await screen.findByRole('heading', { name: 'Supply chain' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Open Supply chain' })).toBeTruthy();
     });
   });
 });
