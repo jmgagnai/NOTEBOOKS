@@ -11,7 +11,7 @@ import {
 } from '@angular/core';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
-import { ChatMessage, ChatStore, ChatThread } from './chat.store';
+import { ChatMessage, ChatStore, ChatThread, PendingQuestion } from './chat.store';
 import { Avatar } from '../shared/avatar';
 import { SparkleAvatar } from '../shared/sparkle-avatar';
 import { Composer } from './composer';
@@ -162,6 +162,16 @@ export class ThreadView {
   );
 
   /**
+   * The question in flight (NBK-70), while its Thread is the open one: the
+   * store keeps it across a Thread switch, since the ask is still out, but
+   * it belongs only to the Thread it was asked in.
+   */
+  protected readonly pendingQuestion = computed<PendingQuestion | null>(() => {
+    const pending = this.store.pendingQuestion();
+    return pending?.threadId === this.store.activeThreadId() ? pending : null;
+  });
+
+  /**
    * The streaming answer as blocks to render, one per chunk received.
    *
    * One element per chunk rather than one joined string, because a chunk *is*
@@ -183,7 +193,12 @@ export class ThreadView {
    * follows already does.
    */
   protected author(message: ChatMessage): string {
-    return message.role === 'assistant' ? 'Assistant' : message.askedBy.email.split('@')[0];
+    return message.role === 'assistant' ? 'Assistant' : this.shortName(message.askedBy.email);
+  }
+
+  /** The e-mail's local part: how a question's author line names its asker. */
+  protected shortName(email: string): string {
+    return email.split('@')[0];
   }
 
   /**
