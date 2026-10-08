@@ -16,17 +16,17 @@
  *   node scripts/jira.mjs comment NBK-1 body.md         # - reads stdin
  *   node scripts/jira.mjs create --summary "..." --body body.md \
  *        [--type Task] [--parent NBK-1] [--label ready-for-agent]
+ *   node scripts/jira.mjs update NBK-1 [--body body.md] [--summary "..."]
  *   node scripts/jira.mjs transition NBK-5 Done
  *   node scripts/jira.mjs link NBK-6 blocked-by NBK-5
  *   node scripts/jira.mjs link NBK-15 relates-to NBK-14
  *
- * Markdown supported: #/##/### headings, paragraphs, - bullets, 1. ordered
- * lists, - [ ] task lists, and inline **bold**, `code`, [text](url).
+ * The Markdown it reads and writes is `scripts/jira-adf.mjs`'s.
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';
+import { adfToMarkdown, markdownToAdf } from './jira-adf.mjs';
 
 const root = new URL('..', import.meta.url).pathname;
 
@@ -82,199 +82,6 @@ async function api(method, path, body) {
     );
   }
   return payload;
-}
-
-// --- Markdown → ADF ---------------------------------------------------------
-
-/** Inline marks: **bold**, `code`, [text](url). */
-function inline(text) {
-  const nodes = [];
-  const pattern = /\*\*(.+?)\*\*|`(.+?)`|\[(.+?)\]\((.+?)\)/g;
-  let last = 0;
-  for (const match of text.matchAll(pattern)) {
-    if (match.index > last) nodes.push({ type: 'text', text: text.slice(last, match.index) });
-    const [, bold, code, linkText, href] = match;
-    if (bold !== undefined) {
-      nodes.push({ type: 'text', text: bold, marks: [{ type: 'strong' }] });
-    } else if (code !== undefined) {
-      nodes.push({ type: 'text', text: code, marks: [{ type: 'code' }] });
-    } else {
-      nodes.push({ type: 'text', text: linkText, marks: [{ type: 'link', attrs: { href } }] });
-    }
-    last = match.index + match[0].length;
-  }
-  if (last < text.length) nodes.push({ type: 'text', text: text.slice(last) });
-  return nodes.length > 0 ? nodes : [{ type: 'text', text: text || ' ' }];
-}
-
-const paragraph = (text) => ({ type: 'paragraph', content: inline(text) });
-
-export function markdownToAdf(markdown) {
-  const lines = markdown.split('\n');
-  const content = [];
-  let i = 0;
-
-  const listItem = (text) => ({ type: 'listItem', content: [paragraph(text)] });
-
-  while (i < lines.length) {
-    const line = lines[i].trim();
-    if (line === '') {
-      i += 1;
-      continue;
-    }
-
-    const heading = line.match(/^(#{1,4})\s+(.*)$/);
-    if (heading) {
-      // A document's own H1 becomes H2: Jira renders the issue summary as the title.
-      content.push({
-        type: 'heading',
-        attrs: { level: Math.min(heading[1].length + 1, 6) },
-        content: inline(heading[2]),
-      });
-      i += 1;
-      continue;
-    }
-
-    // Task list before plain bullets: `- [ ]` is also a `-` line.
-    if (/^-\s+\[[ xX]\]\s+/.test(line)) {
-      const items = [];
-      while (i < lines.length && /^-\s+\[[ xX]\]\s+/.test(lines[i].trim())) {
-        const item = lines[i].trim();
-        const done = /^-\s+\[[xX]\]/.test(item);
-        items.push({
-          type: 'taskItem',
-          attrs: { localId: randomUUID(), state: done ? 'DONE' : 'TODO' },
-          content: inline(item.replace(/^-\s+\[[ xX]\]\s+/, '')),
-        });
-        i += 1;
-      }
-      content.push({ type: 'taskList', attrs: { localId: randomUUID() }, content: items });
-      continue;
-    }
-
-    if (/^\d+\.\s+/.test(line)) {
-      const items = [];
-      while (i < lines.length && /^\d+\.\s+/.test(lines[i].trim())) {
-        items.push(listItem(lines[i].trim().replace(/^\d+\.\s+/, '')));
-        i += 1;
-      }
-      content.push({ type: 'orderedList', content: items });
-      continue;
-    }
-
-    if (/^[-*]\s+/.test(line)) {
-      const items = [];
-      while (
-        i < lines.length &&
-        /^[-*]\s+/.test(lines[i].trim()) &&
-        !/^-\s+\[[ xX]\]/.test(lines[i].trim())
-      ) {
-        items.push(listItem(lines[i].trim().replace(/^[-*]\s+/, '')));
-        i += 1;
-      }
-      content.push({ type: 'bulletList', content: items });
-      continue;
-    }
-
-    // Paragraph: join wrapped lines until a blank line or the next block.
-    const buffer = [line];
-    i += 1;
-    while (
-      i < lines.length &&
-      lines[i].trim() !== '' &&
-      !/^(#{1,4})\s+/.test(lines[i].trim()) &&
-      !/^\d+\.\s+/.test(lines[i].trim()) &&
-      !/^[-*]\s+/.test(lines[i].trim())
-    ) {
-      buffer.push(lines[i].trim());
-      i += 1;
-    }
-    content.push(paragraph(buffer.join(' ')));
-  }
-
-  return { type: 'doc', version: 1, content };
-}
-
-// --- ADF → Markdown ---------------------------------------------------------
-
-/** Inline nodes back to the same Markdown `inline()` reads. */
-function inlineToMarkdown(nodes = []) {
-  return nodes
-    .map((node) => {
-      switch (node.type) {
-        case 'text': {
-          let text = node.text;
-          for (const mark of node.marks ?? []) {
-            if (mark.type === 'strong') text = `**${text}**`;
-            else if (mark.type === 'em') text = `_${text}_`;
-            else if (mark.type === 'code') text = `\`${text}\``;
-            else if (mark.type === 'link') text = `[${text}](${mark.attrs.href})`;
-          }
-          return text;
-        }
-        case 'hardBreak':
-          return '\n';
-        case 'mention':
-          return `@${node.attrs?.text ?? ''}`;
-        case 'emoji':
-          return node.attrs?.text ?? '';
-        case 'inlineCard':
-          return node.attrs?.url ?? '';
-        default:
-          return inlineToMarkdown(node.content);
-      }
-    })
-    .join('');
-}
-
-/** Block nodes to Markdown; `indent` prefixes nested lists. */
-function blocksToMarkdown(nodes = [], indent = '') {
-  return nodes
-    .map((node) => {
-      switch (node.type) {
-        case 'paragraph':
-          return indent + inlineToMarkdown(node.content);
-        case 'heading':
-          return `${'#'.repeat(node.attrs?.level ?? 1)} ${inlineToMarkdown(node.content)}`;
-        case 'bulletList':
-          return node.content.map((item) => listItemToMarkdown(item, '- ', indent)).join('\n');
-        case 'orderedList':
-          return node.content
-            .map((item, i) => listItemToMarkdown(item, `${i + 1}. `, indent))
-            .join('\n');
-        case 'taskList':
-          return node.content
-            .map(
-              (item) =>
-                `${indent}- [${item.attrs?.state === 'DONE' ? 'x' : ' '}] ${inlineToMarkdown(item.content)}`,
-            )
-            .join('\n');
-        case 'codeBlock':
-          return `${indent}\`\`\`${node.attrs?.language ?? ''}\n${inlineToMarkdown(node.content)}\n${indent}\`\`\``;
-        case 'blockquote':
-          return blocksToMarkdown(node.content, indent)
-            .split('\n')
-            .map((line) => `> ${line}`)
-            .join('\n');
-        case 'rule':
-          return `${indent}---`;
-        default:
-          return node.content ? blocksToMarkdown(node.content, indent) : '';
-      }
-    })
-    .filter((block) => block !== '')
-    .join('\n\n');
-}
-
-function listItemToMarkdown(item, marker, indent) {
-  const [first, ...rest] = item.content ?? [];
-  const head = `${indent}${marker}${first ? inlineToMarkdown(first.content) : ''}`;
-  if (rest.length === 0) return head;
-  return `${head}\n${blocksToMarkdown(rest, `${indent}  `)}`;
-}
-
-export function adfToMarkdown(doc) {
-  return doc ? blocksToMarkdown(doc.content) : '';
 }
 
 // --- Commands ---------------------------------------------------------------
@@ -423,6 +230,20 @@ const commands = {
     console.log(result.key);
   },
 
+  /**
+   * Replaces the description and/or summary. A published spec gets fixed in
+   * place rather than re-created, so its key and links survive.
+   */
+  async update([key, ...argv]) {
+    const o = flags(argv);
+    const fields = {};
+    if (o.summary) fields.summary = o.summary;
+    if (o.body) fields.description = readBody(o.body);
+    if (Object.keys(fields).length === 0) throw new Error('expected --body and/or --summary');
+    await api('PUT', `/rest/api/3/issue/${key}`, { fields });
+    console.log(`${key}: updated ${Object.keys(fields).join(', ')}`);
+  },
+
   async transition([key, target]) {
     const { transitions } = await api('GET', `/rest/api/3/issue/${key}/transitions`);
     const match = transitions.find((t) => t.to.name.toLowerCase() === target?.toLowerCase());
@@ -471,6 +292,7 @@ const USAGE = `Usage: node scripts/jira.mjs <command>
                                         (JQL; scoped to the project unless it names one)
   comment NBK-1 body.md                 (- reads stdin)
   create --summary "..." [--body body.md] [--type Task] [--parent NBK-1] [--label ready-for-agent]
+  update NBK-1 [--body body.md] [--summary "..."]
   transition NBK-5 Done
   link NBK-6 blocked-by NBK-5
   link NBK-15 relates-to NBK-14
@@ -478,8 +300,9 @@ const USAGE = `Usage: node scripts/jira.mjs <command>
 --parent takes an Epic only (a Task can't parent a Task); tickets of a spec
 published as a Task are linked to it with relates-to instead.
 
-Markdown bodies are converted to Atlassian Document Format: #/##/### headings,
-paragraphs, bullets, 1. ordered lists, - [ ] task lists, **bold**, \`code\`, links.`;
+Markdown bodies (hard-wrapped is fine) are converted to Atlassian Document
+Format: headings, paragraphs, bullets, 1. ordered lists, - [ ] task lists,
+\`\`\` code, | tables |, > quotes, ---, **bold**, \`code\`, links.`;
 
 if (!commands[command]) {
   console.error(USAGE);

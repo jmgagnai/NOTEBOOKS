@@ -35,12 +35,16 @@ node scripts/jira.mjs search "status != Done" --links  # JQL, scoped to NBK
 node scripts/jira.mjs comment NBK-1 body.md          # - reads stdin
 node scripts/jira.mjs create --summary "..." --body ticket.md \
   --type Task --parent NBK-1 --label ready-for-agent
+node scripts/jira.mjs update NBK-1 --body spec.md        # and/or --summary "..."
 node scripts/jira.mjs transition NBK-5 Done
 node scripts/jira.mjs link NBK-6 blocked-by NBK-5
 ```
 
 It converts headings, paragraphs, bullet and ordered lists, `- [ ]` task lists
-(which become real Jira checkboxes), and inline bold/code/links. Hand-rolling
+(which become real Jira checkboxes), fenced code, tables, quotes, and inline
+bold/code/links. Hard-wrapped Markdown is fine, so a design doc publishes as
+it is; fix a published issue with `update` rather than re-creating it. The
+conversion lives in `scripts/jira-adf.mjs`, tested by `pnpm run check`. Hand-rolling
 that conversion per task is how a spec's structure gets flattened into one
 paragraph.
 
