@@ -1,18 +1,30 @@
-.login-page {
-  max-width: 420px;
-  margin: 2rem auto;
+@use 'auth-page';
 
-  form {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
+:host {
+  display: block;
+  padding: 0 1rem;
+}
+
+.login-page {
+  @include auth-page.page;
+
+  &__brand {
+    @include auth-page.brand;
+  }
+
+  &__title {
+    @include auth-page.title;
   }
 
   &__error {
-    color: var(--mat-sys-error);
+    @include auth-page.error;
+  }
+
+  &__submit {
+    @include auth-page.submit;
   }
 
   &__switch {
-    margin-top: 1rem;
+    @include auth-page.switch;
   }
 }
