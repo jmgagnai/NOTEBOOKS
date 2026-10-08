@@ -1,0 +1,122 @@
+@use '@angular/material' as mat;
+
+// The Documents list (NBK-42, spec 03 "Row anatomy"): 40 px rows at the body
+// type step, the icon and the secondary line in secondary text, so a Notebook
+// of forty Documents reads as a list and not as a wall of cards.
+:host {
+  display: block;
+}
+
+.document-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.document-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 40px;
+  padding: 0 4px 0 8px;
+  border-radius: var(--mat-sys-corner-extra-small);
+
+  &:hover,
+  &:focus-within {
+    background: var(--mat-sys-surface-container);
+  }
+
+  // The link fills the row up to the trailing controls, so a click anywhere
+  // on the icon or the text opens the Document.
+  &__open {
+    flex: 1 1 auto;
+    min-width: 0;
+    align-self: stretch;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: inherit;
+    text-decoration: none;
+  }
+
+  &__type {
+    flex: none;
+    display: inline-flex;
+    color: var(--mat-sys-on-surface-variant);
+  }
+
+  &__text {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    // Tighter than the body line height so the two lines fit the 40 px row.
+    line-height: 1.25;
+  }
+
+  &__name {
+    font: var(--mat-sys-body-medium);
+    line-height: inherit;
+    color: var(--mat-sys-on-surface);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__secondary {
+    display: flex;
+    gap: 6px;
+    font: var(--mat-sys-body-small);
+    line-height: inherit;
+    color: var(--mat-sys-on-surface-variant);
+  }
+
+  // The stage reads as "still going": the accent, which the progress bar
+  // below it shares.
+  &__stage {
+    color: var(--mat-sys-primary);
+  }
+
+  &__warning {
+    flex: none;
+    display: inline-flex;
+    color: var(--mat-sys-error);
+  }
+
+  // The "…" button only shows where the pointer or the focus is, and while
+  // its menu is open; on a touch screen there is no hover, so it always shows.
+  &__more {
+    flex: none;
+    opacity: 0;
+
+    &[aria-expanded='true'],
+    &:focus-visible {
+      opacity: 1;
+    }
+
+    @media (hover: none) {
+      opacity: 1;
+    }
+  }
+
+  &:hover &__more,
+  &:focus-within &__more {
+    opacity: 1;
+  }
+
+  // The 2 px indeterminate bar along the bottom of an in-progress row, inset
+  // to the row's text so it does not touch the rounded corners.
+  &__progress {
+    position: absolute;
+    left: 8px;
+    right: 8px;
+    bottom: 0;
+    @include mat.progress-bar-overrides(
+      (
+        track-height: 2px,
+        active-indicator-height: 2px,
+      )
+    );
+  }
+}

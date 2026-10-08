@@ -127,6 +127,17 @@ function documentFor(filename: string, overrides: Partial<Record<string, unknown
   };
 }
 
+/** A latest Version of `filename` stored as `mimeType`, the field the row's type icon reads (NBK-42). */
+function versionOf(filename: string, mimeType: string) {
+  return {
+    id: `v-${filename}-1`,
+    versionNumber: 1,
+    mimeType,
+    sizeBytes: 1,
+    createdAt: '2026-01-01T00:00:00.000Z',
+  };
+}
+
 /** A promise the test resolves or rejects by hand, to hold a request "in flight". */
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -222,6 +233,25 @@ function panelRow(filename: string) {
   return within(panel)
     .getAllByRole('listitem')
     .find((row) => within(row).queryByText(filename) !== null)!;
+}
+
+// Document row helpers (NBK-42): the Documents list is one row per Document,
+// with Open, Download and Delete behind the row's "…" menu.
+
+/** The Documents list's row for `filename`. */
+function documentRow(filename: string) {
+  const list = screen.getByRole('list', { name: 'Documents' });
+  return within(list)
+    .getAllByRole('listitem')
+    .find((row) => within(row).queryByText(filename) !== null)!;
+}
+
+/** Opens the row's "…" menu and returns its `action` item, named "<action> <filename>". */
+async function rowMenuItem(filename: string, action: 'Open' | 'Download' | 'Delete') {
+  fireEvent.click(
+    within(documentRow(filename)).getByRole('button', { name: `Actions for ${filename}` }),
+  );
+  return screen.findByRole('menuitem', { name: `${action} ${filename}` });
 }
 
 // Drag-and-drop helpers (NBK-18, NBK-36), at module scope because NBK-37's
@@ -324,8 +354,14 @@ describe('NotebookDetailPage', () => {
 
     expect(await screen.findByText('Research')).toBeTruthy();
     expect(await screen.findByText('report.txt')).toBeTruthy();
-    expect(screen.getByText('Queued')).toBeTruthy();
-    expect(screen.getByText('v1')).toBeTruthy();
+    // One compact row (NBK-42): the type icon named for what it shows, the
+    // stage as a quiet line with a progress bar while ingestion runs, and no
+    // version tag for a Document that has only one Version.
+    const row = documentRow('report.txt');
+    expect(within(row).getByRole('img', { name: 'Text' })).toBeTruthy();
+    expect(within(row).getByText('Queued')).toBeTruthy();
+    expect(within(row).getByRole('progressbar')).toBeTruthy();
+    expect(within(row).queryByText('v1')).toBeNull();
   });
 
   it('shows an empty state when there are no Documents', async () => {
@@ -971,10 +1007,8 @@ describe('NotebookDetailPage', () => {
       // The existing Document was neither replaced nor duplicated.
       const cards = screen.getByRole('list', { name: 'Documents' });
       expect(within(cards).getAllByText('report.txt')).toHaveLength(1);
-      const reportCard = within(cards)
-        .getAllByRole('listitem')
-        .find((card) => within(card).queryByText('report.txt') !== null)!;
-      expect(within(reportCard).getByText('v1')).toBeTruthy();
+      // Still its one Version: the row shows no version tag (NBK-42).
+      expect(within(documentRow('report.txt')).queryByText(/^v\d+$/)).toBeNull();
     });
   });
 
@@ -1332,6 +1366,153 @@ describe('NotebookDetailPage', () => {
     });
   });
 
+  // NBK-42: one compact row per Document — type icon, filename, a quiet
+  // status, a warning when ingestion failed, and Open, Download and Delete
+  // behind a "…" menu. The row itself opens the Document.
+  describe('NBK-42: compact Document rows', () => {
+    it('shows each type icon from the latest Version, named for the kind of Document', async () => {
+      await renderWithUpload(vi.fn(), [
+        documentFor('a.pdf', { latestVersion: versionOf('a.pdf', 'application/pdf') }),
+        documentFor('b.docx', {
+          latestVersion: versionOf(
+            'b.docx',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          ),
+        }),
+        documentFor('c.md', { latestVersion: versionOf('c.md', 'text/markdown') }),
+        documentFor('d.csv', { latestVersion: versionOf('d.csv', 'text/csv') }),
+        documentFor('e.bin', { latestVersion: versionOf('e.bin', 'application/octet-stream') }),
+      ]);
+
+      expect(within(documentRow('a.pdf')).getByRole('img', { name: 'PDF' })).toBeTruthy();
+      expect(within(documentRow('b.docx')).getByRole('img', { name: 'Word' })).toBeTruthy();
+      expect(within(documentRow('c.md')).getByRole('img', { name: 'Text' })).toBeTruthy();
+      expect(within(documentRow('d.csv')).getByRole('img', { name: 'Spreadsheet' })).toBeTruthy();
+      expect(within(documentRow('e.bin')).getByRole('img', { name: 'Document' })).toBeTruthy();
+    });
+
+    it('shows the stage while ingesting and nothing at all once ready', async () => {
+      await renderWithUpload(vi.fn(), [
+        documentFor('busy.txt', { status: 'summarizing' }),
+        documentFor('done.txt', { status: 'ready' }),
+      ]);
+
+      const busy = documentRow('busy.txt');
+      expect(within(busy).getByText('Summarizing')).toBeTruthy();
+      expect(within(busy).getByRole('progressbar')).toBeTruthy();
+
+      const done = documentRow('done.txt');
+      expect(done.textContent?.trim()).toBe('done.txt');
+      expect(within(done).queryByRole('progressbar')).toBeNull();
+      expect(within(done).queryByRole('img', { name: 'Ingestion failed' })).toBeNull();
+    });
+
+    it('marks a failed Document with a warning that carries the reason', async () => {
+      await renderWithUpload(vi.fn(), [documentFor('broken.pdf', { status: 'failed' })]);
+
+      const row = documentRow('broken.pdf');
+      const warning = within(row).getByRole('img', {
+        name: 'Ingestion failed',
+        description: 'Ingestion failed for the latest Version of this Document.',
+      });
+      expect(warning).toBeTruthy();
+      expect(within(row).queryByRole('progressbar')).toBeNull();
+      expect(within(row).queryByText('Failed')).toBeNull();
+    });
+
+    it('shows the version only once a Document has more than one Version', async () => {
+      await renderWithUpload(vi.fn(), [
+        documentFor('one.txt', { status: 'ready' }),
+        documentFor('three.txt', {
+          status: 'ready',
+          latestVersion: { ...versionOf('three.txt', 'text/plain'), versionNumber: 3 },
+        }),
+      ]);
+
+      expect(within(documentRow('one.txt')).queryByText(/^v\d+$/)).toBeNull();
+      expect(within(documentRow('three.txt')).getByText('v3')).toBeTruthy();
+    });
+
+    it('shows the full filename on hover', async () => {
+      const long = 'a-very-long-quarterly-report-name-that-will-not-fit-the-panel.pdf';
+      await renderWithUpload(vi.fn(), [documentFor(long)]);
+
+      expect(within(documentRow(long)).getByTitle(long)).toBeTruthy();
+    });
+
+    it('opens the Document when the row is activated', async () => {
+      const listDocuments = vi.fn().mockResolvedValue([documentFor('report.txt')]);
+      const { navigate } = await render(RouterShell, {
+        routes: [
+          { path: 'notebooks/:notebookId', component: NotebookDetailPage },
+          { path: 'notebooks/:notebookId/documents/:documentId', component: Elsewhere },
+        ],
+        providers: pageProviders({ documents: { listDocuments }, inRouterShell: true }),
+      });
+      await navigate(`/notebooks/${NOTEBOOK_ID}`);
+      await screen.findByText('report.txt');
+
+      // A link, so Enter opens it as a click does.
+      const open = within(documentRow('report.txt')).getByRole('link', { name: /report\.txt/ });
+      expect(open.getAttribute('href')).toBe(`/notebooks/${NOTEBOOK_ID}/documents/doc-report.txt`);
+      fireEvent.click(open);
+
+      expect(await screen.findByText('Somewhere else')).toBeTruthy();
+    });
+
+    it('moves between rows with the arrow keys, from one Tab stop', async () => {
+      await renderWithUpload(vi.fn(), [
+        documentFor('a.txt'),
+        documentFor('b.txt'),
+        documentFor('c.txt'),
+      ]);
+      const rowLink = (filename: string) =>
+        within(documentRow(filename)).getByRole('link', { name: new RegExp(filename) });
+
+      expect(['a.txt', 'b.txt', 'c.txt'].map((name) => rowLink(name).tabIndex)).toEqual([
+        0, -1, -1,
+      ]);
+
+      rowLink('a.txt').focus();
+      fireEvent.keyDown(rowLink('a.txt'), { key: 'ArrowDown' });
+      expect(document.activeElement).toBe(rowLink('b.txt'));
+      fireEvent.keyDown(rowLink('b.txt'), { key: 'End' });
+      expect(document.activeElement).toBe(rowLink('c.txt'));
+      fireEvent.keyDown(rowLink('c.txt'), { key: 'ArrowUp' });
+      expect(document.activeElement).toBe(rowLink('b.txt'));
+      // The Tab stop follows the focus, so Tab out and back lands here again.
+      expect(rowLink('b.txt').tabIndex).toBe(0);
+      expect(rowLink('a.txt').tabIndex).toBe(-1);
+    });
+
+    it('offers Open, Download and Delete in the row menu, reachable by keyboard', async () => {
+      await renderWithUpload(vi.fn(), [documentFor('report.txt')]);
+
+      const more = within(documentRow('report.txt')).getByRole('button', {
+        name: 'Actions for report.txt',
+      });
+      expect(more.tagName).toBe('BUTTON');
+      fireEvent.click(more);
+
+      const items = await screen.findAllByRole('menuitem');
+      expect(items.map((item) => item.getAttribute('aria-label'))).toEqual([
+        'Open report.txt',
+        'Download report.txt',
+        'Delete report.txt',
+      ]);
+    });
+
+    it('leaves no Document card, badge or Abstract in the list', async () => {
+      await renderWithUpload(vi.fn(), [
+        documentFor('report.txt', { status: 'ready', abstract: 'An Abstract to skim.' }),
+      ]);
+
+      const list = screen.getByRole('list', { name: 'Documents' });
+      expect(within(list).queryByText('An Abstract to skim.')).toBeNull();
+      expect(list.querySelector('app-status-badge')).toBeNull();
+    });
+  });
+
   it('deletes a Document, removing it from the list, then restores it via Undo', async () => {
     const existingDocument = {
       id: 'doc-3',
@@ -1359,7 +1540,8 @@ describe('NotebookDetailPage', () => {
 
     await screen.findByText('contract.pdf');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Delete contract.pdf' }));
+    // Delete lives in the row's "…" menu (NBK-42), under its unchanged name.
+    fireEvent.click(await rowMenuItem('contract.pdf', 'Delete'));
     expect(deleteDocument).toHaveBeenCalledWith({ notebookId: NOTEBOOK_ID, documentId: 'doc-3' });
     await screen.findByText('No Documents yet.');
 
@@ -1383,7 +1565,7 @@ describe('NotebookDetailPage', () => {
     });
 
     await screen.findByText('contract.pdf');
-    fireEvent.click(screen.getByRole('button', { name: 'Delete contract.pdf' }));
+    fireEvent.click(await rowMenuItem('contract.pdf', 'Delete'));
 
     expect(await screen.findByText('contract.pdf deleted')).toBeTruthy();
     expect(screen.queryByText(/"contract\.pdf" deleted\./)).toBeNull();
@@ -1402,10 +1584,10 @@ describe('NotebookDetailPage', () => {
     });
 
     await screen.findByText('contract.pdf');
-    fireEvent.click(screen.getByRole('button', { name: 'Delete contract.pdf' }));
+    fireEvent.click(await rowMenuItem('contract.pdf', 'Delete'));
     await screen.findByText('contract.pdf deleted');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Delete report.txt' }));
+    fireEvent.click(await rowMenuItem('report.txt', 'Delete'));
 
     expect(await screen.findByText('report.txt deleted')).toBeTruthy();
     await waitFor(() => expect(screen.queryByText('contract.pdf deleted')).toBeNull());
@@ -1414,7 +1596,7 @@ describe('NotebookDetailPage', () => {
   // NBK-6: the status badge must follow the background conversion with no
   // page refresh. Nothing is re-fetched here — the only new information is
   // the app event, which is the whole point.
-  it('updates a Document status badge live from an app event', async () => {
+  it('updates a Document row live from an app event', async () => {
     const listDocuments = vi.fn().mockResolvedValue([
       {
         id: 'doc-5',
@@ -1467,11 +1649,10 @@ describe('NotebookDetailPage', () => {
       occurredAt: '2026-01-01T00:00:02.000Z',
       data: { documentId: 'doc-5', versionId: 'v-7', status: 'converted' },
     });
-    const badge = await screen.findByText('Converted');
-    // The badge is styled by outcome, so a failed conversion can't be
-    // mistaken for a finished one at a glance: "converted" is a stage done,
-    // not the end of ingestion, so it reads as in progress (NBK-32).
-    expect(badge.className).toContain('app-badge--progress');
+    expect(await screen.findByText('Converted')).toBeTruthy();
+    // "converted" is a stage done, not the end of ingestion, so the row
+    // still reads as in progress (NBK-32, NBK-42).
+    expect(within(documentRow('thesis.pdf')).getByRole('progressbar')).toBeTruthy();
     // Nothing was re-fetched: the event alone drove the change.
     expect(listDocuments).toHaveBeenCalledTimes(1);
   });
@@ -1480,7 +1661,7 @@ describe('NotebookDetailPage', () => {
   // can "see a Document's ingestion status ... so that I know when it's safe
   // to rely on it for chat". So the badge has to reach "ready" live, and
   // "ready" has to look different from a mid-pipeline stage boundary.
-  it('follows a Document through stage 3 to the "ready" badge', async () => {
+  it('follows a Document through stage 3 to "ready"', async () => {
     const listDocuments = vi.fn().mockResolvedValue([
       {
         id: 'doc-9',
@@ -1525,8 +1706,12 @@ describe('NotebookDetailPage', () => {
       occurredAt: '2026-01-01T00:00:02.000Z',
       data: { documentId: 'doc-9', versionId: 'v-9', status: 'ready' },
     });
-    const badge = await screen.findByText('Ready');
-    expect(badge.className).toContain('app-badge--success');
+    // `ready` is the quiet state (NBK-42): the stage line and the progress
+    // bar go, and no badge takes their place.
+    await waitFor(() => expect(screen.queryByText('Indexing')).toBeNull());
+    const row = documentRow('report.pdf');
+    expect(within(row).queryByRole('progressbar')).toBeNull();
+    expect(within(row).queryByText('Ready')).toBeNull();
     // The event alone drove it; nothing was re-fetched.
     expect(listDocuments).toHaveBeenCalledTimes(1);
   });
@@ -1574,11 +1759,11 @@ describe('NotebookDetailPage', () => {
     expect(screen.queryByText('Failed')).toBeNull();
   });
 
-  // NBK-7: "Document cards show the Abstract". Per GLOSSARY.md the Abstract
-  // is the 50-100 word artifact "used in search results, search-result
-  // previews, and document cards" — so this is the one summary that belongs
-  // in a list, and it has to be visible without opening anything.
-  describe('NBK-7: the Abstract on a Document card', () => {
+  // NBK-7 gave each Document card its Abstract; NBK-42 folded the cards into
+  // rows and the Abstract left the list (spec 03 brings it back as a popover
+  // on the filename). What stays is the way to the Document, and the re-read
+  // that fetches the Abstract once stage 2 has written it.
+  describe('NBK-7: opening a Document and following its Abstract', () => {
     function summarizedDocument(overrides: Partial<Record<string, unknown>> = {}) {
       return {
         id: 'doc-7',
@@ -1599,7 +1784,7 @@ describe('NotebookDetailPage', () => {
       };
     }
 
-    it("shows the Abstract on the Document's card, and links to the Document", async () => {
+    it("offers Open in the row's menu, linking to the Document", async () => {
       const listDocuments = vi.fn().mockResolvedValue([summarizedDocument()]);
 
       await render(NotebookDetailPage, {
@@ -1609,33 +1794,17 @@ describe('NotebookDetailPage', () => {
       });
 
       expect(await screen.findByText('quarterly.pdf')).toBeTruthy();
+      // The Abstract is no longer on the row (NBK-42).
       expect(
-        screen.getByText(
+        screen.queryByText(
           'A quarterly report covering revenue growth and supply-chain risk across three regions.',
         ),
-      ).toBeTruthy();
+      ).toBeNull();
 
       // Opening the Document is where the Executive Summary lives, so the
-      // card has to get the user there.
-      const open = screen.getByRole('link', { name: 'Open quarterly.pdf' });
+      // row has to get the user there.
+      const open = await rowMenuItem('quarterly.pdf', 'Open');
       expect(open.getAttribute('href')).toBe(`/notebooks/${NOTEBOOK_ID}/documents/doc-7`);
-    });
-
-    it('says the Abstract is still being generated while ingestion has not produced one', async () => {
-      const listDocuments = vi
-        .fn()
-        .mockResolvedValue([summarizedDocument({ status: 'converting', abstract: null })]);
-
-      await render(NotebookDetailPage, {
-        providers: pageProviders({
-          documents: { listDocuments },
-        }),
-      });
-
-      await screen.findByText('quarterly.pdf');
-      // An empty card would read as "this document says nothing"; the status
-      // badge alone doesn't explain the missing summary.
-      expect(screen.getByText('Abstract not generated yet.')).toBeTruthy();
     });
 
     // The pipeline now has a second stage, so the badge has two more states
@@ -1664,7 +1833,6 @@ describe('NotebookDetailPage', () => {
 
       await screen.findByText('quarterly.pdf');
       expect(screen.getByText('Converted')).toBeTruthy();
-      expect(screen.getByText('Abstract not generated yet.')).toBeTruthy();
 
       appEvents.events.next({
         id: 'event-s1',
@@ -1685,11 +1853,12 @@ describe('NotebookDetailPage', () => {
         data: { documentId: 'doc-7', versionId: 'v-11', status: 'summarized' },
       });
 
-      const badge = await screen.findByText('Summarized');
-      expect(badge.className).toContain('app-badge--progress');
-      // The Abstract arrives from the re-read, not from the event.
-      expect(await screen.findByText('The freshly generated Abstract.')).toBeTruthy();
-      expect(getDocument).toHaveBeenCalledWith({ notebookId: NOTEBOOK_ID, documentId: 'doc-7' });
+      expect(await screen.findByText('Summarized')).toBeTruthy();
+      // The Abstract arrives from the re-read, not from the event; the row
+      // no longer shows it (NBK-42), so the re-read itself is what is seen.
+      await waitFor(() =>
+        expect(getDocument).toHaveBeenCalledWith({ notebookId: NOTEBOOK_ID, documentId: 'doc-7' }),
+      );
       // The whole list was never re-fetched — only the one Document that
       // changed.
       expect(listDocuments).toHaveBeenCalledTimes(1);
@@ -1722,7 +1891,7 @@ describe('NotebookDetailPage', () => {
     });
 
     await screen.findByText('sheet.xlsx');
-    fireEvent.click(screen.getByRole('button', { name: 'Download sheet.xlsx' }));
+    fireEvent.click(await rowMenuItem('sheet.xlsx', 'Download'));
 
     expect(downloadDocumentVersion).toHaveBeenCalledWith(NOTEBOOK_ID, 'doc-4', 'v-9', 'sheet.xlsx');
   });
@@ -1826,7 +1995,9 @@ describe('NotebookDetailPage', () => {
       const input = screen.getByLabelText('Upload Documents') as HTMLInputElement;
       const open = vi.spyOn(input, 'click');
 
-      fireEvent.click(screen.getByRole('button', { name: 'Add Documents' }));
+      // The header's button comes first; the empty Notebook's own (NBK-49)
+      // is in the Documents panel and goes away once the batch starts.
+      fireEvent.click(screen.getAllByRole('button', { name: 'Add Documents' })[0]);
       expect(open).toHaveBeenCalledTimes(1);
 
       pick([fileNamed('a.txt')]);
@@ -1941,5 +2112,76 @@ describe('NotebookDetailPage', () => {
       expect(await screen.findByText('1 uploaded, 0 skipped, 0 failed')).toBeTruthy();
       expect(uploadDocument).toHaveBeenCalledWith(NOTEBOOK_ID, report);
     });
+  });
+});
+
+describe('NBK-49: empty state', () => {
+  /** The empty state's own "Add Documents", inside the Documents panel. */
+  function emptyStateAddDocuments() {
+    return within(screen.getByRole('complementary', { name: 'Documents' })).getByRole('button', {
+      name: 'Add Documents',
+    }) as HTMLButtonElement;
+  }
+
+  /** The page header's "Add Documents", outside the Documents panel. */
+  function headerAddDocuments() {
+    const panel = screen.getByRole('complementary', { name: 'Documents' });
+    return screen
+      .getAllByRole('button', { name: 'Add Documents' })
+      .find((button) => !panel.contains(button)) as HTMLButtonElement;
+  }
+
+  it('an empty Notebook invites the first upload where the list would be', async () => {
+    await renderWithUpload(vi.fn());
+    const panel = screen.getByRole('complementary', { name: 'Documents' });
+
+    expect(within(panel).getByText('No Documents yet.')).toBeTruthy();
+    expect(within(panel).getByText(/Add Documents to start asking questions\./)).toBeTruthy();
+    expect(emptyStateAddDocuments()).toBeTruthy();
+    expect(screen.getAllByRole('button', { name: 'Add Documents' })).toHaveLength(2);
+  });
+
+  it("the empty state's Add Documents opens the same picker, which starts a batch", async () => {
+    const request = deferred<Record<string, unknown>>();
+    const uploadDocument = vi.fn().mockReturnValue(request.promise);
+    await renderWithUpload(uploadDocument);
+    const input = screen.getByLabelText('Upload Documents') as HTMLInputElement;
+    const open = vi.spyOn(input, 'click');
+
+    fireEvent.click(emptyStateAddDocuments());
+    expect(open).toHaveBeenCalledTimes(1);
+
+    pick([fileNamed('a.txt')]);
+    expect(await screen.findByRole('list', { name: 'Upload progress' })).toBeTruthy();
+    expect(sentNames(uploadDocument)).toEqual(['a.txt']);
+  });
+
+  it('goes away while a batch runs, and stays away once a Document exists', async () => {
+    const request = deferred<Record<string, unknown>>();
+    await renderWithUpload(vi.fn().mockReturnValue(request.promise));
+
+    pick([fileNamed('a.txt')]);
+    await screen.findByRole('list', { name: 'Upload progress' });
+    expect(screen.queryByText('No Documents yet.')).toBeNull();
+    expect(screen.getAllByRole('button', { name: 'Add Documents' })).toHaveLength(1);
+
+    request.resolve(documentFor('a.txt'));
+    await screen.findByText('1 uploaded, 0 skipped, 0 failed');
+    expect(screen.queryByText('No Documents yet.')).toBeNull();
+    expect(screen.getAllByRole('button', { name: 'Add Documents' })).toHaveLength(1);
+  });
+
+  it('is not shown for a Notebook that has Documents', async () => {
+    await renderWithUpload(vi.fn(), [documentFor('a.txt')]);
+
+    expect(screen.queryByText('No Documents yet.')).toBeNull();
+    expect(screen.getAllByRole('button', { name: 'Add Documents' })).toHaveLength(1);
+  });
+
+  it("the header's Add Documents carries the add icon", async () => {
+    await renderWithUpload(vi.fn());
+
+    const icon = headerAddDocuments().querySelector('mat-icon');
+    expect(icon?.getAttribute('data-mat-icon-name')).toBe('add');
   });
 });
