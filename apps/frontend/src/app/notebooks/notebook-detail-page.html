@@ -55,6 +55,7 @@
       [disabled]="store.batchRunning()"
       (click)="fileInput.click()"
     >
+      <mat-icon svgIcon="add" />
       Add Documents
     </button>
     <!--
@@ -236,7 +237,14 @@
         } @else if (store.error(); as error) {
           <p class="notebook-detail-page__error">{{ error }}</p>
         } @else if (store.documents().length === 0) {
-          <p>No Documents yet.</p>
+          <!--
+            The first step, where the list would be (NBK-49): its button opens
+            the header's picker. Not while a batch runs — the batch panel above
+            is then what the Notebook has to show, and the picker is disabled.
+          -->
+          @if (!store.batchRunning()) {
+            <app-documents-empty-state (add)="fileInput.click()" />
+          }
         } @else {
           <!--
           One compact row per Document (NBK-42, spec 03): the Abstract left

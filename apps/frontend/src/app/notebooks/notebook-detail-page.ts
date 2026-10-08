@@ -21,6 +21,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { ThreadNavigator } from '../chat/thread-navigator';
 import { ThreadView } from '../chat/thread-view';
 import { DocumentList } from '../documents/document-list';
+import { DocumentsEmptyState } from '../documents/documents-empty-state';
 import { ConflictChoice, Document, DocumentsStore } from '../documents/documents.store';
 import { UPLOAD_ACCEPT } from '../documents/upload-rules';
 import { APP_NAME } from '../shared/app-name';
@@ -101,6 +102,7 @@ function droppedEntries(dataTransfer: DataTransfer | null): {
     MatProgressSpinnerModule,
     MatTooltipModule,
     DocumentList,
+    DocumentsEmptyState,
     RouterLink,
     StatusBadge,
     ThreadNavigator,
