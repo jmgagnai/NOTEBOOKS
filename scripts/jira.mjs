@@ -16,7 +16,8 @@
  *   node scripts/jira.mjs comment NBK-1 body.md         # - reads stdin
  *   node scripts/jira.mjs create --summary "..." --body body.md \
  *        [--type Task] [--parent NBK-1] [--label ready-for-agent]
- *   node scripts/jira.mjs update NBK-1 [--body body.md] [--summary "..."]
+ *   node scripts/jira.mjs update NBK-1 [--body body.md] [--summary "..."] \
+ *        [--label ready-for-agent]   # replaces the labels; repeatable
  *   node scripts/jira.mjs transition NBK-5 Done
  *   node scripts/jira.mjs link NBK-6 blocked-by NBK-5
  *   node scripts/jira.mjs link NBK-15 relates-to NBK-14
@@ -231,15 +232,20 @@ const commands = {
   },
 
   /**
-   * Replaces the description and/or summary. A published spec gets fixed in
-   * place rather than re-created, so its key and links survive.
+   * Replaces the description, the summary and/or the labels. A published spec
+   * gets fixed in place rather than re-created, so its key and links survive;
+   * `--label` sets the whole label list, which is what a triage state change
+   * is (`needs-triage` → `ready-for-agent`, say).
    */
   async update([key, ...argv]) {
     const o = flags(argv);
     const fields = {};
     if (o.summary) fields.summary = o.summary;
     if (o.body) fields.description = readBody(o.body);
-    if (Object.keys(fields).length === 0) throw new Error('expected --body and/or --summary');
+    if (o.labels.length > 0) fields.labels = o.labels;
+    if (Object.keys(fields).length === 0) {
+      throw new Error('expected --body, --summary and/or --label');
+    }
     await api('PUT', `/rest/api/3/issue/${key}`, { fields });
     console.log(`${key}: updated ${Object.keys(fields).join(', ')}`);
   },
@@ -292,7 +298,7 @@ const USAGE = `Usage: node scripts/jira.mjs <command>
                                         (JQL; scoped to the project unless it names one)
   comment NBK-1 body.md                 (- reads stdin)
   create --summary "..." [--body body.md] [--type Task] [--parent NBK-1] [--label ready-for-agent]
-  update NBK-1 [--body body.md] [--summary "..."]
+  update NBK-1 [--body body.md] [--summary "..."] [--label ready-for-agent]
   transition NBK-5 Done
   link NBK-6 blocked-by NBK-5
   link NBK-15 relates-to NBK-14

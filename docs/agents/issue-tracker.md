@@ -36,6 +36,7 @@ node scripts/jira.mjs comment NBK-1 body.md          # - reads stdin
 node scripts/jira.mjs create --summary "..." --body ticket.md \
   --type Task --parent NBK-1 --label ready-for-agent
 node scripts/jira.mjs update NBK-1 --body spec.md        # and/or --summary "..."
+node scripts/jira.mjs update NBK-89 --label ready-for-agent   # replaces the labels
 node scripts/jira.mjs transition NBK-5 Done
 node scripts/jira.mjs link NBK-6 blocked-by NBK-5
 ```
@@ -63,8 +64,9 @@ cover.
 - **Read an issue**: `GET $JIRA_BASE_URL/rest/api/3/issue/<key>?fields=summary,description,status,labels,comment`
 - **List/search issues**: `node scripts/jira.mjs search "<JQL>"` (one line per issue; `--links` adds open blockers). Raw: `POST $JIRA_BASE_URL/rest/api/3/search/jql` with `{"jql": "...", "fields": [...]}`; the older `GET .../search?jql=` endpoint is retired.
 - **Comment on an issue**: `POST $JIRA_BASE_URL/rest/api/3/issue/<key>/comment` with ADF body.
-- **Apply / remove labels**: `PUT $JIRA_BASE_URL/rest/api/3/issue/<key>` with
-  `{"fields":{"labels":["..."]}}` (full replace — fetch current labels first and merge).
+- **Apply / remove labels**: `node scripts/jira.mjs update <key> --label <a> [--label <b>]`,
+  a full replace (triage swaps one state label for another); read the current
+  labels with `get` first when others must be kept.
 - **Transition status**: `GET .../issue/<key>/transitions` to find the transition id for
   the target status, then `POST .../issue/<key>/transitions` with `{"transition":{"id":"<id>"}}`.
 - **Close/Done**: transition to the `Done` status via the same mechanism.
