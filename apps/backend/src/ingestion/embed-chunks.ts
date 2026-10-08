@@ -6,6 +6,7 @@ import type { DocumentStatus } from '../documents/schema.js';
 import { EMBEDDING_DIMENSIONS } from '../llm/models.js';
 import type { Embedder } from '../llm/embeddings.js';
 import { chunkMarkdown, type DocumentChunk } from './chunking.js';
+import { classifyProviderFailure } from './provider-failure.js';
 import {
   attemptFailed,
   documentVersionRefSchema,
@@ -204,7 +205,7 @@ export async function runEmbedChunksJob(
       pool,
       version,
       willRetry ? 'summarized' : 'failed',
-      attemptFailed(err, { willRetry, failedAt: 'indexing' }),
+      attemptFailed(classifyProviderFailure(err), { willRetry, failedAt: 'indexing' }),
     );
     throw err;
   }
