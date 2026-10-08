@@ -31,6 +31,14 @@ adds a helper only when no other block could use it. Tickets built in
 parallel may each copy helpers to keep their merges clean; the merge that
 brings them together hoists the copies before the branch is reviewed.
 
+A page whose spec has grown past one area splits by area into sibling files
+(`notebook-detail-page.upload.spec.ts`, `chat-panel.composer.spec.ts`), and
+its shared helpers move to one `<page>.spec-helpers.ts` beside them. A new
+ticket's tests go in the area file they belong to, so parallel tickets stop
+appending to the same file. Setup that runs per test is exported as a
+function each area file calls from its own `beforeEach`, never registered by
+importing the helpers.
+
 ## Comments carry the why
 
 A comment explains why the code is the way it is — the trade-off, the ticket
