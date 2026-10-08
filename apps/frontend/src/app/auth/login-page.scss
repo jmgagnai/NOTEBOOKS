@@ -8,10 +8,6 @@
 .login-page {
   @include auth-page.page;
 
-  &__brand {
-    @include auth-page.brand;
-  }
-
   &__title {
     @include auth-page.title;
   }

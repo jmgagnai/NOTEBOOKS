@@ -5,10 +5,26 @@
   padding: 0 12px 0 16px;
 }
 
-// Spec 01: the name reads at the section size (16/600), not the toolbar's
-// title size, until spec 06 brings the brand mark. It is the one element
-// allowed to shrink so a 360 px window still shows the avatar.
+// Spec 06 (NBK-59): the mark and the name form one link home. The cluster
+// is the one element allowed to shrink so a 360 px window still shows the
+// avatar; the mark keeps its size and only the name truncates.
 .app-shell__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+}
+
+.app-shell__mark {
+  flex: none;
+  width: auto;
+  height: 24px;
+}
+
+// Spec 01's section size (16/600), not the toolbar's title size.
+.app-shell__name {
   min-width: 0;
   overflow: hidden;
   font: var(--mat-sys-title-medium);
