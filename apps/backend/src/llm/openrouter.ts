@@ -70,59 +70,73 @@ interface ChatCompletionResponse {
 }
 
 /**
- * HTTP statuses worth another attempt. 429 is the one that actually happens
- * (NBK-1 names "a rate-limited OpenRouter call" as the motivating transient
- * failure); 5xx covers a provider blip.
+ * HTTP statuses worth another attempt, for every OpenRouter client — the
+ * completer, the streamer and the embedder share this one set so their retry
+ * policies cannot drift. 429 is the one that actually happens (NBK-1 names "a
+ * rate-limited OpenRouter call" as the motivating transient failure); 5xx
+ * covers a provider blip.
  *
- * Everything else — 400 on a malformed request, 401 on a bad key, 404 on a
- * retired model id — is a configuration problem that will fail identically
- * forever, so it fails fast rather than burning the job's retry budget.
+ * Everything else — 400 on a malformed request, 401 on a bad key, 402 on an
+ * empty account, 404 on a retired model id — is a configuration problem that
+ * will fail identically forever, so it fails fast rather than burning the
+ * job's retry budget.
  */
-function isRetryableStatus(status: number): boolean {
+export function isRetryableStatus(status: number): boolean {
   return status === 408 || status === 429 || status >= 500;
 }
 
 /**
- * The provider could not be reached or refused the work, as opposed to
- * answering badly (NBK-66). Callers that have to tell a user which of the two
- * happened — ingestion stages 2 and 3 — test for this class; everything else
- * reads it as a plain `Error`, with the same message as before.
+ * The provider could not be reached or could not do the work right now, as
+ * opposed to refusing or answering badly (NBK-66). Callers that have to tell a
+ * user which of the two happened — ingestion stages 2 and 3 — test for this
+ * class; everything else reads it as a plain `Error`, with the same message as
+ * before.
  *
  * The rule, shared by the completer and the embedder:
  *
  * - **Unavailable:** the request never got an answer (a thrown `fetch`: DNS,
- *   socket, timeout), the provider said it would not or could not do the
- *   work now (401/402/403 — key, credits, refusal — and 408, 429, 5xx), or it
- *   reported an upstream failure in a 200 body. Nothing about the Document
- *   caused these, and the same request may succeed later.
- * - **Not unavailable (a plain `Error`):** any other 4xx, which means this
- *   app sent a request the provider will never accept (a malformed body, a
- *   retired model id); and a 200 whose answer is empty or malformed. Those
- *   are this app's problem to fix, so a user is told "unexpected" rather than
- *   "try later".
+ *   socket, timeout), the provider said it could not do the work now (408,
+ *   429, 5xx), or it reported an upstream failure in a 200 body. Nothing
+ *   about the Document caused these, and the same request may succeed later
+ *   — so "try uploading a New Version later" is honest advice.
+ * - **Not unavailable (a plain `Error`):** any other 4xx — including 401, 402
+ *   and 403 (a bad key, no credits, a refusal), which an operator has to fix
+ *   and which a user retrying later would not cure — and a 200 whose answer
+ *   is empty or malformed. Those are this app's problem to fix, so a user is
+ *   told "unexpected" rather than "try later".
  *
- * Independent of {@link isRetryableStatus}: 401 is unavailable but not worth
- * an in-process retry, and an empty answer is worth a retry but is not an
- * outage.
+ * An unavailable status is exactly a {@link isRetryableStatus} one; the two
+ * differ only on a 200 that answered badly, which is worth a retry but is not
+ * an outage.
  */
 export class ProviderUnavailableError extends Error {
   override readonly name = 'ProviderUnavailableError';
 }
 
-/** The HTTP half of the {@link ProviderUnavailableError} rule. */
-export function isUnavailableStatus(status: number): boolean {
-  return status === 401 || status === 402 || status === 403 || isRetryableStatus(status);
-}
-
 /**
  * One in-process attempt at a provider call, as both clients' retry loops
- * see it. `unavailable` decides which error the loop throws once it gives up.
+ * see it — one of three outcomes:
+ *
+ * - `answered`: the value to return.
+ * - `unavailable`: an outage (see {@link ProviderUnavailableError}). Always
+ *   worth another attempt; thrown as that class once the attempts run out.
+ * - `failed`: anything else that went wrong, thrown as a plain `Error`.
+ *   `retryable` separates a bad answer (worth another try) from a request
+ *   the provider will never accept.
  */
-export interface ProviderAttempt<T> {
-  value?: T;
-  retryable: boolean;
-  unavailable: boolean;
-  error?: string;
+export type ProviderAttempt<T> =
+  | { outcome: 'answered'; value: T }
+  | { outcome: 'unavailable'; error: string }
+  | { outcome: 'failed'; retryable: boolean; error: string };
+
+/**
+ * The attempt a non-2xx response amounts to, for both clients: the
+ * {@link ProviderUnavailableError} rule's HTTP half, written once.
+ */
+export function httpFailure(status: number, error: string): ProviderAttempt<never> {
+  return isRetryableStatus(status)
+    ? { outcome: 'unavailable', error }
+    : { outcome: 'failed', retryable: false, error };
 }
 
 /**
@@ -134,25 +148,23 @@ export async function withProviderRetries<T>(
   attempt: () => Promise<ProviderAttempt<T>>,
   { retries, retryDelayMs, neverRan }: { retries: number; retryDelayMs: number; neverRan: string },
 ): Promise<T> {
-  let last: ProviderAttempt<T> = { retryable: false, unavailable: false, error: neverRan };
+  let last: ProviderAttempt<T> = { outcome: 'failed', retryable: false, error: neverRan };
   for (let i = 0; i <= retries; i += 1) {
     try {
       last = await attempt();
     } catch (err) {
       // A thrown fetch is a transport problem (DNS, socket, timeout) —
       // always worth another attempt, and the provider never answered.
-      last = {
-        retryable: true,
-        unavailable: true,
-        error: err instanceof Error ? err.message : String(err),
-      };
+      last = { outcome: 'unavailable', error: err instanceof Error ? err.message : String(err) };
     }
-    if (last.value !== undefined) return last.value;
-    if (!last.retryable || i === retries) break;
+    if (last.outcome === 'answered') return last.value;
+    const retryable = last.outcome === 'unavailable' || last.retryable;
+    if (!retryable || i === retries) break;
     await new Promise((resolve) => setTimeout(resolve, retryDelayMs * 2 ** i));
   }
-  const message = last.error ?? neverRan;
-  throw last.unavailable ? new ProviderUnavailableError(message) : new Error(message);
+  throw last.outcome === 'unavailable'
+    ? new ProviderUnavailableError(last.error)
+    : new Error(last.error);
 }
 
 /** The option defaults both clients share, resolved once. */
@@ -229,31 +241,29 @@ export function createOpenRouterCompleter(options: OpenRouterOptions): ChatCompl
 
     if (!response.ok) {
       const body = await response.text().catch(() => '');
-      return {
-        retryable: isRetryableStatus(response.status),
-        unavailable: isUnavailableStatus(response.status),
-        error: `OpenRouter returned ${response.status} for model ${request.model}: ${body.slice(0, 500)}`,
-      };
+      return httpFailure(
+        response.status,
+        `OpenRouter returned ${response.status} for model ${request.model}: ${body.slice(0, 500)}`,
+      );
     }
 
     const payload = (await response.json()) as ChatCompletionResponse;
     if (payload.error?.message) {
       // OpenRouter can report an upstream provider failure in a 200 body.
       return {
-        retryable: true,
-        unavailable: true,
+        outcome: 'unavailable',
         error: `OpenRouter error for model ${request.model}: ${payload.error.message}`,
       };
     }
     const text = payload.choices?.[0]?.message?.content;
     if (typeof text !== 'string' || text.trim() === '') {
       return {
+        outcome: 'failed',
         retryable: true,
-        unavailable: false,
         error: `OpenRouter returned no content for model ${request.model}.`,
       };
     }
-    return { retryable: false, unavailable: false, value: text };
+    return { outcome: 'answered', value: text };
   }
 
   return function complete(request: ChatCompletionRequest): Promise<string> {

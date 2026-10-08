@@ -732,14 +732,15 @@ describe('embed-chunks job', () => {
         headers: { 'content-type': 'application/json' },
       });
 
-    async function failureAfter(
+    const seedOutageVersion = () =>
+      seedSummarizedVersion('outage.md', `# Outage\n\n${prose('outage', 2)}\n`);
+
+    /** Runs one stage-3 attempt against `fetchStub` on `seeded`, swallowing the rethrow. */
+    async function failAttempt(
+      seeded: SeededVersion,
       fetchStub: typeof globalThis.fetch,
       { willRetry }: { willRetry: boolean },
     ) {
-      const seeded = await seedSummarizedVersion(
-        'outage.md',
-        `# Outage\n\n${prose('outage', 2)}\n`,
-      );
       await expect(
         runEmbedChunksJob(
           {
@@ -754,6 +755,14 @@ describe('embed-chunks job', () => {
           { payload: { documentId: seeded.documentId, versionId: seeded.versionId }, willRetry },
         ),
       ).rejects.toThrow();
+    }
+
+    async function failureAfter(
+      fetchStub: typeof globalThis.fetch,
+      { willRetry }: { willRetry: boolean },
+    ) {
+      const seeded = await seedOutageVersion();
+      await failAttempt(seeded, fetchStub, { willRetry });
       const [document] = await listDocuments(pool, seeded.notebookId);
       return document.failure;
     }
@@ -767,7 +776,6 @@ describe('embed-chunks job', () => {
       ],
       ['the provider is rate-limited', async () => json(429, { error: { message: 'slow down' } })],
       ['the provider errors', async () => json(503, { error: { message: 'unavailable' } })],
-      ['the provider refuses the key', async () => json(401, { error: { message: 'no auth' } })],
       [
         'the provider reports an upstream failure in a 200',
         async () => json(200, { error: { message: 'upstream provider down' } }),
@@ -779,7 +787,15 @@ describe('embed-chunks job', () => {
       });
     });
 
+    // A bad key, no credits or a refusal is the operator's to fix, not an
+    // outage: telling the user to try a New Version later would mislead them.
     it.each<[string, typeof globalThis.fetch]>([
+      ['the provider refuses the key', async () => json(401, { error: { message: 'no auth' } })],
+      [
+        'the account has no credits left',
+        async () => json(402, { error: { message: 'insufficient credits' } }),
+      ],
+      ['the provider forbids the request', async () => json(403, { error: { message: 'no' } })],
       ['the provider returns the wrong number of embeddings', async () => json(200, { data: [] })],
       [
         'the request names a model the provider does not know',
@@ -795,6 +811,20 @@ describe('embed-chunks job', () => {
     it('records no reason while a retry is pending', async () => {
       const outage: typeof globalThis.fetch = async () => json(503, {});
       expect(await failureAfter(outage, { willRetry: true })).toBeNull();
+    });
+
+    it('clears the reason once a later run of the Version succeeds', async () => {
+      const seeded = await seedOutageVersion();
+      await failAttempt(seeded, async () => json(503, {}), { willRetry: false });
+
+      await runEmbedChunksJob(depsWith(stubEmbeddings().fetchStub), {
+        payload: { documentId: seeded.documentId, versionId: seeded.versionId },
+        willRetry: false,
+      });
+
+      const [document] = await listDocuments(pool, seeded.notebookId);
+      expect(document.status).toBe('ready');
+      expect(document.failure).toBeNull();
     });
   });
 

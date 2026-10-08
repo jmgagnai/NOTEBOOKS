@@ -1,5 +1,5 @@
 import {
-  isUnavailableStatus,
+  httpFailure,
   OPENROUTER_BASE_URL,
   withProviderRetries,
   type ProviderAttempt,
@@ -60,16 +60,6 @@ interface EmbeddingsResponse {
 }
 
 /**
- * HTTP statuses worth another attempt — the same set, and the same reasoning,
- * as `openrouter.ts`: 429 is the one that actually happens, 5xx covers a
- * provider blip, and everything else is a configuration problem that would
- * fail identically forever.
- */
-function isRetryableStatus(status: number): boolean {
-  return status === 408 || status === 429 || status >= 500;
-}
-
-/**
  * Builds the real OpenRouter-backed embedder (ADR-0002).
  *
  * Retries live here, inside one job attempt, as well as in pg_boss around the
@@ -108,19 +98,17 @@ export function createOpenRouterEmbedder(options: OpenRouterEmbedderOptions): Em
 
     if (!response.ok) {
       const body = await response.text().catch(() => '');
-      return {
-        retryable: isRetryableStatus(response.status),
-        unavailable: isUnavailableStatus(response.status),
-        error: `OpenRouter returned ${response.status} for embedding model ${options.model}: ${body.slice(0, 500)}`,
-      };
+      return httpFailure(
+        response.status,
+        `OpenRouter returned ${response.status} for embedding model ${options.model}: ${body.slice(0, 500)}`,
+      );
     }
 
     const payload = (await response.json()) as EmbeddingsResponse;
     if (payload.error?.message) {
       // OpenRouter can report an upstream provider failure in a 200 body.
       return {
-        retryable: true,
-        unavailable: true,
+        outcome: 'unavailable',
         error: `OpenRouter error for embedding model ${options.model}: ${payload.error.message}`,
       };
     }
@@ -128,9 +116,9 @@ export function createOpenRouterEmbedder(options: OpenRouterEmbedderOptions): Em
     const entries = payload.data;
     if (!Array.isArray(entries) || entries.length !== batch.length) {
       return {
-        retryable: true,
         // A wrong count is a malformed answer, not an outage (NBK-66).
-        unavailable: false,
+        outcome: 'failed',
+        retryable: true,
         error:
           `OpenRouter returned ${entries?.length ?? 0} embeddings for ${batch.length} inputs ` +
           `(model ${options.model}).`,
@@ -151,14 +139,14 @@ export function createOpenRouterEmbedder(options: OpenRouterEmbedderOptions): Em
         vectors[index] !== undefined
       ) {
         return {
+          outcome: 'failed',
           retryable: true,
-          unavailable: false,
           error: `OpenRouter returned a malformed embedding for model ${options.model}.`,
         };
       }
       vectors[index] = entry.embedding;
     }
-    return { retryable: false, unavailable: false, value: vectors };
+    return { outcome: 'answered', value: vectors };
   }
 
   function embedBatch(batch: string[]): Promise<number[][]> {

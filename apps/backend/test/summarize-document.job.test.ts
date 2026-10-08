@@ -1232,7 +1232,6 @@ describe('summarize-document job', () => {
       ],
       ['the provider is rate-limited', async () => json(429, { error: { message: 'slow down' } })],
       ['the provider errors', async () => json(502, { error: { message: 'bad gateway' } })],
-      ['the provider refuses the key', async () => json(401, { error: { message: 'no auth' } })],
       [
         'the provider reports an upstream failure in a 200',
         async () => json(200, { error: { message: 'upstream provider down' } }),
@@ -1240,6 +1239,22 @@ describe('summarize-document job', () => {
     ])("records 'service-unavailable' when %s and no retry is left", async (_, fetchStub) => {
       expect(await failureAfter(fetchStub, { willRetry: false })).toEqual({
         reason: 'service-unavailable',
+        failedAt: 'summarizing',
+      });
+    });
+
+    // A bad key, no credits or a refusal is the operator's to fix, not an
+    // outage: telling the user to try a New Version later would mislead them.
+    it.each<[string, typeof globalThis.fetch]>([
+      ['the provider refuses the key', async () => json(401, { error: { message: 'no auth' } })],
+      [
+        'the account has no credits left',
+        async () => json(402, { error: { message: 'insufficient credits' } }),
+      ],
+      ['the provider forbids the request', async () => json(403, { error: { message: 'no' } })],
+    ])("records 'unexpected' when %s", async (_, fetchStub) => {
+      expect(await failureAfter(fetchStub, { willRetry: false })).toEqual({
+        reason: 'unexpected',
         failedAt: 'summarizing',
       });
     });
