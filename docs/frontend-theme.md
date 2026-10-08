@@ -26,6 +26,7 @@ form fields. Material hides the floating label at this density only for the
 |---|---|---|
 | Primary / accent | `--mat-sys-primary` (`--mat-sys-on-primary` white) | `#0F6CBD` |
 | Primary hover / pressed | `--app-primary-hover` / `--app-primary-pressed` | `#115EA3` / `#0C3B5E` |
+| Selected navigator row / its hover | `--app-selected-fill` / `--app-selected-fill-hover` | `#D6E8F9` / `#C7DEF6` |
 | Accent tint (selected rows, chips, in-progress badge) | `--mat-sys-primary-container` / `--mat-sys-on-primary-container` | `#EBF3FC` / `#0C3B5E` |
 | Page canvas | `--mat-sys-background` (`--mat-sys-on-background`) | `#F5F5F5` (`#242424`) |
 | Pane / card surface | `--mat-sys-surface` | `#FFFFFF` |
