@@ -73,3 +73,35 @@ export const searchResultSchema = documentSchema.extend({
 export type SearchResult = z.infer<typeof searchResultSchema>;
 
 export const searchNotebookResponseSchema = z.array(searchResultSchema);
+
+// Chat Thread search (NBK-97): one result per matching Exchange (GLOSSARY.md).
+
+export const searchThreadsQuerySchema = z.object({
+  q: z
+    .string()
+    .max(1000)
+    .default('')
+    .describe('Keywords, matched literally in questions and answers; blank returns no results.'),
+});
+
+/** A run of an excerpt, `match` when it is one of the searched words. Text, never markup. */
+export const textSegmentSchema = z.object({ text: z.string(), match: z.boolean() });
+export type TextSegment = z.infer<typeof textSegmentSchema>;
+
+export const exchangeSearchResultSchema = z
+  .object({
+    threadId: z.string().uuid(),
+    threadTitle: z.string(),
+    askedBy: z.object({ id: z.string().uuid(), email: z.string() }),
+    askedAt: z.string().describe('When the question was asked.'),
+    questionId: z.string().uuid(),
+    answerId: z.string().uuid().describe('Where a result opens the Chat Thread.'),
+    question: z.array(textSegmentSchema).describe('The question, whole, its matches flagged.'),
+    answer: z
+      .array(textSegmentSchema)
+      .describe('Up to two excerpts of the answer around its matches, flagged.'),
+  })
+  .describe('An Exchange of a Chat Thread that matches the query.');
+export type ExchangeSearchResult = z.infer<typeof exchangeSearchResultSchema>;
+
+export const searchThreadsResponseSchema = z.array(exchangeSearchResultSchema);

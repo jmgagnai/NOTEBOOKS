@@ -26,7 +26,7 @@
         type="search"
         name="q"
         aria-label="Search this Notebook"
-        placeholder="Search this Notebook's Documents"
+        placeholder="Search this Notebook"
         [value]="draft()"
         (input)="onDraftInput($event)"
         (keydown.enter)="onEnter($any($event))"
@@ -35,54 +35,112 @@
 
     @if (store.searching()) {
       <mat-progress-spinner class="search-page__spinner" mode="indeterminate" diameter="28" />
-    } @else if (store.error(); as error) {
-      <p class="search-page__error">{{ error }}</p>
     } @else if (!store.searched()) {
       <p class="search-page__hint">
-        Search finds Documents by meaning, not just by the words you type. Only Documents that have
-        finished ingesting are searched.
+        Search finds Documents by meaning, not just by the words you type, and Chat Threads by the
+        words in their questions and answers. Only Documents that have finished ingesting are
+        searched.
       </p>
-    } @else if (store.results().length === 0) {
-      <p class="search-page__hint">No Documents in this Notebook match "{{ store.query() }}".</p>
+    } @else if (nothingMatches()) {
+      <p class="search-page__hint">Nothing in this Notebook matches "{{ store.query() }}".</p>
     } @else {
       <!--
-        One flat row per Document, the whole row a link to it at its best
-        Chunk (NBK-96). Headed by its extracted title, as the Document page
-        is, and led by its Abstract — per GLOSSARY.md the artifact "used in
-        search results".
+        Documents first, then Chat Threads (NBK-97), each only when it has
+        something to show; a section whose search failed says so, without
+        hiding the other's results.
       -->
-      <ul class="search-page__results">
-        @for (result of store.results(); track result.id) {
-          <li>
-            <a
-              class="search-page__result"
-              [routerLink]="['/notebooks', notebookId, 'documents', result.id]"
-              [queryParams]="chunkLink(result.match)"
-            >
-              <mat-icon class="search-page__result-icon" [svgIcon]="kind(result).icon" />
-              <span class="search-page__result-body">
-                <span class="search-page__result-title">{{ result.title ?? result.filename }}</span>
-                @if (result.title) {
-                  <span class="search-page__result-meta"
-                    >{{ result.filename }} · v{{ result.latestVersion.versionNumber }}</span
+      @if (store.results().length || store.error()) {
+        <section class="search-page__section" aria-labelledby="search-documents">
+          <h2 class="search-page__section-title" id="search-documents">Documents</h2>
+          @if (store.error(); as error) {
+            <p class="search-page__error">{{ error }}</p>
+          } @else {
+            <!--
+              One flat row per Document, the whole row a link to it at its
+              best Chunk (NBK-96). Headed by its extracted title, as the
+              Document page is, and led by its Abstract — per GLOSSARY.md the
+              artifact "used in search results".
+            -->
+            <ul class="search-page__results">
+              @for (result of store.results(); track result.id) {
+                <li>
+                  <a
+                    class="search-page__result"
+                    [routerLink]="['/notebooks', notebookId, 'documents', result.id]"
+                    [queryParams]="chunkLink(result.match)"
                   >
-                } @else {
-                  <span class="search-page__result-meta"
-                    >v{{ result.latestVersion.versionNumber }}</span
+                    <mat-icon class="search-page__result-icon" [svgIcon]="kind(result).icon" />
+                    <span class="search-page__result-body">
+                      <span class="search-page__result-title">{{
+                        result.title ?? result.filename
+                      }}</span>
+                      @if (result.title) {
+                        <span class="search-page__result-meta"
+                          >{{ result.filename }} · v{{ result.latestVersion.versionNumber }}</span
+                        >
+                      } @else {
+                        <span class="search-page__result-meta"
+                          >v{{ result.latestVersion.versionNumber }}</span
+                        >
+                      }
+                      @if (result.abstract) {
+                        <span class="search-page__result-abstract">{{ result.abstract }}</span>
+                      } @else {
+                        <span
+                          class="search-page__result-abstract search-page__result-abstract--pending"
+                          >Abstract not generated yet.</span
+                        >
+                      }
+                    </span>
+                  </a>
+                </li>
+              }
+            </ul>
+          }
+        </section>
+      }
+
+      @if (store.exchanges().length || store.exchangesError()) {
+        <section class="search-page__section" aria-labelledby="search-chat-threads">
+          <h2 class="search-page__section-title" id="search-chat-threads">Chat Threads</h2>
+          @if (store.exchangesError(); as error) {
+            <p class="search-page__error">{{ error }}</p>
+          } @else {
+            <!--
+              One row per matching Exchange, the whole row a link opening its
+              Chat Thread there (NBK-97): the question whole, the answer as
+              excerpts, the matched words bold.
+            -->
+            <ul class="search-page__results">
+              @for (exchange of store.exchanges(); track exchange.answerId) {
+                <li>
+                  <a
+                    class="search-page__result"
+                    [routerLink]="['/notebooks', notebookId]"
+                    [queryParams]="{ thread: exchange.threadId, message: exchange.answerId }"
                   >
-                }
-                @if (result.abstract) {
-                  <span class="search-page__result-abstract">{{ result.abstract }}</span>
-                } @else {
-                  <span class="search-page__result-abstract search-page__result-abstract--pending"
-                    >Abstract not generated yet.</span
-                  >
-                }
-              </span>
-            </a>
-          </li>
-        }
-      </ul>
+                    <mat-icon class="search-page__result-icon" svgIcon="chat" />
+                    <span class="search-page__result-body">
+                      <span class="search-page__result-title">{{ exchange.threadTitle }}</span>
+                      <span class="search-page__result-meta"
+                        >{{ exchange.askedBy.email }} · {{ exchange.askedAt | date: 'MMM d' }}</span
+                      >
+                      <app-marked-text
+                        class="search-page__result-question"
+                        [segments]="exchange.question"
+                      />
+                      <app-marked-text
+                        class="search-page__result-abstract search-page__result-abstract--excerpt"
+                        [segments]="exchange.answer"
+                      />
+                    </span>
+                  </a>
+                </li>
+              }
+            </ul>
+          }
+        </section>
+      }
     }
   </div>
 </div>

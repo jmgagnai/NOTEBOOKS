@@ -1,6 +1,8 @@
 import { input } from '@angular/core';
 import { fireEvent, screen, waitFor, within } from '@testing-library/angular';
 import {
+  scrolled,
+  stubScrolling,
   NOTEBOOK_ID,
   thread,
   message,
@@ -116,27 +118,13 @@ describe('Chat panel (ThreadNavigator + ThreadView) — asking', () => {
   describe('NBK-53: scrolling', () => {
     let scrollTo: ReturnType<typeof vi.fn>;
     let scrollIntoView: ReturnType<typeof vi.fn>;
-    const originals = {
-      scrollTo: HTMLElement.prototype.scrollTo,
-      scrollIntoView: HTMLElement.prototype.scrollIntoView,
-    };
+    let restoreScrolling: () => void;
 
-    // jsdom leaves both unimplemented, so they are stood in for on the
-    // prototype; `mock.contexts` then says which element each call was on.
     beforeEach(() => {
-      scrollTo = vi.fn();
-      scrollIntoView = vi.fn();
-      HTMLElement.prototype.scrollTo = scrollTo as never;
-      HTMLElement.prototype.scrollIntoView = scrollIntoView as never;
+      ({ scrollTo, scrollIntoView, restore: restoreScrolling } = stubScrolling());
     });
 
-    afterEach(() => {
-      HTMLElement.prototype.scrollTo = originals.scrollTo;
-      HTMLElement.prototype.scrollIntoView = originals.scrollIntoView;
-    });
-
-    /** Every element a scroll call was made on, in call order. */
-    const scrolled = (spy: ReturnType<typeof vi.fn>) => spy.mock.contexts as HTMLElement[];
+    afterEach(() => restoreScrolling());
 
     /**
      * Opens thread-1 on one earlier exchange and sends a question whose ask

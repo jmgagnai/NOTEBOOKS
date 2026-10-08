@@ -144,8 +144,11 @@ export class NotebookDetailPage implements OnInit, OnDestroy {
     // the same one the Document status badges follow (NBK-6), so no second
     // connection is opened. The page's job rather than the navigator's
     // (spec 07, NBK-79): the navigator now sits in the sidebar, which drops
-    // it when collapsed, and that must not reset the open Thread.
-    void this.chatStore.loadThreads(this.notebookId);
+    // it when collapsed, and that must not reset the open Thread. A Chat
+    // Thread search result (NBK-97) arrives naming a Thread and the answer
+    // of the Exchange to open it at.
+    const query = this.route.snapshot.queryParamMap;
+    void this.chatStore.loadThreads(this.notebookId, query.get('thread'), query.get('message'));
     this.chatStore.watchNotebook(this.notebookId);
   }
 

@@ -31,7 +31,12 @@ export class Elsewhere {}
 export function activatedRouteFor(notebookId: string) {
   return {
     provide: ActivatedRoute,
-    useValue: { snapshot: { paramMap: convertToParamMap({ notebookId }) } },
+    useValue: {
+      snapshot: {
+        paramMap: convertToParamMap({ notebookId }),
+        queryParamMap: convertToParamMap({}),
+      },
+    },
   };
 }
 
@@ -41,11 +46,10 @@ export function activatedRouteFor(notebookId: string) {
  * is covered by its own seam-3 test (chat-panel.spec.ts), so here it only
  * has to not fail.
  */
-export function chatServiceStub() {
-  return {
-    provide: ChatService,
-    useValue: { listChatThreads: vi.fn().mockResolvedValue([]) },
-  };
+export function chatServiceStub(
+  chat: Record<string, unknown> = { listChatThreads: vi.fn().mockResolvedValue([]) },
+) {
+  return { provide: ChatService, useValue: chat };
 }
 
 /**
@@ -84,12 +88,14 @@ export function pageProviders({
   notebooks = { listNotebooks: vi.fn().mockResolvedValue([]) },
   documents,
   transfer = {},
+  chat,
   appEvents = appEventsStub(),
   inRouterShell = false,
 }: {
   notebooks?: Record<string, unknown>;
   documents: Record<string, unknown>;
   transfer?: Record<string, unknown>;
+  chat?: Record<string, unknown>;
   appEvents?: ReturnType<typeof appEventsStub>;
   inRouterShell?: boolean;
 }) {
@@ -98,7 +104,7 @@ export function pageProviders({
     provideAppIcons(),
     { provide: NotebooksService, useValue: notebooks },
     { provide: DocumentsService, useValue: documents },
-    chatServiceStub(),
+    chatServiceStub(chat),
     { provide: DocumentTransferService, useValue: transfer },
     appEvents.provider,
   ];

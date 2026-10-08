@@ -164,6 +164,12 @@ interface ChatState {
   pendingQuestion: PendingQuestion | null;
   /** Failed questions not yet back in their Thread's box, by Thread id. */
   failedQuestions: Record<string, FailedQuestion>;
+  /**
+   * The answer of the Exchange a search result opened the Thread at
+   * (NBK-97), so the view starts there with it marked; null for a Thread
+   * opened any other way, and cleared the moment another is.
+   */
+  foundAnswerId: string | null;
   error: string | null;
 }
 
@@ -178,6 +184,7 @@ const initialState: ChatState = {
   streamingAnswer: null,
   pendingQuestion: null,
   failedQuestions: {},
+  foundAnswerId: null,
   error: null,
 };
 
@@ -273,10 +280,18 @@ export const ChatStore = signalStore(
       }
     }
 
-    /** Opens a Chat Thread and loads its messages. */
-    async function openThread(notebookId: string, threadId: string): Promise<void> {
+    /**
+     * Opens a Chat Thread and loads its messages — at the Exchange whose
+     * answer is named, when a search result opened it (NBK-97).
+     */
+    async function openThread(
+      notebookId: string,
+      threadId: string,
+      foundAnswerId: string | null = null,
+    ): Promise<void> {
       patchState(store, {
         activeThreadId: threadId,
+        foundAnswerId,
         // The previous Thread's messages belong to a different Chat Thread,
         // and so does anything that was streaming into it.
         messages: [],
@@ -328,6 +343,7 @@ export const ChatStore = signalStore(
     function closeThread(): void {
       patchState(store, {
         activeThreadId: null,
+        foundAnswerId: null,
         messages: [],
         messagesLoading: false,
         streamingAnswer: null,
@@ -347,21 +363,35 @@ export const ChatStore = signalStore(
        * knows the load has just finished. By `createdAt`, not list position:
        * the backend lists newest first today, but that ordering is its
        * choice, and the rule is "most recent".
+       *
+       * A search result names an Exchange too (NBK-97): the user picked
+       * that result, so its Thread opens at it even over one already open —
+       * or, gone since, the newest does.
        */
       async loadThreads(
         notebookId: string,
         preferredThreadId: string | null = null,
+        foundAnswerId: string | null = null,
       ): Promise<void> {
         patchState(store, { threadsLoading: true, error: null });
         try {
           const threads = (await chatService.listChatThreads({ notebookId })) as ChatThread[];
           patchState(store, { threads, threadsLoading: false });
-          if (store.activeThreadId() === null && threads.length > 0) {
-            // A Thread the caller names — the one a Citation link was cited
-            // in (spec 08) — wins over the newest, if it is in this Notebook;
-            // one that is not (deleted, another Notebook's) is ignored.
-            const preferred = threads.find((t) => t.id === preferredThreadId);
-            const newest = threads.reduce((a, b) => (b.createdAt > a.createdAt ? b : a));
+          if (threads.length === 0) return;
+          // A Thread the caller names — the one a Citation link was cited
+          // in (spec 08), or a search result's — wins over the newest, if it
+          // is in this Notebook; one that is not (deleted, another
+          // Notebook's) is ignored.
+          const preferred = threads.find((t) => t.id === preferredThreadId);
+          const newest = threads.reduce((a, b) => (b.createdAt > a.createdAt ? b : a));
+          if (preferredThreadId !== null && foundAnswerId !== null) {
+            // Following a search result replaces whatever Thread was open.
+            await openThread(
+              notebookId,
+              (preferred ?? newest).id,
+              preferred ? foundAnswerId : null,
+            );
+          } else if (store.activeThreadId() === null) {
             await openThread(notebookId, (preferred ?? newest).id);
           }
         } catch (err) {
@@ -385,6 +415,7 @@ export const ChatStore = signalStore(
           patchState(store, {
             threads: [thread, ...store.threads()],
             activeThreadId: thread.id,
+            foundAnswerId: null,
             messages: [],
             streamingAnswer: null,
           });

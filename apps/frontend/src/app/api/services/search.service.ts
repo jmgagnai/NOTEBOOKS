@@ -10,6 +10,8 @@ import { ApiConfiguration } from '../api-configuration';
 import { StrictHttpResponse } from '../strict-http-response';
 
 import { DocumentFailure } from '../models/document-failure';
+import { searchChatThreads } from '../fn/search/search-chat-threads';
+import { SearchChatThreads$Params } from '../fn/search/search-chat-threads';
 import { searchNotebook } from '../fn/search/search-notebook';
 import { SearchNotebook$Params } from '../fn/search/search-notebook';
 
@@ -253,6 +255,175 @@ export class SearchService extends BaseService {
  * Cosine similarity of this Document's best-matching Chunk to the query, 1 being identical. Results are ordered by it, best first.
  */
 'score': number;
+}> => r.body);
+  }
+
+  /** Path part for operation `searchChatThreads()` */
+  static readonly SearchChatThreadsPath = '/notebooks/{notebookId}/search/threads';
+
+  /**
+   * Search a Notebook's Chat Threads by keyword. Returns each matching Exchange — a question and the answer it produced — with its matches marked; up to 20, best first.
+   *
+   * Full-text search over questions and answers (no embedding, so it needs no OpenRouter key). Deleted Chat Threads are left out. Per ADR-0001 there is no ownership check.
+   *
+   * This method provides access to the full `HttpResponse`, allowing access to response headers.
+   * To access only the response body, use `searchChatThreads()` instead.
+   *
+   * This method doesn't expect any request body.
+   */
+  searchChatThreads$Response(params: SearchChatThreads$Params, context?: HttpContext): Promise<StrictHttpResponse<Array<{
+'threadId': string;
+'threadTitle': string;
+'askedBy': {
+'id': string;
+'email': string;
+};
+
+/**
+ * When the question was asked.
+ */
+'askedAt': string;
+'questionId': string;
+
+/**
+ * Where a result opens the Chat Thread.
+ */
+'answerId': string;
+
+/**
+ * The question, whole, its matches flagged.
+ */
+'question': Array<{
+'text': string;
+'match': boolean;
+}>;
+
+/**
+ * Up to two excerpts of the answer around its matches, flagged.
+ */
+'answer': Array<{
+'text': string;
+'match': boolean;
+}>;
+}>>> {
+    const obs = searchChatThreads(this.http, this.rootUrl, params, context);
+    return firstValueFrom(obs);
+  }
+
+  /**
+   * Search a Notebook's Chat Threads by keyword. Returns each matching Exchange — a question and the answer it produced — with its matches marked; up to 20, best first.
+   *
+   * Full-text search over questions and answers (no embedding, so it needs no OpenRouter key). Deleted Chat Threads are left out. Per ADR-0001 there is no ownership check.
+   *
+   * This method provides access only to the response body.
+   * To access the full response (for headers, for example), `searchChatThreads$Response()` instead.
+   *
+   * This method doesn't expect any request body.
+   */
+  searchChatThreads(params: SearchChatThreads$Params, context?: HttpContext): Promise<Array<{
+'threadId': string;
+'threadTitle': string;
+'askedBy': {
+'id': string;
+'email': string;
+};
+
+/**
+ * When the question was asked.
+ */
+'askedAt': string;
+'questionId': string;
+
+/**
+ * Where a result opens the Chat Thread.
+ */
+'answerId': string;
+
+/**
+ * The question, whole, its matches flagged.
+ */
+'question': Array<{
+'text': string;
+'match': boolean;
+}>;
+
+/**
+ * Up to two excerpts of the answer around its matches, flagged.
+ */
+'answer': Array<{
+'text': string;
+'match': boolean;
+}>;
+}>> {
+    const resp = this.searchChatThreads$Response(params, context);
+    return resp.then((r: StrictHttpResponse<Array<{
+'threadId': string;
+'threadTitle': string;
+'askedBy': {
+'id': string;
+'email': string;
+};
+
+/**
+ * When the question was asked.
+ */
+'askedAt': string;
+'questionId': string;
+
+/**
+ * Where a result opens the Chat Thread.
+ */
+'answerId': string;
+
+/**
+ * The question, whole, its matches flagged.
+ */
+'question': Array<{
+'text': string;
+'match': boolean;
+}>;
+
+/**
+ * Up to two excerpts of the answer around its matches, flagged.
+ */
+'answer': Array<{
+'text': string;
+'match': boolean;
+}>;
+}>>): Array<{
+'threadId': string;
+'threadTitle': string;
+'askedBy': {
+'id': string;
+'email': string;
+};
+
+/**
+ * When the question was asked.
+ */
+'askedAt': string;
+'questionId': string;
+
+/**
+ * Where a result opens the Chat Thread.
+ */
+'answerId': string;
+
+/**
+ * The question, whole, its matches flagged.
+ */
+'question': Array<{
+'text': string;
+'match': boolean;
+}>;
+
+/**
+ * Up to two excerpts of the answer around its matches, flagged.
+ */
+'answer': Array<{
+'text': string;
+'match': boolean;
+}>;
 }> => r.body);
   }
 

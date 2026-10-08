@@ -148,6 +148,28 @@ describe('DocumentDetailPage — chat beside the Document', () => {
       expect(within(chatPane()).queryByText('Newer questions')).toBeNull();
     });
 
+    // NBK-97: as the Notebook page does for a Chat Thread search result.
+    it('opens the named Chat Thread at the Exchange the link names, marked', async () => {
+      await renderPage(documents(), activatedRoute({ thread: 'thread-old', message: 'a1' }), {
+        ...twoThreads(),
+        listChatMessages: vi.fn().mockResolvedValue([
+          message({ id: 'q1', threadId: 'thread-old', content: 'What was revenue in Q2?' }),
+          message({
+            id: 'a1',
+            threadId: 'thread-old',
+            role: 'assistant',
+            content: 'Revenue in Q2 was 11.9M.',
+          }),
+        ]) as never,
+      });
+
+      const marked = await within(chatPane()).findAllByTestId('found-exchange');
+      expect(marked.map((row) => row.textContent)).toEqual([
+        expect.stringContaining('What was revenue in Q2?'),
+        expect.stringContaining('Revenue in Q2 was 11.9M.'),
+      ]);
+    });
+
     it('falls back to the newest Chat Thread when the named one is not in this Notebook', async () => {
       await renderPage(documents(), activatedRoute({ thread: 'thread-gone' }), twoThreads());
 

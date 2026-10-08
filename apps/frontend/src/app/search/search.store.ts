@@ -30,17 +30,50 @@ export interface SearchResult extends Document {
   match: ChunkPin;
 }
 
+/** A run of a message's text, bold when it is one of the query's words. */
+export interface TextSegment {
+  text: string;
+  match: boolean;
+}
+
+/**
+ * One Exchange of a Chat Thread whose question or answer matches the query
+ * by keyword (NBK-97). The question comes whole and the answer as excerpts,
+ * both split into segments so the matched words are bold without the page
+ * ever rendering markup.
+ */
+export interface ExchangeResult {
+  threadId: string;
+  threadTitle: string;
+  askedBy: { id: string; email: string };
+  askedAt: string;
+  questionId: string;
+  /** The answer's message id: where the Chat Thread opens. */
+  answerId: string;
+  question: TextSegment[];
+  answer: TextSegment[];
+}
+
 interface SearchState {
   /** The Notebook the results belong to; null before any search. */
   notebookId: string | null;
   /** The query the currently-displayed results answer. '' before any search. */
   query: string;
+  /** The matching Documents. */
   results: SearchResult[];
+  /** The matching Exchanges of the Notebook's Chat Threads (NBK-97). */
+  exchanges: ExchangeResult[];
   searching: boolean;
+  /** Why the Documents search failed, if it did. */
   error: string | null;
   /**
+   * Why the Chat Threads search failed, if it did — apart from `error`, so
+   * one search failing never hides the other's results (NBK-97).
+   */
+  exchangesError: string | null;
+  /**
    * Whether a search has completed. Distinguishes "no matches" from "nothing
-   * asked yet" — both have an empty `results`, and they need different
+   * asked yet" — both have empty results, and they need different
    * wording on screen.
    */
   searched: boolean;
@@ -50,8 +83,10 @@ const initialState: SearchState = {
   notebookId: null,
   query: '',
   results: [],
+  exchanges: [],
   searching: false,
   error: null,
+  exchangesError: null,
   searched: false,
 };
 
@@ -80,23 +115,34 @@ export const SearchStore = signalStore(
           return;
         }
 
-        patchState(store, { notebookId, query: trimmed, searching: true, error: null });
-        try {
-          const results = (await searchService.searchNotebook({
-            notebookId,
-            q: trimmed,
-          })) as SearchResult[];
-          if (request !== latest) return;
-          patchState(store, { results, searching: false, searched: true });
-        } catch (err) {
-          if (request !== latest) return;
-          patchState(store, {
-            searching: false,
-            searched: true,
-            results: [],
-            error: errorMessage(err, 'Search failed.'),
-          });
-        }
+        patchState(store, {
+          notebookId,
+          query: trimmed,
+          searching: true,
+          error: null,
+          exchangesError: null,
+        });
+        // Both at once, each failing on its own: the Documents by meaning,
+        // the Chat Threads by keyword (NBK-97).
+        const [documents, exchanges] = await Promise.all([
+          settle(
+            searchService.searchNotebook({ notebookId, q: trimmed }) as Promise<SearchResult[]>,
+          ),
+          settle(
+            searchService.searchChatThreads({ notebookId, q: trimmed }) as Promise<
+              ExchangeResult[]
+            >,
+          ),
+        ]);
+        if (request !== latest) return;
+        patchState(store, {
+          searching: false,
+          searched: true,
+          results: documents.value ?? [],
+          error: documents.error,
+          exchanges: exchanges.value ?? [],
+          exchangesError: exchanges.error,
+        });
       },
 
       /**
@@ -110,7 +156,8 @@ export const SearchStore = signalStore(
           store.query() === query.trim() &&
           store.searched() &&
           !store.searching() &&
-          store.error() === null
+          store.error() === null &&
+          store.exchangesError() === null
         );
       },
 
@@ -122,3 +169,12 @@ export const SearchStore = signalStore(
     };
   }),
 );
+
+/** A search's answer, or why it failed — so one failing never sinks the other. */
+async function settle<T>(answer: Promise<T>): Promise<{ value: T | null; error: string | null }> {
+  try {
+    return { value: await answer, error: null };
+  } catch (err) {
+    return { value: null, error: errorMessage(err, 'Search failed.') };
+  }
+}

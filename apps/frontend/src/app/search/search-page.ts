@@ -1,3 +1,4 @@
+import { DatePipe } from '@angular/common';
 import { Component, computed, effect, inject, OnDestroy, signal, untracked } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, PRIMARY_OUTLET, Router, RouterLink } from '@angular/router';
@@ -8,6 +9,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { documentKind } from '../documents/document-list';
 import { chunkLinkParams } from '../documents/chunk-link';
 import { NotebooksStore } from '../notebooks/notebooks.store';
+import { MarkedText } from './marked-text';
 import { SearchStore } from './search.store';
 import { showPageTitle } from '../shared/page-title';
 
@@ -26,7 +28,15 @@ import { showPageTitle } from '../shared/page-title';
 @Component({
   selector: 'app-search-page',
   standalone: true,
-  imports: [MatButtonModule, MatIconModule, MatProgressSpinnerModule, MatTooltipModule, RouterLink],
+  imports: [
+    DatePipe,
+    MarkedText,
+    MatButtonModule,
+    MatIconModule,
+    MatProgressSpinnerModule,
+    MatTooltipModule,
+    RouterLink,
+  ],
   templateUrl: './search-page.html',
   styleUrl: './search-page.scss',
 })
@@ -107,6 +117,15 @@ export class SearchPage implements OnDestroy {
     }
     void this.router.navigate([], { relativeTo: this.route, queryParams: { q: q || null } });
   }
+
+  /** A search that found nothing in either the Documents or the Chat Threads. */
+  protected readonly nothingMatches = computed(
+    () =>
+      !this.store.results().length &&
+      !this.store.exchanges().length &&
+      !this.store.error() &&
+      !this.store.exchangesError(),
+  );
 
   protected readonly kind = documentKind;
 

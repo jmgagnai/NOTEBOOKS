@@ -137,6 +137,17 @@ $column-width: 760px;
     min-width: 0;
   }
 
+  // The Exchange a search result opened the Thread at (NBK-97), in the
+  // cited Chunk's tint (markdown-view.scss), so both read as "this one".
+  // The question lands at the top, a little below the edge.
+  &__message--found {
+    background: var(--mat-sys-primary-container);
+    border-left: 3px solid var(--mat-sys-primary);
+    padding: 0.25rem 0.75rem;
+    border-radius: var(--mat-sys-corner-extra-small);
+    scroll-margin-top: 1rem;
+  }
+
   // A question sent but not yet recorded (NBK-70): the same bubble and
   // avatar, so it reads as the user's own, with its text in the secondary
   // colour so it reads as not there yet. Muted by token rather than by

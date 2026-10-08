@@ -42,7 +42,11 @@ function result(overrides: Partial<Record<string, unknown>> = {}) {
  */
 async function renderSearch(
   searchNotebook: ReturnType<typeof vi.fn>,
-  { url = SEARCH_URL, notebooks = [] as unknown[] } = {},
+  {
+    url = SEARCH_URL,
+    notebooks = [] as unknown[],
+    searchChatThreads = vi.fn().mockResolvedValue([]),
+  } = {},
 ) {
   const rendered = await render(RouterShell, {
     routes: [
@@ -56,7 +60,7 @@ async function renderSearch(
         provide: NotebooksService,
         useValue: { listNotebooks: vi.fn().mockResolvedValue(notebooks) },
       },
-      { provide: SearchService, useValue: { searchNotebook } },
+      { provide: SearchService, useValue: { searchNotebook, searchChatThreads } },
     ],
   });
   await rendered.navigate(url);
@@ -93,7 +97,7 @@ describe('SearchPage', () => {
       await renderSearch(searchNotebook);
 
       const input = await box();
-      expect(input.getAttribute('placeholder')).toBe("Search this Notebook's Documents");
+      expect(input.getAttribute('placeholder')).toBe('Search this Notebook');
       expect(screen.queryByRole('button', { name: 'Search' })).toBeNull();
       fireEvent.input(input, { target: { value: 'mars' } });
       expect(searchNotebook).not.toHaveBeenCalled();
@@ -221,7 +225,7 @@ describe('SearchPage', () => {
       await searchFor('nothing like this');
 
       expect(
-        await screen.findByText('No Documents in this Notebook match "nothing like this".'),
+        await screen.findByText('Nothing in this Notebook matches "nothing like this".'),
       ).toBeTruthy();
     });
 
@@ -308,6 +312,124 @@ describe('SearchPage', () => {
 
       await screen.findByRole('link', { name: /The Red Planet/ });
       expect(searchNotebook).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  // NBK-97: the Notebook's Chat Threads are searched too, by keyword; each
+  // matching Exchange is a result, after the Documents.
+  describe('Chat Threads', () => {
+    /** One Exchange result as the generated client returns it. */
+    function exchange(overrides: Partial<Record<string, unknown>> = {}) {
+      return {
+        threadId: 'thread-1',
+        threadTitle: 'Who is who',
+        askedBy: { id: 'user-ada', email: 'ada@example.com' },
+        askedAt: '2026-10-08T10:00:00.000Z',
+        questionId: 'q-1',
+        answerId: 'a-1',
+        question: [{ text: 'Who helps Hortense?', match: false }],
+        answer: [
+          { text: 'Prince Rénine helps her escape ', match: false },
+          { text: 'Rossigny', match: true },
+          { text: ', her suitor.', match: false },
+        ],
+        ...overrides,
+      };
+    }
+
+    it('searches the Chat Threads alongside the Documents, Documents first', async () => {
+      const searchChatThreads = vi.fn().mockResolvedValue([exchange()]);
+      await renderSearch(vi.fn().mockResolvedValue([result()]), { searchChatThreads });
+
+      await searchFor('rossigny');
+
+      const documents = await screen.findByRole('region', { name: 'Documents' });
+      const threads = await screen.findByRole('region', { name: 'Chat Threads' });
+      expect(
+        documents.compareDocumentPosition(threads) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      expect(searchChatThreads).toHaveBeenCalledWith({ notebookId: NOTEBOOK_ID, q: 'rossigny' });
+    });
+
+    it('shows a section only when it has matches', async () => {
+      await renderSearch(vi.fn().mockResolvedValue([]), {
+        searchChatThreads: vi.fn().mockResolvedValue([exchange()]),
+      });
+
+      await searchFor('rossigny');
+
+      await screen.findByRole('region', { name: 'Chat Threads' });
+      expect(screen.queryByRole('region', { name: 'Documents' })).toBeNull();
+      expect(screen.queryByText(/Nothing in this Notebook matches/)).toBeNull();
+    });
+
+    it("shows an Exchange: the Chat Thread's title, who asked and when, the question and the answer", async () => {
+      await renderSearch(vi.fn().mockResolvedValue([]), {
+        searchChatThreads: vi.fn().mockResolvedValue([exchange()]),
+      });
+      await searchFor('rossigny');
+
+      const row = await screen.findByRole('link', { name: /Who is who/ });
+      expect(within(row).getByText(/ada@example\.com · Oct 8/)).toBeTruthy();
+      expect(within(row).getByText('Who helps Hortense?')).toBeTruthy();
+      // The matched word in bold, the rest as text.
+      expect(within(row).getByText('Rossigny').tagName).toBe('STRONG');
+      expect(row.textContent).toContain('Prince Rénine helps her escape Rossigny, her suitor.');
+    });
+
+    it('opens the Chat Thread at that Exchange', async () => {
+      await renderSearch(vi.fn().mockResolvedValue([]), {
+        searchChatThreads: vi.fn().mockResolvedValue([exchange()]),
+      });
+      await searchFor('rossigny');
+
+      const row = await screen.findByRole('link', { name: /Who is who/ });
+      const href = new URL(row.getAttribute('href')!, 'http://app');
+      expect(href.pathname).toBe(`/notebooks/${NOTEBOOK_ID}`);
+      expect(Object.fromEntries(href.searchParams)).toEqual({ thread: 'thread-1', message: 'a-1' });
+    });
+
+    it('renders message text as text, never as markup', async () => {
+      await renderSearch(vi.fn().mockResolvedValue([]), {
+        searchChatThreads: vi.fn().mockResolvedValue([
+          exchange({
+            question: [{ text: '<img src=x onerror=alert(1)> Étretat?', match: false }],
+          }),
+        ]),
+      });
+      await searchFor('étretat');
+
+      const row = await screen.findByRole('link', { name: /Who is who/ });
+      expect(within(row).getByText('<img src=x onerror=alert(1)> Étretat?')).toBeTruthy();
+      expect(row.querySelector('img')).toBeNull();
+    });
+
+    it("keeps the other section's results when one search fails", async () => {
+      await renderSearch(
+        vi.fn().mockRejectedValue({
+          status: 503,
+          error: { message: 'Search is unavailable: no embedding model is configured.' },
+        }),
+        { searchChatThreads: vi.fn().mockResolvedValue([exchange()]) },
+      );
+      await searchFor('rossigny');
+
+      const documents = await screen.findByRole('region', { name: 'Documents' });
+      expect(
+        within(documents).getByText('Search is unavailable: no embedding model is configured.'),
+      ).toBeTruthy();
+      expect(
+        within(screen.getByRole('region', { name: 'Chat Threads' })).getByRole('link', {
+          name: /Who is who/,
+        }),
+      ).toBeTruthy();
+    });
+
+    it('says nothing matches when neither does', async () => {
+      await renderSearch(vi.fn().mockResolvedValue([]));
+      await searchFor('zzz');
+
+      expect(await screen.findByText('Nothing in this Notebook matches "zzz".')).toBeTruthy();
     });
   });
 });

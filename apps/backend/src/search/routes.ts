@@ -5,11 +5,14 @@ import { createAuthGuard } from '../auth/guard.js';
 import { errorResponseSchema } from '../auth/schema.js';
 import { notebookExists } from '../notebooks/repository.js';
 import type { Embedder } from '../llm/embeddings.js';
+import { EXCHANGE_RESULT_LIMIT, searchExchanges } from './exchanges.js';
 import { searchNotebook } from './repository.js';
 import {
   searchNotebookParamsSchema,
   searchNotebookQuerySchema,
   searchNotebookResponseSchema,
+  searchThreadsQuerySchema,
+  searchThreadsResponseSchema,
 } from './schema.js';
 
 export interface RegisterSearchRoutesOptions {
@@ -88,6 +91,36 @@ export function registerSearchRoutes(
             request.query.limit,
           ),
         );
+    },
+  );
+
+  app.withTypeProvider<ZodTypeProvider>().get(
+    '/notebooks/:notebookId/search/threads',
+    {
+      preHandler: authGuard,
+      schema: {
+        operationId: 'searchChatThreads',
+        tags: ['search'],
+        summary: `Search a Notebook's Chat Threads by keyword. Returns each matching Exchange — a question and the answer it produced — with its matches marked; up to ${EXCHANGE_RESULT_LIMIT}, best first.`,
+        description:
+          'Full-text search over questions and answers (no embedding, so it needs no OpenRouter ' +
+          'key). Deleted Chat Threads are left out. Per ADR-0001 there is no ownership check.',
+        params: searchNotebookParamsSchema,
+        querystring: searchThreadsQuerySchema,
+        response: {
+          200: searchThreadsResponseSchema,
+          404: errorResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      if (!(await notebookExists(pool, request.params.notebookId))) {
+        await reply.status(404).send({ message: 'Notebook not found.' });
+        return;
+      }
+      await reply
+        .status(200)
+        .send(await searchExchanges(pool, request.params.notebookId, request.query.q));
     },
   );
 }

@@ -122,6 +122,33 @@ export function rowOf(text: string): HTMLElement {
 export const listOf = (text: string) => screen.getByText(text).closest('ol')!;
 
 /**
+ * Stands in for `scrollTo` and `scrollIntoView`, which jsdom leaves
+ * unimplemented, on the prototype (NBK-53); `mock.contexts` then says which
+ * element each call was on. Call in `beforeEach`, `restore` in `afterEach`.
+ */
+export function stubScrolling() {
+  const originals = {
+    scrollTo: HTMLElement.prototype.scrollTo,
+    scrollIntoView: HTMLElement.prototype.scrollIntoView,
+  };
+  const scrollTo = vi.fn();
+  const scrollIntoView = vi.fn();
+  HTMLElement.prototype.scrollTo = scrollTo as never;
+  HTMLElement.prototype.scrollIntoView = scrollIntoView as never;
+  return {
+    scrollTo,
+    scrollIntoView,
+    restore() {
+      HTMLElement.prototype.scrollTo = originals.scrollTo;
+      HTMLElement.prototype.scrollIntoView = originals.scrollIntoView;
+    },
+  };
+}
+
+/** Every element a scroll call was made on, in call order. */
+export const scrolled = (spy: ReturnType<typeof vi.fn>) => spy.mock.contexts as HTMLElement[];
+
+/**
  * A `sendChatMessage` whose ask stays in flight until `settle` is called
  * with the recorded exchange (or `fail` with an error), so a test can look
  * at the panel mid-answer.

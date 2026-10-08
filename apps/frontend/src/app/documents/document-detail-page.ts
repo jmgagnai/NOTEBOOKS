@@ -274,7 +274,12 @@ export class DocumentDetailPage implements OnInit, OnDestroy {
     // stream their answers arrive on, as the Notebook page loads them. A
     // Thread already open (carried from another page of the Notebook) stays;
     // otherwise the one the Citation link names, else the newest (NBK-43).
-    void this.chatStore.loadThreads(this.notebookId, this.query().get('thread'));
+    // A link naming an Exchange too (NBK-97) opens its Thread at it.
+    void this.chatStore.loadThreads(
+      this.notebookId,
+      this.query().get('thread'),
+      this.query().get('message'),
+    );
     this.chatStore.watchNotebook(this.notebookId);
     // The Version on screen follows Ingestion while the page is open
     // (NBK-93), from the same Notebook stream the Notebook page follows;
