@@ -13,8 +13,7 @@ export const NOTEBOOK_PAGE_PATH = 'notebooks/:notebookId';
 
 /**
  * The Document page's route path, exported because the sidebar starts as the
- * rail there (spec 08): that page splits its width between the chat pane and
- * the Document.
+ * rail there (spec 08), giving the reading column the width.
  */
 export const DOCUMENT_PAGE_PATH = 'notebooks/:notebookId/documents/:documentId';
 

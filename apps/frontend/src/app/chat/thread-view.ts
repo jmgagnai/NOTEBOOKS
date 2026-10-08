@@ -86,19 +86,6 @@ interface AnswerBlock {
 export class ThreadView {
   readonly notebookId = input.required<string>();
 
-  /**
-   * The Thread view as the Document page's chat pane (spec 08): with no
-   * Thread open it is the question box alone — no Notebook landing, whose
-   * folder and title would compete with the Document's own headline in a
-   * third of the page — and its back arrow closes the Thread rather than
-   * returning to a landing.
-   */
-  readonly compact = input(false);
-
-  protected readonly backLabel = computed(() =>
-    this.compact() ? 'Close Chat Thread' : 'Back to Notebook',
-  );
-
   protected readonly store = inject(ChatStore);
 
   private readonly notebooks = inject(NotebooksStore);

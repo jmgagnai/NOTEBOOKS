@@ -1,43 +1,38 @@
 <div class="document-detail-page">
-  <!--
-    The chat pane (spec 08): the Notebook page's own Thread view, beside the
-    Document, so a reader can ask about what they are reading without
-    leaving it. Questions are asked against the whole Notebook.
-  -->
-  @if (chatShown()) {
-    <section class="document-detail-page__chat" aria-label="Chat">
-      <app-thread-view [notebookId]="notebookId" [compact]="true" />
-    </section>
-  }
-
   <div class="document-detail-page__document">
     <!--
-    The Document pane's header row (spec 08, after Copilot's page view): the
-    file it holds, kept in sight once the headline has scrolled away, and ✕
-    back to the Notebook in place of the old "← Back to the Notebook" link.
+    The header row (spec 08, after Copilot's page view): the file it holds,
+    kept in sight once the headline has scrolled away, and a back arrow to
+    where the reader came from (NBK-103) — the search results a result was
+    opened from, through history so they are shown as left; else the
+    Notebook page, where the Chat Thread they were in is still open.
   -->
     <div class="document-detail-page__header" data-testid="document-pane-header">
-      <button
-        mat-icon-button
-        type="button"
-        [attr.aria-label]="chatToggleLabel()"
-        [matTooltip]="chatToggleLabel()"
-        (click)="toggleChat()"
-      >
-        <mat-icon [svgIcon]="chatShown() ? 'panel-left-contract' : 'panel-left-expand'" />
-      </button>
+      @if (openedFromSearch) {
+        <button
+          mat-icon-button
+          type="button"
+          class="document-detail-page__back"
+          aria-label="Back to search"
+          matTooltip="Back to search"
+          (click)="backToSearch()"
+        >
+          <mat-icon svgIcon="arrow-left" />
+        </button>
+      } @else {
+        <a
+          mat-icon-button
+          class="document-detail-page__back"
+          [routerLink]="['/notebooks', notebookId]"
+          aria-label="Back to the Notebook"
+          matTooltip="Back to the Notebook"
+        >
+          <mat-icon svgIcon="arrow-left" />
+        </a>
+      }
       <span class="document-detail-page__header-filename">{{
         store.openDocument()?.filename
       }}</span>
-      <a
-        mat-icon-button
-        class="document-detail-page__close"
-        [routerLink]="['/notebooks', notebookId]"
-        aria-label="Back to the Notebook"
-        matTooltip="Back to the Notebook"
-      >
-        <mat-icon svgIcon="dismiss" />
-      </a>
     </div>
 
     <article class="document-detail-page__article">

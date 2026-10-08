@@ -10,21 +10,19 @@ import {
 } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { filter } from 'rxjs';
+import { Location } from '@angular/common';
 import { ActivatedRoute, NavigationSkipped, Router, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { DocumentsStore } from './documents.store';
-import { ChatStore } from '../chat/chat.store';
 import { injectLeaveChat } from '../chat/leave-chat';
-import { ThreadView } from '../chat/thread-view';
 import { StatusBadge } from '../shared/status-badge';
 import { MarkdownView } from './markdown-view';
 import { showPageTitle } from '../shared/page-title';
 import { failureSentence } from './failure-reason';
 import { withoutExecutiveSummaryTitle } from './executive-summary-title';
-import { isNarrowWindow } from '../shared/narrow-window';
 
 /**
  * One Document, opened (NBK-7).
@@ -73,7 +71,6 @@ import { isNarrowWindow } from '../shared/narrow-window';
     MarkdownView,
     RouterLink,
     StatusBadge,
-    ThreadView,
   ],
   templateUrl: './document-detail-page.html',
   styleUrl: './document-detail-page.scss',
@@ -83,31 +80,32 @@ export class DocumentDetailPage implements OnInit, OnDestroy {
 
   protected readonly store = inject(DocumentsStore);
 
-  private readonly chatStore = inject(ChatStore);
-
-  /**
-   * Whether the chat pane is showing (spec 08). Component state, like the
-   * Documents pane's hidden state: a reload shows it again — unless the
-   * window is narrow, where the page is for reading first and the pane is a
-   * click away. Hiding drops the pane's view only; the open Chat Thread is
-   * the Chat store's, so it is still open when the pane comes back.
-   */
-  protected readonly chatShown = signal(!isNarrowWindow());
-
-  protected readonly chatToggleLabel = computed(() =>
-    this.chatShown() ? 'Hide chat' : 'Show chat',
-  );
+  private readonly location = inject(Location);
 
   protected readonly notebookId = this.route.snapshot.paramMap.get('notebookId')!;
 
+  /**
+   * The page shows no Chat Thread (NBK-103), but the open one is still the
+   * Notebook's: kept for the way back to the Notebook page, dropped on
+   * leaving the Notebook. See `injectLeaveChat`.
+   */
   private readonly leaveChat = injectLeaveChat(this.notebookId);
 
   /**
-   * The route as signals, not a snapshot: a Citation followed from the chat
-   * pane (spec 08) navigates to this same route, and the router answers by
-   * reusing this page rather than creating another — so the Document, the
-   * pinned Version and the cited range can all change under it. The
-   * Notebook cannot: every Citation in the pane is to this Notebook.
+   * Whether a search result opened this page (NBK-103), read while the
+   * router is still activating it — the only moment the navigation's state
+   * is at hand. Its back arrow then returns to those results; any other
+   * arrival, a pasted link included, goes back to the Notebook.
+   */
+  protected readonly openedFromSearch =
+    inject(Router).currentNavigation()?.extras.state?.['openedFromSearch'] === true;
+
+  /**
+   * The route as signals, not a snapshot: a link to this same route — a
+   * Citation's, or one browser history returns to — is answered by the
+   * router reusing this page rather than creating another, so the Document,
+   * the pinned Version and the cited range can all change under it. The
+   * Notebook cannot: the page's links never leave it.
    */
   private readonly params = toSignal(this.route.paramMap, {
     initialValue: this.route.snapshot.paramMap,
@@ -145,8 +143,7 @@ export class DocumentDetailPage implements OnInit, OnDestroy {
   protected readonly expanded = signal(false);
 
   /**
-   * Follows the route: on arrival, and on every Citation followed from the
-   * chat pane after it. Keyed on the Document and the whole query — Version,
+   * Follows the route: on arrival, and on every link to it after that. Keyed on the Document and the whole query — Version,
    * Chunk, range — so any other Citation is followed even when it shares the
    * Version or the start of its range.
    */
@@ -270,17 +267,6 @@ export class DocumentDetailPage implements OnInit, OnDestroy {
   });
 
   ngOnInit(): void {
-    // The chat pane (spec 08): the Notebook's Chat Threads and the live
-    // stream their answers arrive on, as the Notebook page loads them. A
-    // Thread already open (carried from another page of the Notebook) stays;
-    // otherwise the one the Citation link names, else the newest (NBK-43).
-    // A link naming an Exchange too (NBK-97) opens its Thread at it.
-    void this.chatStore.loadThreads(
-      this.notebookId,
-      this.query().get('thread'),
-      this.query().get('message'),
-    );
-    this.chatStore.watchNotebook(this.notebookId);
     // The Version on screen follows Ingestion while the page is open
     // (NBK-93), from the same Notebook stream the Notebook page follows;
     // the router has destroyed that page, and closed its watch, by now.
@@ -338,8 +324,9 @@ export class DocumentDetailPage implements OnInit, OnDestroy {
     this.leaveChat();
   }
 
-  protected toggleChat(): void {
-    this.chatShown.update((shown) => !shown);
+  /** Back to the search results, through history, so they are shown as they were left. */
+  protected backToSearch(): void {
+    this.location.back();
   }
 
   protected toggleFullContent(): void {

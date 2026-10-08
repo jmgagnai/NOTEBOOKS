@@ -33,6 +33,8 @@ describe('Chat panel (ThreadNavigator + ThreadView) — messages and Citations',
   // responsible for is the *link*: it has to carry the pinned Version and
   // chunk, not the Document alone, or following it lands on whatever is
   // latest — the exact failure GLOSSARY.md's Citation definition rules out.
+  // And nothing else: the Document page has no chat pane to name a Chat
+  // Thread for (NBK-103), so the link carries none.
   describe('Citations', () => {
     it("links each of an answer's Citations to the exact Document Version and chunk it cites", async () => {
       await openRevenueQuestions([
@@ -70,14 +72,11 @@ describe('Chat panel (ThreadNavigator + ThreadView) — messages and Citations',
         // The pinned Version, the pinned chunk, and the chunk's character
         // range — everything "open that exact Version at that location"
         // needs, and nothing that would be re-resolved to the latest Version
-        // — plus the Chat Thread it was cited in (spec 08), so the Document
-        // page opens beside it.
         params: {
           version: VERSION_ID,
           chunk: CHUNK_ID,
           from: '120',
           to: '167',
-          thread: 'thread-1',
         },
       });
       expect(target(second)).toEqual({
@@ -87,7 +86,6 @@ describe('Chat panel (ThreadNavigator + ThreadView) — messages and Citations',
           chunk: '66666666-6666-6666-6666-666666666666',
           from: '0',
           to: '24',
-          thread: 'thread-1',
         },
       });
     });
@@ -114,7 +112,6 @@ describe('Chat panel (ThreadNavigator + ThreadView) — messages and Citations',
           chunk: CHUNK_ID,
           from: '120',
           to: '167',
-          thread: 'thread-1',
         },
       });
 
@@ -373,7 +370,6 @@ describe('Chat panel (ThreadNavigator + ThreadView) — messages and Citations',
           chunk: CHUNK_ID,
           from: '120',
           to: '167',
-          thread: 'thread-1',
         },
       });
     });
@@ -397,7 +393,6 @@ describe('Chat panel (ThreadNavigator + ThreadView) — messages and Citations',
         chunk: CHUNK_ID,
         from: '120',
         to: '167',
-        thread: 'thread-1',
       });
     });
 

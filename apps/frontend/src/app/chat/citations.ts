@@ -93,16 +93,9 @@ export function citationLink(notebookId: string, citation: Citation): (string | 
 
 /**
  * The query a Citation's link carries: the pinned Version, Chunk and range
- * (see `citationLink`), and the Chat Thread the answer citing it is in, so
- * the Document page opens with that Thread beside the Document (spec 08) —
- * also from a pasted link, where nothing else could say which Thread.
+ * (see `citationLink`). No Chat Thread since NBK-103: the Document page has
+ * no chat pane to open one in.
  */
-export function citationParams(
-  citation: Citation,
-  threadId: string,
-): Record<string, string | number> {
-  return {
-    ...chunkLinkParams({ ...citation, versionId: citation.documentVersionId }),
-    thread: threadId,
-  };
+export function citationParams(citation: Citation): Record<string, string | number> {
+  return chunkLinkParams({ ...citation, versionId: citation.documentVersionId });
 }

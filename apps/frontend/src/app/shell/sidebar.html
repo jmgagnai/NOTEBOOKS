@@ -84,13 +84,12 @@
   </ul>
 
   <!--
-    The open Notebook's Chat Threads, on the pages with a chat pane — the
-    Notebook page (spec 07 story 12) and the Document page (spec 08) — and
-    not in the rail: there is no room for a row there. The navigator is the
-    one the Notebook page used to hold (NBK-43), unchanged: it opens and
-    starts Threads in the store without navigating, so on the Document page
-    it switches the chat pane and the reader stays on the Document. Each page
-    loads the Threads, so dropping it here loses nothing.
+    The open Notebook's Chat Threads, on the Notebook page (spec 07 story
+    12; not the Document page since NBK-103) and not in the rail: there is
+    no room for a row there. The navigator is the one the Notebook page used
+    to hold (NBK-43), unchanged: it opens and starts Threads in the store
+    without navigating. The page loads the Threads, so dropping it here
+    loses nothing.
   -->
   @if (!collapsed() && showsChatThreads() && notebookId(); as notebookId) {
     <nav class="sidebar__threads" aria-label="Chat Threads">

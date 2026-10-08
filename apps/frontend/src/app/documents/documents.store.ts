@@ -413,8 +413,8 @@ export const DocumentsStore = signalStore(
       // a template renders.
       let watching: Subscription | null = null;
 
-      // The open Document's reads, newest last (spec 08): Citations followed
-      // from the Document page's chat pane can overtake each other, and only
+      // The open Document's reads, newest last (spec 08): links followed on
+      // the open Document page can overtake each other, and only
       // the read the reader asked for last may land. Plumbing, like
       // `watching`, so outside the state.
       let openRequest = 0;

@@ -79,13 +79,6 @@ $column-width: 760px;
   // The composer in an open Thread: pinned under the messages, in their
   // centred column (NBK-83). Its own 12 px padding lines the pill up with
   // the messages' edge.
-  // The Document page's chat pane with no Thread open (spec 08): the
-  // question box alone, at the bottom where an open Thread keeps it, rather
-  // than at the top of an empty pane.
-  &--empty-pane {
-    justify-content: flex-end;
-  }
-
   &__composer {
     align-self: center;
     box-sizing: border-box;

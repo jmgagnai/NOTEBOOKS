@@ -58,8 +58,6 @@ interface CitationGroup {
 })
 export class CitationGroups {
   readonly notebookId = input.required<string>();
-  /** The Chat Thread the answer is in, carried by every Citation link (spec 08). */
-  readonly threadId = input.required<string>();
   readonly citations = input.required<Citation[]>();
 
   protected readonly groups = computed<CitationGroup[]>(() => {
@@ -83,7 +81,7 @@ export class CitationGroups {
   });
 
   protected readonly link = (citation: Citation) => citationLink(this.notebookId(), citation);
-  protected readonly params = (citation: Citation) => citationParams(citation, this.threadId());
+  protected readonly params = (citation: Citation) => citationParams(citation);
   protected readonly name = citationName;
   protected readonly title = citationTitle;
 }

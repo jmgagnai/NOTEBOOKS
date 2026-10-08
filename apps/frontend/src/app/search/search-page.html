@@ -68,6 +68,7 @@
                     class="search-page__result"
                     [routerLink]="['/notebooks', notebookId, 'documents', result.id]"
                     [queryParams]="chunkLink(result.match)"
+                    [state]="openedFromSearch"
                   >
                     <mat-icon class="search-page__result-icon" [svgIcon]="kind(result).icon" />
                     <span class="search-page__result-body">

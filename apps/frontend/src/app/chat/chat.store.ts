@@ -378,10 +378,9 @@ export const ChatStore = signalStore(
           const threads = (await chatService.listChatThreads({ notebookId })) as ChatThread[];
           patchState(store, { threads, threadsLoading: false });
           if (threads.length === 0) return;
-          // A Thread the caller names — the one a Citation link was cited
-          // in (spec 08), or a search result's — wins over the newest, if it
-          // is in this Notebook; one that is not (deleted, another
-          // Notebook's) is ignored.
+          // A Thread the caller names — a search result's (NBK-97) — wins
+          // over the newest, if it is in this Notebook; one that is not
+          // (deleted, another Notebook's) is ignored.
           const preferred = threads.find((t) => t.id === preferredThreadId);
           const newest = threads.reduce((a, b) => (b.createdAt > a.createdAt ? b : a));
           if (preferredThreadId !== null && foundAnswerId !== null) {
@@ -626,8 +625,8 @@ export const ChatStore = signalStore(
 
       /**
        * Closes the live stream but keeps the open Chat Thread: for a page
-       * handing the Notebook over to another of its pages (spec 08), which
-       * watches again on arrival.
+       * handing the Notebook over to another of its pages (spec 08); the
+       * Notebook page watches again on arrival.
        */
       stopWatching,
 

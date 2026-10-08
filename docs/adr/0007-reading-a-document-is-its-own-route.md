@@ -110,3 +110,13 @@ the Converted Markdown only on request. What changes is the last bullet only —
 the page is no longer reading *instead of* asking. Turning the Document into a
 panel of the Notebook page (the literal three-panel reading of NBK-1) is still
 rejected, for the Citation-link reason above.
+
+## Amendment (2026-10-09): the chat pane is withdrawn
+
+The 2026-10-08 amendment is superseded. Used for real, a Chat Thread beside
+the Document read as confusing: two texts competing on one page, one of them
+not the Document. **Decision: the Document page is for reading only again.**
+§1 holds as first written. A Citation still opens the Document at its Chunk,
+and the page's back arrow returns to where the reader came from (the Search
+page, or the Notebook page with the same Chat Thread still open), so asking
+is one step away rather than on the same page.

@@ -95,10 +95,10 @@ async function renderSignedIn(
 
 const sidebar = () => screen.getByRole('navigation', { name: 'Sidebar' });
 
-/** A Document page of the Notebook, which has a chat pane (spec 08). */
+/** A Document page of the Notebook. */
 const DOCUMENT_URL = `/notebooks/${NOTEBOOK_ID}/documents/22222222-2222-2222-2222-222222222222`;
 
-/** The chat pane of the page on screen: the Notebook page's or the Document page's. */
+/** The Notebook page's chat pane. */
 const chatPane = () => screen.getByRole('region', { name: 'Chat' });
 
 const avatarFor = (email: string) =>
@@ -197,58 +197,18 @@ describe('App', () => {
       expect(await within(threads).findByText('No Chat Threads yet.')).toBeTruthy();
     });
 
-    // Spec 08 (NBK-88): the Document page has a chat pane too, and the
-    // sidebar is where its Chat Thread is switched — without leaving the
-    // Document. The sidebar starts as the rail there, so these expand it.
-    describe('on the Document page', () => {
-      async function onTheDocumentPage() {
-        const rendered = await renderSignedIn('ada@example.com', {
-          url: DOCUMENT_URL,
-          threads: [
-            thread('thread-1', 'Revenue questions', '2026-01-01T00:00:00.000Z'),
-            thread('thread-2', 'Hiring plan', '2026-01-02T00:00:00.000Z'),
-          ],
-        });
-        fireEvent.click(collapseToggle());
-        return rendered;
-      }
-
-      it("lists the Notebook's Chat Threads", async () => {
-        await onTheDocumentPage();
-
-        const threads = within(sidebar()).getByRole('navigation', { name: 'Chat Threads' });
-        const newest = await within(threads).findByRole('button', { name: 'Open Hiring plan' });
-        expect(newest.getAttribute('aria-current')).toBe('true');
+    // NBK-103: the Document page is for reading only, so its sidebar lists
+    // no Chat Threads — they open on the Notebook page. It starts as the
+    // rail there, so this expands it.
+    it('shows no Chat Threads on the Document page, even expanded', async () => {
+      await renderSignedIn('ada@example.com', {
+        url: DOCUMENT_URL,
+        threads: [thread('thread-1', 'Revenue questions', '2026-01-01T00:00:00.000Z')],
       });
+      fireEvent.click(collapseToggle());
 
-      it('opens a Chat Thread in the chat pane, staying on the Document', async () => {
-        await onTheDocumentPage();
-        await within(chatPane()).findByRole('button', { name: 'Hiring plan' });
-
-        fireEvent.click(
-          await within(sidebar()).findByRole('button', { name: 'Open Revenue questions' }),
-        );
-
-        expect(
-          await within(chatPane()).findByRole('button', { name: 'Revenue questions' }),
-        ).toBeTruthy();
-        expect(TestBed.inject(Router).url).toBe(DOCUMENT_URL);
-      });
-
-      it('starts a Chat Thread in the chat pane, staying on the Document', async () => {
-        await onTheDocumentPage();
-        await within(chatPane()).findByRole('button', { name: 'Hiring plan' });
-
-        fireEvent.click(within(sidebar()).getByRole('button', { name: 'New Chat Thread' }));
-
-        // Started, and the open one: current in the list and in the pane.
-        const started = await within(sidebar()).findByRole('button', {
-          name: 'Open New Chat Thread',
-        });
-        expect(started.getAttribute('aria-current')).toBe('true');
-        expect(within(chatPane()).getByRole('button', { name: 'New Chat Thread' })).toBeTruthy();
-        expect(TestBed.inject(Router).url).toBe(DOCUMENT_URL);
-      });
+      expect(within(sidebar()).getByRole('link', { name: 'Search this Notebook' })).toBeTruthy();
+      expect(screen.queryByRole('navigation', { name: 'Chat Threads' })).toBeNull();
     });
 
     it('shows no Chat Threads on the Notebooks home', async () => {
@@ -316,8 +276,8 @@ describe('App', () => {
       expect(open.getAttribute('aria-current')).toBe('true');
     });
 
-    // Spec 08 (NBK-86): the Document page splits its width between the
-    // chat pane and the Document, so the sidebar gives up its own.
+    // Spec 08 (NBK-86): the Document page gives the reading column the
+    // width, so the sidebar gives up its own.
     it('starts as the rail on the Document page, and expands from there', async () => {
       await renderSignedIn('ada@example.com', {
         url: DOCUMENT_URL,
