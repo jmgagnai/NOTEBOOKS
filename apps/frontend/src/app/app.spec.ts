@@ -1,3 +1,5 @@
+import { TestBed } from '@angular/core/testing';
+import { Router } from '@angular/router';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/angular';
 import { Subject } from 'rxjs';
 import { App } from './app';
@@ -70,6 +72,11 @@ async function renderSignedIn(
         useValue: {
           listChatThreads: vi.fn().mockResolvedValue(threads),
           listChatMessages: vi.fn().mockResolvedValue([]),
+          createChatThread: vi
+            .fn()
+            .mockImplementation(({ body }: { body: { title: string } }) =>
+              Promise.resolve(thread('thread-started', body.title, '2026-02-01T00:00:00.000Z')),
+            ),
         },
       },
       { provide: SearchService, useValue: { searchNotebook: vi.fn() } },
@@ -184,7 +191,68 @@ describe('App', () => {
       expect(await within(threads).findByText('No Chat Threads yet.')).toBeTruthy();
     });
 
-    it('shows no Chat Threads off the Notebook page, even inside the Notebook', async () => {
+    // Spec 08 (NBK-88): the Document page has a chat pane too, and the
+    // sidebar is where its Chat Thread is switched — without leaving the
+    // Document. The sidebar starts as the rail there, so these expand it.
+    describe('on the Document page', () => {
+      const DOCUMENT_URL = `/notebooks/${NOTEBOOK_ID}/documents/22222222-2222-2222-2222-222222222222`;
+      const chatPane = () => screen.getByRole('region', { name: 'Chat' });
+
+      async function onTheDocumentPage() {
+        const rendered = await renderSignedIn('ada@example.com', {
+          url: DOCUMENT_URL,
+          threads: [
+            thread('thread-1', 'Revenue questions', '2026-01-01T00:00:00.000Z'),
+            thread('thread-2', 'Hiring plan', '2026-01-02T00:00:00.000Z'),
+          ],
+        });
+        fireEvent.click(collapseToggle());
+        return rendered;
+      }
+
+      it("lists the Notebook's Chat Threads", async () => {
+        await onTheDocumentPage();
+
+        const threads = within(sidebar()).getByRole('navigation', { name: 'Chat Threads' });
+        const newest = await within(threads).findByRole('button', { name: 'Open Hiring plan' });
+        expect(newest.getAttribute('aria-current')).toBe('true');
+      });
+
+      it('opens a Chat Thread in the chat pane, staying on the Document', async () => {
+        await onTheDocumentPage();
+        await within(chatPane()).findByRole('button', { name: 'Hiring plan' });
+
+        fireEvent.click(
+          await within(sidebar()).findByRole('button', { name: 'Open Revenue questions' }),
+        );
+
+        expect(
+          await within(chatPane()).findByRole('button', { name: 'Revenue questions' }),
+        ).toBeTruthy();
+        expect(TestBed.inject(Router).url).toBe(DOCUMENT_URL);
+      });
+
+      it('starts a Chat Thread in the chat pane, staying on the Document', async () => {
+        await onTheDocumentPage();
+        await within(chatPane()).findByRole('button', { name: 'Hiring plan' });
+
+        fireEvent.click(within(sidebar()).getByRole('button', { name: 'New Chat Thread' }));
+
+        expect(
+          await within(chatPane()).findByRole('button', { name: 'New Chat Thread' }),
+        ).toBeTruthy();
+        expect(TestBed.inject(Router).url).toBe(DOCUMENT_URL);
+      });
+
+      it('hides the Chat Threads in the rail', async () => {
+        await renderSignedIn('ada@example.com', { url: DOCUMENT_URL });
+
+        expect(collapseToggle().getAttribute('aria-expanded')).toBe('false');
+        expect(screen.queryByRole('navigation', { name: 'Chat Threads' })).toBeNull();
+      });
+    });
+
+    it('shows no Chat Threads on the Search page, even inside the Notebook', async () => {
       await renderSignedIn('ada@example.com', { url: `/notebooks/${NOTEBOOK_ID}/search` });
 
       expect(within(sidebar()).getByRole('link', { name: 'Search this Notebook' })).toBeTruthy();
