@@ -1,13 +1,4 @@
-import {
-  Component,
-  computed,
-  inject,
-  input,
-  linkedSignal,
-  untracked,
-  viewChild,
-} from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
+import { Component, computed, inject, input, viewChild } from '@angular/core';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { RouterLink } from '@angular/router';
@@ -15,6 +6,7 @@ import { Citation, ChatMessage, ChatStore, ChatThread } from './chat.store';
 import { Avatar } from '../shared/avatar';
 import { SparkleAvatar } from '../shared/sparkle-avatar';
 import { Composer } from './composer';
+import { EditableTitle } from '../shared/editable-title';
 import { ThreadEmptyState } from './thread-empty-state';
 import { NEW_THREAD_TITLE } from './thread-navigator';
 
@@ -45,7 +37,7 @@ const MARKER = /\[(\d{1,3})\]/g;
 
 /**
  * The open Chat Thread of a Notebook (NBK-10, split out in NBK-34): its
- * title and rename box, its messages, the answer being streamed into it,
+ * editable title, its messages, the answer being streamed into it,
  * and, through `Composer` (NBK-45), the question box.
  *
  * Every message names who asked it (GLOSSARY.md): a Thread is shared, so a
@@ -75,7 +67,7 @@ const MARKER = /\[(\d{1,3})\]/g;
   standalone: true,
   imports: [
     Composer,
-    MatButtonModule,
+    EditableTitle,
     MatProgressSpinnerModule,
     MatTooltipModule,
     RouterLink,
@@ -96,23 +88,6 @@ export class ThreadView {
   protected readonly activeThread = computed<ChatThread | null>(
     () => this.store.threads().find((t) => t.id === this.store.activeThreadId()) ?? null,
   );
-
-  /**
-   * The rename box for the open Thread, pre-filled with its title.
-   *
-   * Keyed on the Thread's id, not on the Thread itself: the list is replaced
-   * whenever a rename or a reload lands, and a half-typed new title must not
-   * be thrown away by that. The title is read untracked for the same reason —
-   * the computation re-runs only when a different Thread is opened. (Before
-   * NBK-34 the navigator set this box directly when opening a Thread; now
-   * that the two are separate components, the open Thread in the store is
-   * the only thing they share.)
-   */
-  protected readonly renameTitle = linkedSignal<string | null, string>({
-    source: () => this.store.activeThreadId(),
-    computation: (id) =>
-      untracked(() => this.store.threads().find((t) => t.id === id)?.title ?? ''),
-  });
 
   /**
    * The streaming answer as blocks to render, one per chunk received.
@@ -217,11 +192,14 @@ export class ThreadView {
     return params;
   }
 
-  protected rename(): void {
-    const thread = this.activeThread();
-    const title = this.renameTitle().trim();
-    if (!thread || !title || title === thread.title) return;
-    void this.store.renameThread(this.notebookId(), thread.id, title);
+  /**
+   * The header title (NBK-51) hands over only a changed, non-blank title, so
+   * this just commits it. The Thread's id comes from the template rather than
+   * `activeThread()` so a commit on blur still renames the Thread that was
+   * being edited.
+   */
+  protected rename(threadId: string, title: string): void {
+    void this.store.renameThread(this.notebookId(), threadId, title);
   }
 
   /**

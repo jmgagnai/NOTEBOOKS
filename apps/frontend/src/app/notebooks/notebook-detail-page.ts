@@ -20,6 +20,7 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { ThreadNavigator } from '../chat/thread-navigator';
 import { ThreadView } from '../chat/thread-view';
+import { DocumentList } from '../documents/document-list';
 import { ConflictChoice, Document, DocumentsStore } from '../documents/documents.store';
 import { UPLOAD_ACCEPT } from '../documents/upload-rules';
 import { APP_NAME } from '../shared/app-name';
@@ -71,18 +72,18 @@ function droppedEntries(dataTransfer: DataTransfer | null): {
 /**
  * A Notebook's workspace (NBK-5, framed in NBK-35): a slim header, then
  * three cards side by side — the Chat Threads navigator, the open Thread and
- * the Documents panel with its cards and their upload, open, delete, restore
- * and download actions. Notebooks have no dedicated `GET /notebooks/:id`
- * endpoint, so the Notebook itself (its title, for the header and the browser
- * tab) is looked up from `NotebooksStore`'s already-loaded list by route id,
- * the same list the top-level Notebooks page uses.
+ * the Documents panel with its rows (`DocumentList`, NBK-42) and their
+ * upload, open, delete, restore and download actions. Notebooks have no
+ * dedicated `GET /notebooks/:id` endpoint, so the Notebook itself (its
+ * title, for the header and the browser tab) is looked up from
+ * `NotebooksStore`'s already-loaded list by route id, the same list the
+ * top-level Notebooks page uses.
  *
- * Each card carries that Document's Abstract (NBK-7) — the summary
- * GLOSSARY.md writes "to be skimmed in a list" — and links to the Document
- * itself, where the Executive Summary and the full converted content live.
+ * Each row links to the Document itself, where the Abstract (NBK-7), the
+ * Executive Summary and the full converted content live.
  *
  * While open, it also follows this Notebook's live app events (NBK-6) so a
- * Document's status badge tracks the background pipeline without a refresh.
+ * Document's row tracks the background pipeline without a refresh.
  *
  * The chat cards (NBK-10, split in NBK-34) are the Notebook's Chat Threads
  * and the open Thread. Per NBK-1 a Notebook's detail page is "composed of a
@@ -99,6 +100,7 @@ function droppedEntries(dataTransfer: DataTransfer | null): {
     MatIconModule,
     MatProgressSpinnerModule,
     MatTooltipModule,
+    DocumentList,
     RouterLink,
     StatusBadge,
     ThreadNavigator,

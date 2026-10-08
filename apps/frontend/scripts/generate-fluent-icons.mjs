@@ -11,7 +11,9 @@ import { fileURLToPath } from 'node:url';
 
 /**
  * The explicit set spec 01 "Icons" registers, plus spec 02's three, the title
- * bar's sign-out and spec 04's history (the Chat Threads navigator's title).
+ * bar's sign-out, spec 04's history (the Chat Threads navigator's title) and
+ * the Document rows' type icons (NBK-42, spec 03 "Row anatomy": PDF, Word,
+ * text, spreadsheet).
  */
 const NAMES = [
   'add',
@@ -34,6 +36,10 @@ const NAMES = [
   'panel-right-contract',
   'panel-right-expand',
   'sign-out',
+  'document-pdf',
+  'document-text',
+  'document-one-page',
+  'document-table',
 ];
 
 const require = createRequire(import.meta.url);
