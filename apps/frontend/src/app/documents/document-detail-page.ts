@@ -7,6 +7,7 @@ import { DocumentsStore } from './documents.store';
 import { StatusBadge } from '../shared/status-badge';
 import { MarkdownView } from './markdown-view';
 import { showPageTitle } from '../shared/page-title';
+import { failureSentence } from './failure-reason';
 
 /**
  * One Document, opened (NBK-7).
@@ -107,6 +108,17 @@ export class DocumentDetailPage implements OnInit, OnDestroy {
   protected readonly viewingSupersededVersion = computed(
     () => this.store.openDocument()?.isLatestVersion === false,
   );
+
+  /**
+   * The sentence saying why this Version failed Ingestion, or null when it
+   * has not failed (NBK-68). Keyed on the status, not on `failure`, so a
+   * failed Version without a reason still says something — the same
+   * fallback the Documents panel's warning uses.
+   */
+  protected readonly failureSentence = computed(() => {
+    const document = this.store.openDocument();
+    return document?.status === 'failed' ? failureSentence(document.failure) : null;
+  });
 
   /** Which Version's Converted Markdown this page shows. */
   private targetVersionId(): string | null {
