@@ -158,7 +158,10 @@ in `app.config.ts`; NBK-31, spec 01 "Icons"). A template imports
 Registered names: `add`, `search`, `more-horizontal`, `delete`,
 `arrow-download`, `open`, `send`, `rename`, `chevron-down`, `notebook`,
 `document`, `sparkle`, `dismiss`, `checkmark`, `warning`, `arrow-left`,
-`panel-right-contract`, `panel-right-expand`, `sign-out`. `FluentIconName`
+`panel-right-contract`, `panel-right-expand`, `sign-out`, and the Document
+rows' type icons (NBK-42) `document-pdf`, `document-text` (Word),
+`document-one-page` (text, Markdown), `document-table` (Excel, CSV), with
+`document` for anything else. `FluentIconName`
 is the union of them. An unknown name renders an empty icon and logs through
 the `ErrorHandler`; it does not break the page.
 

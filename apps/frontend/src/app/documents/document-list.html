@@ -1,0 +1,114 @@
+<!--
+  Arrow keys move between rows (spec 03 story 21) with a roving tabindex: one
+  Tab stop for the whole list, so a keyboard user does not tab through forty
+  rows to reach the chat.
+-->
+<ul class="document-list" aria-label="Documents" (keydown)="onKeydown($event)">
+  @for (document of documents(); track document.id; let index = $index) {
+    <li class="document-row" [class.document-row--failed]="document.status === 'failed'">
+      <!--
+        The row is the way into the Document (ADR-0007, spec 03 story 10): a
+        link, so click and Enter both open it and the browser's own
+        open-in-new-tab works. Its name is the filename; the type icon adds
+        what kind of Document it is.
+      -->
+      <a
+        #rowLink
+        class="document-row__open"
+        [routerLink]="['/notebooks', notebookId(), 'documents', document.id]"
+        [tabindex]="index === tabStop() ? 0 : -1"
+        (focus)="activeIndex.set(index)"
+      >
+        <span class="document-row__type" role="img" [attr.aria-label]="kind(document).label">
+          <mat-icon [svgIcon]="kind(document).icon" />
+        </span>
+        <span class="document-row__text">
+          <!-- NBK-47 hangs the Abstract popover on this element. -->
+          <span class="document-row__name" [title]="document.filename">{{
+            document.filename
+          }}</span>
+          <!--
+            The secondary line, only when there is something to say. Stage and
+            version are both shown when both apply: a new Version just landed
+            is "v2" and "Queued" at once, and hiding either would misreport it.
+          -->
+          @if (inProgress(document.status) || document.latestVersion.versionNumber > 1) {
+            <span class="document-row__secondary">
+              @if (inProgress(document.status)) {
+                <span class="document-row__stage">{{ stage(document.status) }}</span>
+              }
+              @if (document.latestVersion.versionNumber > 1) {
+                <span class="document-row__version"
+                  >v{{ document.latestVersion.versionNumber }}</span
+                >
+              }
+            </span>
+          }
+        </span>
+      </a>
+      @if (document.status === 'failed') {
+        <!--
+          The tooltip is also the icon's accessible description, so the reason
+          reaches a screen reader without a hover.
+        -->
+        <span
+          class="document-row__warning"
+          role="img"
+          aria-label="Ingestion failed"
+          [matTooltip]="failureReason"
+        >
+          <mat-icon svgIcon="warning" />
+        </span>
+      }
+      <button
+        mat-icon-button
+        type="button"
+        class="document-row__more"
+        [matMenuTriggerFor]="actions"
+        [matMenuTriggerData]="{ document }"
+        [attr.aria-label]="'Actions for ' + document.filename"
+        matTooltip="More actions"
+      >
+        <mat-icon svgIcon="more-horizontal" />
+      </button>
+      @if (inProgress(document.status)) {
+        <mat-progress-bar class="document-row__progress" mode="indeterminate" />
+      }
+    </li>
+  }
+</ul>
+
+<!--
+  One menu for every row, handed the row's Document when it opens, rather
+  than one menu per row: forty rows would otherwise keep forty menus.
+-->
+<mat-menu #actions="matMenu">
+  <ng-template matMenuContent let-document="document">
+    <a
+      mat-menu-item
+      [routerLink]="['/notebooks', notebookId(), 'documents', document.id]"
+      [attr.aria-label]="'Open ' + document.filename"
+    >
+      <mat-icon svgIcon="open" />
+      Open
+    </a>
+    <button
+      mat-menu-item
+      type="button"
+      [attr.aria-label]="'Download ' + document.filename"
+      (click)="download.emit(document)"
+    >
+      <mat-icon svgIcon="arrow-download" />
+      Download
+    </button>
+    <button
+      mat-menu-item
+      type="button"
+      [attr.aria-label]="'Delete ' + document.filename"
+      (click)="delete.emit(document)"
+    >
+      <mat-icon svgIcon="delete" />
+      Delete
+    </button>
+  </ng-template>
+</mat-menu>
