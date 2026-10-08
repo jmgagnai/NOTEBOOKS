@@ -393,6 +393,15 @@ export const DocumentsStore = signalStore(
       // a template renders.
       let watching: Subscription | null = null;
 
+      // The open Document's reads, newest last (spec 08): Citations followed
+      // from the Document page's chat pane can overtake each other, and only
+      // the read the reader asked for last may land. Plumbing, like
+      // `watching`, so outside the state.
+      let openRequest = 0;
+      // The Version whose Converted Markdown is on its way, so a second ask
+      // for it waits on that fetch instead of starting another.
+      let contentInFlight: string | null = null;
+
       /** Closes the live connection, if one is open. */
       function stopWatching(): void {
         watching?.unsubscribe();
@@ -604,6 +613,8 @@ export const DocumentsStore = signalStore(
          * not on every card in a list.
          */
         async loadDocument(notebookId: string, documentId: string): Promise<void> {
+          const request = ++openRequest;
+          contentInFlight = null;
           // Any previously expanded content belongs to a different Document.
           patchState(store, {
             openDocumentLoading: true,
@@ -616,11 +627,13 @@ export const DocumentsStore = signalStore(
               notebookId,
               documentId,
             })) as DocumentDetail;
+            if (request !== openRequest) return;
             patchState(store, {
               openDocument: fromDocumentDetail(detail),
               openDocumentLoading: false,
             });
           } catch (err) {
+            if (request !== openRequest) return;
             patchState(store, {
               openDocumentLoading: false,
               error: errorMessage(err, 'Failed to load Document.'),
@@ -646,6 +659,8 @@ export const DocumentsStore = signalStore(
           documentId: string,
           versionId: string,
         ): Promise<void> {
+          const request = ++openRequest;
+          contentInFlight = null;
           patchState(store, {
             openDocumentLoading: true,
             error: null,
@@ -658,11 +673,13 @@ export const DocumentsStore = signalStore(
               documentId,
               versionId,
             })) as DocumentVersionDetail;
+            if (request !== openRequest) return;
             patchState(store, {
               openDocument: fromVersionDetail(detail),
               openDocumentLoading: false,
             });
           } catch (err) {
+            if (request !== openRequest) return;
             patchState(store, {
               openDocumentLoading: false,
               error: errorMessage(err, 'Failed to load this Document Version.'),
@@ -682,6 +699,8 @@ export const DocumentsStore = signalStore(
           versionId: string,
         ): Promise<void> {
           if (store.openContent()?.versionId === versionId) return;
+          if (contentInFlight === versionId) return;
+          contentInFlight = versionId;
           patchState(store, { openContentLoading: true, error: null });
           try {
             const openContent = await documentsService.getDocumentVersionContent({
@@ -689,8 +708,13 @@ export const DocumentsStore = signalStore(
               documentId,
               versionId,
             });
+            // Overtaken by another Version, or by another Document opened.
+            if (contentInFlight !== versionId) return;
+            contentInFlight = null;
             patchState(store, { openContent, openContentLoading: false });
           } catch (err) {
+            if (contentInFlight !== versionId) return;
+            contentInFlight = null;
             patchState(store, {
               openContentLoading: false,
               error: errorMessage(err, 'Failed to load the Document content.'),
@@ -700,6 +724,8 @@ export const DocumentsStore = signalStore(
 
         /** Drops the open Document, so navigating away doesn't leak it. */
         clearOpenDocument(): void {
+          openRequest++;
+          contentInFlight = null;
           patchState(store, { openDocument: null, openContent: null, error: null });
         },
 

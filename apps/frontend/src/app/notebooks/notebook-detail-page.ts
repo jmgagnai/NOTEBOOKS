@@ -17,6 +17,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { ChatStore } from '../chat/chat.store';
+import { injectLeaveChat } from '../chat/leave-chat';
 import { ThreadView } from '../chat/thread-view';
 import { DocumentFilter } from '../documents/document-filter';
 import { DocumentList, isInProgress } from '../documents/document-list';
@@ -126,6 +127,8 @@ export class NotebookDetailPage implements OnInit, OnDestroy {
   private readonly undoSnackBar = inject(UndoSnackBar);
 
   protected readonly notebookId = this.route.snapshot.paramMap.get('notebookId')!;
+
+  private readonly leaveChat = injectLeaveChat(this.notebookId);
   protected readonly notebook = computed(() => this.notebooksStore.byId(this.notebookId));
 
   // The browser tab names the Notebook (NBK-35, NBK-61) so several open
@@ -149,10 +152,10 @@ export class NotebookDetailPage implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     // The stores are root-provided and outlive this page, so the live
     // connections have to be closed explicitly or they would leak across
-    // navigations; `reset` also clears the open Chat Thread, which would
-    // otherwise show up on the next Notebook opened.
+    // navigations. The open Chat Thread is kept only for another page of
+    // this Notebook (spec 08), see `injectLeaveChat`.
     this.store.stopWatching();
-    this.chatStore.reset();
+    this.leaveChat();
   }
 
   /**

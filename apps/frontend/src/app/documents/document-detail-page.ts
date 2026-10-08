@@ -1,14 +1,29 @@
-import { Component, computed, inject, OnDestroy, OnInit, signal } from '@angular/core';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import {
+  Component,
+  computed,
+  effect,
+  inject,
+  OnDestroy,
+  OnInit,
+  signal,
+  untracked,
+} from '@angular/core';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { filter } from 'rxjs';
+import { ActivatedRoute, NavigationSkipped, Router, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { DocumentsStore } from './documents.store';
+import { ChatStore } from '../chat/chat.store';
+import { injectLeaveChat } from '../chat/leave-chat';
+import { ThreadView } from '../chat/thread-view';
 import { StatusBadge } from '../shared/status-badge';
 import { MarkdownView } from './markdown-view';
 import { showPageTitle } from '../shared/page-title';
 import { failureSentence } from './failure-reason';
+import { isNarrowWindow } from '../shared/narrow-window';
 
 /**
  * One Document, opened (NBK-7).
@@ -57,6 +72,7 @@ import { failureSentence } from './failure-reason';
     MarkdownView,
     RouterLink,
     StatusBadge,
+    ThreadView,
   ],
   templateUrl: './document-detail-page.html',
   styleUrl: './document-detail-page.scss',
@@ -66,24 +82,54 @@ export class DocumentDetailPage implements OnInit, OnDestroy {
 
   protected readonly store = inject(DocumentsStore);
 
+  private readonly chatStore = inject(ChatStore);
+
+  /**
+   * Whether the chat pane is showing (spec 08). Component state, like the
+   * Documents pane's hidden state: a reload shows it again — unless the
+   * window is narrow, where the page is for reading first and the pane is a
+   * click away. Hiding drops the pane's view only; the open Chat Thread is
+   * the Chat store's, so it is still open when the pane comes back.
+   */
+  protected readonly chatShown = signal(!isNarrowWindow());
+
+  protected readonly chatToggleLabel = computed(() =>
+    this.chatShown() ? 'Hide chat' : 'Show chat',
+  );
+
   protected readonly notebookId = this.route.snapshot.paramMap.get('notebookId')!;
-  protected readonly documentId = this.route.snapshot.paramMap.get('documentId')!;
+
+  private readonly leaveChat = injectLeaveChat(this.notebookId);
+
+  /**
+   * The route as signals, not a snapshot: a Citation followed from the chat
+   * pane (spec 08) navigates to this same route, and the router answers by
+   * reusing this page rather than creating another — so the Document, the
+   * pinned Version and the cited range can all change under it. The
+   * Notebook cannot: every Citation in the pane is to this Notebook.
+   */
+  private readonly params = toSignal(this.route.paramMap, {
+    initialValue: this.route.snapshot.paramMap,
+  });
+  private readonly query = toSignal(this.route.queryParamMap, {
+    initialValue: this.route.snapshot.queryParamMap,
+  });
+
+  protected readonly documentId = computed(() => this.params().get('documentId')!);
 
   // NBK-61: the tab names the open Document, so several are distinguishable.
   private readonly tabTitle = showPageTitle(() => this.store.openDocument()?.filename);
 
-  private readonly query = this.route.snapshot.queryParamMap;
-
   /**
    * The Document Version a Citation pinned, or null when the page was opened
-   * normally. Read once from the link: it is the whole reason an old answer
-   * stays checkable, so nothing recomputes it.
+   * normally. Taken from the link and never resolved here: it is the whole
+   * reason an old answer stays checkable.
    */
-  protected readonly citedVersionId = this.query?.get('version') ?? null;
+  protected readonly citedVersionId = computed(() => this.query().get('version'));
 
   /** The cited chunk's character range in that Version's Converted Markdown. */
-  protected readonly citedFrom = numberParam(this.query?.get('from'));
-  protected readonly citedTo = numberParam(this.query?.get('to'));
+  protected readonly citedFrom = computed(() => numberParam(this.query().get('from')));
+  protected readonly citedTo = computed(() => numberParam(this.query().get('to')));
 
   /**
    * Whether the reader has expanded past the Executive Summary. Component
@@ -91,11 +137,38 @@ export class DocumentDetailPage implements OnInit, OnDestroy {
    * fetched content itself (which is what's worth keeping) lives in the
    * store.
    *
-   * Starts expanded when a Citation was followed: that reader asked for a
-   * specific Chunk, and making them click "Read the full Document" to reach it
-   * would be asking them to find it themselves.
+   * Opened whenever a Citation is followed: that reader asked for a
+   * specific Chunk, and making them click "Read the full Document" to reach
+   * it would be asking them to find it themselves.
    */
-  protected readonly expanded = signal(this.citedVersionId !== null);
+  protected readonly expanded = signal(false);
+
+  /**
+   * Follows the route: on arrival, and on every Citation followed from the
+   * chat pane after it. Keyed on the Document and the whole query — Version,
+   * Chunk, range — so any other Citation is followed even when it shares the
+   * Version or the start of its range.
+   */
+  private readonly followRoute = effect(() => {
+    const documentId = this.documentId();
+    this.query();
+    const versionId = this.citedVersionId();
+    untracked(() => void this.show(documentId, versionId));
+  });
+
+  /**
+   * A Citation followed again to the URL already on screen is a navigation
+   * the router skips, so the route never changes; the reader still asked to
+   * see the cited Chunk, which they may have hidden since.
+   */
+  private readonly followAgain = inject(Router)
+    .events.pipe(
+      filter((event) => event instanceof NavigationSkipped),
+      takeUntilDestroyed(),
+    )
+    .subscribe(() => {
+      if (this.citedVersionId() !== null) this.expanded.set(true);
+    });
 
   /**
    * True when this page is showing a Version the Document has since moved
@@ -124,7 +197,7 @@ export class DocumentDetailPage implements OnInit, OnDestroy {
 
   /** Which Version's Converted Markdown this page shows. */
   private targetVersionId(): string | null {
-    return this.citedVersionId ?? this.store.openDocument()?.version.id ?? null;
+    return this.citedVersionId() ?? this.store.openDocument()?.version.id ?? null;
   }
 
   // The metadata keys read below (`title`, `authors`, `publishedOn`,
@@ -181,12 +254,41 @@ export class DocumentDetailPage implements OnInit, OnDestroy {
   });
 
   ngOnInit(): void {
-    void this.load();
+    // The chat pane (spec 08): the Notebook's Chat Threads and the live
+    // stream their answers arrive on, as the Notebook page loads them. A
+    // Thread already open (carried from another page of the Notebook) stays;
+    // otherwise the one the Citation link names, else the newest (NBK-43).
+    void this.chatStore.loadThreads(this.notebookId, this.query().get('thread'));
+    this.chatStore.watchNotebook(this.notebookId);
   }
 
-  private async load(): Promise<void> {
-    if (this.citedVersionId === null) {
-      await this.store.loadDocument(this.notebookId, this.documentId);
+  /**
+   * Shows `documentId`, at the pinned Version when a Citation named one.
+   *
+   * The Version already on screen is not read again: a Citation to the
+   * Version the reader is looking at only has to open its full Converted
+   * Markdown and move the mark, which is what makes checking an answer
+   * instant. Anything else — another Document, another Version of this
+   * one — is a fresh read, as on arrival. A link naming no Version means
+   * the latest, so a superseded Version on screen is read again for it
+   * (back from a Citation to an old Version, say).
+   */
+  private async show(documentId: string, versionId: string | null): Promise<void> {
+    const open = this.store.openDocument();
+    const onScreen =
+      open !== null &&
+      open.id === documentId &&
+      (versionId === null ? open.isLatestVersion : open.version.id === versionId);
+    if (versionId !== null) this.expanded.set(true);
+    if (onScreen) {
+      if (versionId !== null) {
+        await this.store.loadDocumentContent(this.notebookId, documentId, versionId);
+      }
+      return;
+    }
+    if (versionId === null) {
+      this.expanded.set(false);
+      await this.store.loadDocument(this.notebookId, documentId);
       return;
     }
 
@@ -194,11 +296,11 @@ export class DocumentDetailPage implements OnInit, OnDestroy {
     // that Version — not the Document's current one with the old content
     // slotted in. The latest-Version detail is not fetched at all: there is
     // nothing on this page it could correctly fill in.
-    await this.store.loadDocumentVersion(this.notebookId, this.documentId, this.citedVersionId);
+    await this.store.loadDocumentVersion(this.notebookId, documentId, versionId);
     // And the content follows without waiting for the reader to ask, since
     // they already asked by clicking a Citation.
     if (this.store.openDocument()) {
-      await this.store.loadDocumentContent(this.notebookId, this.documentId, this.citedVersionId);
+      await this.store.loadDocumentContent(this.notebookId, documentId, versionId);
     }
   }
 
@@ -207,6 +309,11 @@ export class DocumentDetailPage implements OnInit, OnDestroy {
     // Document — and especially its up-to-200-page content — has to be
     // dropped explicitly rather than held until the next one replaces it.
     this.store.clearOpenDocument();
+    this.leaveChat();
+  }
+
+  protected toggleChat(): void {
+    this.chatShown.update((shown) => !shown);
   }
 
   protected toggleFullContent(): void {
@@ -219,7 +326,7 @@ export class DocumentDetailPage implements OnInit, OnDestroy {
     this.expanded.set(true);
     // A no-op if this Version's content is already loaded, so collapsing and
     // re-expanding doesn't re-download it.
-    void this.store.loadDocumentContent(this.notebookId, this.documentId, versionId);
+    void this.store.loadDocumentContent(this.notebookId, this.documentId(), versionId);
   }
 }
 

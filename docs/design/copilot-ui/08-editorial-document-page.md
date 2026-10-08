@@ -185,6 +185,17 @@ Document page sets and the Notebook page does not:
   action as on the Notebook page, which in compact mode leaves the empty
   composer.
 
+_Amended by NBK-86:_ the Chat store did not in fact hold the open Chat
+Thread across routes: the Notebook page reset it on the way out, and the
+router destroys a page before creating the next. Both pages now hand the
+Thread over when the navigation stays inside the Notebook (any route under
+`/notebooks/:notebookId`, Search included) and reset it otherwise, so
+entering a Notebook from elsewhere still opens its newest Chat Thread
+(NBK-43). A visible consequence beyond this page: going from the Notebook
+page to Search and back keeps the open Thread too. The Thread view's
+"compact" mode names its ← "Close Chat Thread", since there is no landing
+to go back to.
+
 **Which Chat Thread opens.** In order: the Chat Thread already open in the
 store for this Notebook; else the one named by the `thread` query parameter
 if it is in this Notebook's Chat Threads; else the newest (NBK-43); else none
