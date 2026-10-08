@@ -1,6 +1,11 @@
 @if (store.user(); as user) {
   <mat-toolbar class="app-shell__toolbar">
-    <span class="app-shell__brand">{{ appName }}</span>
+    <!-- NBK-59: the mark's alt names the link; the visible name is hidden
+         from assistive tech so the app name is announced once, not twice. -->
+    <a class="app-shell__brand" routerLink="/">
+      <img class="app-shell__mark" src="/copycat-mark.svg" [alt]="appName" height="24" />
+      <span class="app-shell__name" aria-hidden="true">{{ appName }}</span>
+    </a>
     <span class="app-shell__spacer"></span>
     <button
       type="button"
