@@ -4,8 +4,9 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatMenuModule } from '@angular/material/menu';
 import { MatToolbarModule } from '@angular/material/toolbar';
 import { AuthStore } from './auth/auth.store';
-import { APP_NAME } from './shared/app-name';
+import { APP_NAME } from './shared/brand';
 import { Avatar } from './shared/avatar';
+import { CopycatMark } from './shared/copycat-mark';
 
 /**
  * The app shell (NBK-3): a title bar showing who's signed in behind an
@@ -15,7 +16,15 @@ import { Avatar } from './shared/avatar';
  * this component only reflects the session state once resolved.
  */
 @Component({
-  imports: [Avatar, MatIconModule, MatMenuModule, MatToolbarModule, RouterLink, RouterOutlet],
+  imports: [
+    Avatar,
+    CopycatMark,
+    MatIconModule,
+    MatMenuModule,
+    MatToolbarModule,
+    RouterLink,
+    RouterOutlet,
+  ],
   selector: 'app-root',
   styleUrl: './app.scss',
   templateUrl: './app.html',

@@ -10,7 +10,7 @@ import { DocumentsService } from '../api/services/documents.service';
 import { DocumentTransferService } from '../documents/document-transfer.service';
 import { AppEvent, AppEventsService } from '../events/app-events.service';
 import { provideAppIcons } from '../shared/fluent-icons';
-import { APP_NAME } from '../shared/app-name';
+import { APP_NAME } from '../shared/brand';
 
 const NOTEBOOK_ID = '11111111-1111-1111-1111-111111111111';
 

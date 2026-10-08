@@ -1,6 +1,6 @@
 import { DestroyRef, effect, EffectRef, inject, Injectable } from '@angular/core';
 import { Title } from '@angular/platform-browser';
-import { APP_NAME } from './app-name';
+import { APP_NAME } from './brand';
 
 /**
  * The browser tab's title (spec 06, NBK-61): "<subject> – Copycat Notebooks"

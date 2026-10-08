@@ -2,10 +2,11 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <!-- Literal because static HTML cannot read APP_NAME (shared/app-name.ts); keep the two in step. -->
+    <!-- Literal because static HTML cannot read APP_NAME (shared/brand.ts); keep the two in step. -->
     <title>Copycat Notebooks</title>
     <base href="/" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- A copy of the mat-sys-primary token in styles.scss (static HTML cannot read it), as is manifest.webmanifest's theme_color; keep all three in step. -->
     <meta name="theme-color" content="#0F6CBD" />
     <link rel="icon" type="image/x-icon" href="favicon.ico" sizes="16x16 32x32 48x48" />
     <link rel="alternate icon" type="image/svg+xml" href="copycat-favicon.svg" />

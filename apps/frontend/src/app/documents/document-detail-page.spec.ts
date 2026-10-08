@@ -2,7 +2,7 @@ import { ActivatedRoute, convertToParamMap } from '@angular/router';
 import { fireEvent, render, screen, waitFor } from '@testing-library/angular';
 import { DocumentDetailPage } from './document-detail-page';
 import { DocumentsService } from '../api/services/documents.service';
-import { APP_NAME } from '../shared/app-name';
+import { APP_NAME } from '../shared/brand';
 
 const NOTEBOOK_ID = '11111111-1111-1111-1111-111111111111';
 const DOCUMENT_ID = '22222222-2222-2222-2222-222222222222';

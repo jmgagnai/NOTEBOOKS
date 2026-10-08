@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/angular';
 import { SearchPage } from './search-page';
 import { NotebooksService } from '../api/services/notebooks.service';
 import { SearchService } from '../api/services/search.service';
-import { APP_NAME } from '../shared/app-name';
+import { APP_NAME } from '../shared/brand';
 
 const NOTEBOOK_ID = '11111111-1111-1111-1111-111111111111';
 
@@ -35,11 +35,18 @@ function result(overrides: Partial<Record<string, unknown>> = {}) {
   };
 }
 
-async function renderPage(searchNotebook: ReturnType<typeof vi.fn>) {
+/** Renders the page on `NOTEBOOK_ID`; `notebooks` is what the Notebook list returns. */
+async function renderPage(
+  searchNotebook: ReturnType<typeof vi.fn>,
+  { notebooks = [] as unknown[] } = {},
+) {
   return render(SearchPage, {
     providers: [
       activatedRouteFor(NOTEBOOK_ID),
-      { provide: NotebooksService, useValue: { listNotebooks: vi.fn().mockResolvedValue([]) } },
+      {
+        provide: NotebooksService,
+        useValue: { listNotebooks: vi.fn().mockResolvedValue(notebooks) },
+      },
       { provide: SearchService, useValue: { searchNotebook } },
     ],
   });
@@ -146,21 +153,8 @@ describe('SearchPage', () => {
   // NBK-61: the tab names the Notebook being searched, like the Notebook page.
   it('puts the Notebook title in the browser tab, and the default back on leaving', async () => {
     document.title = 'A stale title';
-    const { fixture } = await render(SearchPage, {
-      providers: [
-        activatedRouteFor(NOTEBOOK_ID),
-        {
-          provide: NotebooksService,
-          useValue: {
-            listNotebooks: vi
-              .fn()
-              .mockResolvedValue([
-                { id: NOTEBOOK_ID, title: 'Research', createdAt: '2026-01-01T00:00:00.000Z' },
-              ]),
-          },
-        },
-        { provide: SearchService, useValue: { searchNotebook: vi.fn() } },
-      ],
+    const { fixture } = await renderPage(vi.fn(), {
+      notebooks: [{ id: NOTEBOOK_ID, title: 'Research', createdAt: '2026-01-01T00:00:00.000Z' }],
     });
 
     await waitFor(() => expect(document.title).toBe(`Research – ${APP_NAME}`));

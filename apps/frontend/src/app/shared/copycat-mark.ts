@@ -1,38 +1,46 @@
 import { ChangeDetectionStrategy, Component, input } from '@angular/core';
+import { COPYCAT_MARK_SRC } from './brand';
 
 /**
- * The mascot's head (`/copycat-mark.svg`, NBK-58) as decoration: spec 06
- * puts it at 64 px above the sentence of each empty state (NBK-62). It is
- * an `<img>` rather than a registered icon because the mascot's palette is
+ * The mascot's head (NBK-58) wherever the app shows it: 24 px in the title
+ * bar (NBK-59) and 64 px above the sentence of each empty state (NBK-62). It
+ * is an `<img>` rather than a registered icon because the mascot's palette is
  * fixed, not themed, and spec 06 asks for no icon-registry entry.
  *
- * Always decorative — empty `alt` and `aria-hidden` — because every place it
- * sits already says what it means in text; a named logo is a different use
- * (the sign-in pages' full scene).
+ * Decorative by default — empty `alt` and `aria-hidden` — because an empty
+ * state already says what it means in text. Give it a `label` where the mark
+ * is what names something: the title bar's home link takes its name from it.
  */
 @Component({
   selector: 'app-copycat-mark',
   template: `<img
     class="copycat-mark"
     data-testid="copycat-mark"
-    src="/copycat-mark.svg"
-    alt=""
-    aria-hidden="true"
-    [width]="size()"
+    [src]="src"
+    [alt]="label() ?? ''"
+    [attr.aria-hidden]="label() ? null : 'true'"
     [height]="size()"
   />`,
   styles: `
     :host {
       display: inline-flex;
+      flex: none;
     }
 
+    /* Sized by height alone: the head is wider than tall (a 120×110
+       viewBox), so a square box would letterbox it. */
     .copycat-mark {
       display: block;
+      width: auto;
     }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class CopycatMark {
-  /** Edge in px; the head is square. Spec 06 sizes empty states at 64. */
+  /** Height in px; the width follows the artwork. Empty states use 64. */
   readonly size = input(64);
+  /** The accessible name; absent, the mark is decorative. */
+  readonly label = input<string>();
+
+  protected readonly src = COPYCAT_MARK_SRC;
 }

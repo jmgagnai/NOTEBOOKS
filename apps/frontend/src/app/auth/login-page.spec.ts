@@ -4,7 +4,7 @@ import { Router } from '@angular/router';
 import { fireEvent, render, screen } from '@testing-library/angular';
 import { LoginPage } from './login-page';
 import { AuthService } from '../api/services/auth.service';
-import { APP_NAME } from '../shared/app-name';
+import { APP_NAME } from '../shared/brand';
 
 @Component({ selector: 'app-dummy-home', standalone: true, template: 'Home shell' })
 class DummyHomePage {}
@@ -44,7 +44,7 @@ describe('LoginPage', () => {
   it('shows the logo, the app name and the descriptive line above a "Sign in" form that links to creating an account', async () => {
     await renderLogin(vi.fn());
 
-    expect(screen.getByRole('img', { name: 'Copycat Notebooks' })).toBeTruthy();
+    expect(screen.getByRole('img', { name: APP_NAME })).toBeTruthy();
     expect(screen.getByText(APP_NAME)).toBeTruthy();
     expect(screen.getByText('A Microsoft Copilot Notebooks clone')).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Sign in' })).toBeTruthy();
