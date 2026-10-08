@@ -7,8 +7,10 @@ import { EMBEDDING_DIMENSIONS } from '../llm/models.js';
 import type { Embedder } from '../llm/embeddings.js';
 import { chunkMarkdown, type DocumentChunk } from './chunking.js';
 import {
+  attemptFailed,
   documentVersionRefSchema,
   versionStatusChanged,
+  type AttemptFailure,
   type DocumentVersionRef,
   type IngestionVersion,
 } from './stage.js';
@@ -67,16 +69,24 @@ async function transitionTo(
   pool: Pool,
   version: IngestionVersion,
   status: DocumentStatus,
-  fields: { error?: string | null } = {},
+  fields: Partial<AttemptFailure> = {},
 ): Promise<void> {
   await inTransaction(pool, async (client) => {
     await client.query(
       `UPDATE document_versions
        SET ingestion_status = $2,
            ingestion_error = $3,
+           failure_reason = $4,
+           failed_at = $5,
            embedded_at = CASE WHEN $2 = 'ready' THEN now() ELSE embedded_at END
        WHERE id = $1`,
-      [version.versionId, status, fields.error ?? null],
+      [
+        version.versionId,
+        status,
+        fields.error ?? null,
+        fields.failure?.reason ?? null,
+        fields.failure?.failedAt ?? null,
+      ],
     );
     await publishAppEvent(client, versionStatusChanged(version, status, fields.error));
   });
@@ -152,9 +162,14 @@ export async function runEmbedChunksJob(
     // Stage 3's input is missing, which means stage 1 either hasn't run or
     // produced nothing. Recorded and thrown so it retries — a re-enqueued
     // earlier stage can still fill this in.
-    const message = 'Stage 3 found no Converted Markdown on this Document Version.';
-    await transitionTo(pool, version, willRetry ? 'summarized' : 'failed', { error: message });
-    throw new Error(message);
+    const missing = new Error('Stage 3 found no Converted Markdown on this Document Version.');
+    await transitionTo(
+      pool,
+      version,
+      willRetry ? 'summarized' : 'failed',
+      attemptFailed(missing, { willRetry, failedAt: 'indexing' }),
+    );
+    throw missing;
   }
 
   await transitionTo(pool, version, 'indexing');
@@ -183,10 +198,14 @@ export async function runEmbedChunksJob(
     }
 
     await replaceChunks(pool, version.versionId, chunks, vectors);
-    await transitionTo(pool, version, 'ready', { error: null });
+    await transitionTo(pool, version, 'ready');
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    await transitionTo(pool, version, willRetry ? 'summarized' : 'failed', { error: message });
+    await transitionTo(
+      pool,
+      version,
+      willRetry ? 'summarized' : 'failed',
+      attemptFailed(err, { willRetry, failedAt: 'indexing' }),
+    );
     throw err;
   }
 }

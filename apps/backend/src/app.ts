@@ -6,6 +6,7 @@ import swaggerUi from '@fastify/swagger-ui';
 import type { S3Client } from '@aws-sdk/client-s3';
 import Fastify, { type FastifyInstance } from 'fastify';
 import {
+  createJsonSchemaTransformObject,
   jsonSchemaTransform,
   serializerCompiler,
   validatorCompiler,
@@ -15,6 +16,7 @@ import { registerAuthRoutes } from './auth/routes.js';
 import type { ChatDeps } from './chat/answer-question.js';
 import { registerChatRoutes } from './chat/routes.js';
 import { registerDocumentRoutes } from './documents/routes.js';
+import { documentFailureSchema } from './documents/schema.js';
 import { MAX_UPLOAD_FILE_BYTES } from './documents/upload-limit.js';
 import type { AppEventSubscriber } from './events/bus.js';
 import { registerEventRoutes } from './events/routes.js';
@@ -99,6 +101,13 @@ export async function buildApp({
       },
     },
     transform: jsonSchemaTransform,
+    // Published as a named component only because ng-openapi-gen drops the
+    // `| null` from an inline object that already mentions `null` inside it
+    // (here `failedAt`), which would type a nullable `failure` as always
+    // present. Behind a `$ref` the generator gets it right (NBK-64).
+    transformObject: createJsonSchemaTransformObject({
+      schemas: { DocumentFailure: documentFailureSchema },
+    }),
   });
   // The same document `openapi:generate` writes to openapi.json, served
   // live with an interactive page (NBK-23): `/documentation` for the UI,

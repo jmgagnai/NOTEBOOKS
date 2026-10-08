@@ -8,6 +8,8 @@ import type {
   DocumentStatus,
   DocumentVersion,
   DocumentVersionDetail,
+  FailedAt,
+  FailureReason,
 } from './schema.js';
 
 /**
@@ -29,6 +31,9 @@ export interface DocumentRow {
   size_bytes: string;
   version_created_at: Date;
   ingestion_status: DocumentStatus;
+  // Set only on a `failed` Version (NBK-64, migration 0012).
+  failure_reason: FailureReason | null;
+  failed_at: FailedAt | null;
   // Ingestion stage 2's output (NBK-7). Null until it has run.
   abstract: string | null;
 }
@@ -54,6 +59,8 @@ const SELECT_DOCUMENTS_WITH_LATEST_VERSION = `
     v.size_bytes,
     v.created_at AS version_created_at,
     v.ingestion_status,
+    v.failure_reason,
+    v.failed_at,
     v.abstract,
     v.chat_snippet,
     v.executive_summary,
@@ -61,7 +68,7 @@ const SELECT_DOCUMENTS_WITH_LATEST_VERSION = `
   FROM documents d
   JOIN LATERAL (
     SELECT id, version_number, mime_type, size_bytes, created_at, ingestion_status,
-           abstract, chat_snippet, executive_summary, metadata
+           failure_reason, failed_at, abstract, chat_snippet, executive_summary, metadata
     FROM document_versions
     WHERE document_id = d.id AND deleted_at IS NULL
     ORDER BY version_number DESC
@@ -87,6 +94,14 @@ export function toDocument(row: DocumentRow): Document {
     notebookId: row.notebook_id,
     filename: row.filename,
     status: row.ingestion_status,
+    // Never `ingestion_error`: that is the operator's record, written for
+    // developers, and stays on the backend (NBK-63). A `failed` row without a
+    // reason cannot come from a Stage; reporting it as `unexpected` keeps the
+    // contract's promise rather than failing the whole list.
+    failure:
+      row.ingestion_status === 'failed'
+        ? { reason: row.failure_reason ?? 'unexpected', failedAt: row.failed_at }
+        : null,
     // The Abstract of the latest Version — the artifact GLOSSARY.md assigns
     // to document cards and search results.
     abstract: row.abstract,

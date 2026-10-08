@@ -7,6 +7,7 @@ import { filter, map } from 'rxjs/operators';
 import { StrictHttpResponse } from '../../strict-http-response';
 import { RequestBuilder } from '../../request-builder';
 
+import { DocumentFailure } from '../../models/document-failure';
 
 export interface UploadDocument$Params {
   notebookId: string;
@@ -17,6 +18,7 @@ export function uploadDocument(http: HttpClient, rootUrl: string, params: Upload
 'notebookId': string;
 'filename': string;
 'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'indexing' | 'ready' | 'failed';
+'failure': DocumentFailure | null;
 'abstract': string | null;
 'createdAt': string;
 'latestVersion': {
@@ -42,6 +44,7 @@ export function uploadDocument(http: HttpClient, rootUrl: string, params: Upload
       'notebookId': string;
       'filename': string;
       'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'indexing' | 'ready' | 'failed';
+      'failure': DocumentFailure | null;
       'abstract': string | null;
       'createdAt': string;
       'latestVersion': {

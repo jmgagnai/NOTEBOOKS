@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { IngestionFailure } from '../src/ingestion/stage.js';
 import {
   DOCLING_ARTIFACTS_PATH,
   DOCLING_IMAGE,
@@ -137,9 +138,12 @@ describe('Docling converter: arguments and OCR policy (fake docker)', () => {
     // OCR is never run: it costs a model load per conversion and more memory
     // than a book-length PDF leaves. A scan is a clear failure the user can
     // act on, not an empty Document for stage 2 to summarise.
-    await expect(
-      createDoclingConverter({ docker: fake.docker })({ inputPath, outputPath }),
-    ).rejects.toThrow(/no text layer/);
+    const refusal = createDoclingConverter({ docker: fake.docker })({ inputPath, outputPath });
+    await expect(refusal).rejects.toThrow(/no text layer/);
+    // NBK-64: classified here, where the scan is recognised, so the reason a
+    // user is shown never depends on how this message is worded.
+    await expect(refusal).rejects.toBeInstanceOf(IngestionFailure);
+    await expect(refusal).rejects.toMatchObject({ reason: 'no-text-layer' });
 
     const invocations = await fake.invocations();
     expect(invocations).toHaveLength(1);

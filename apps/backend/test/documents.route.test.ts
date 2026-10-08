@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import type { StartedTestContainer } from 'testcontainers';
@@ -861,6 +862,97 @@ describe('Document routes', () => {
    * presents two Versions as one document — so the pinned Version needs a
    * read path of its own, carrying its own artifacts.
    */
+  describe('NBK-64: failure reason', () => {
+    // What a converter really leaves in `ingestion_error`: diagnostics and a
+    // setup hint, written for developers. None of it may reach a browser.
+    const DIAGNOSTIC = 'Traceback zx81-internal-diagnostic: see docs/ingestion-docling.md';
+
+    async function failedDocument(email: string) {
+      const session = await loginAsNewUser(email);
+      const notebookId = await createNotebook(session, 'Failures');
+      const upload = await uploadFile(session, notebookId, 'scan.pdf', 'pictures of text');
+      const { id: documentId, latestVersion } = upload.json() as {
+        id: string;
+        latestVersion: { id: string };
+      };
+      return { session, notebookId, documentId, versionId: latestVersion.id };
+    }
+
+    async function readBoth(session: string, notebookId: string, documentId: string) {
+      const list = await app.inject({
+        method: 'GET',
+        url: `/notebooks/${notebookId}/documents`,
+        cookies: { session },
+      });
+      const detail = await app.inject({
+        method: 'GET',
+        url: `/notebooks/${notebookId}/documents/${documentId}`,
+        cookies: { session },
+      });
+      return { list, detail };
+    }
+
+    it('reports no failure for a Document that has not failed', async () => {
+      const { session, notebookId, documentId } = await failedDocument('nbk64-ok@example.com');
+
+      const { list, detail } = await readBoth(session, notebookId, documentId);
+
+      const [listed] = list.json() as Array<{ status: string; failure: unknown }>;
+      expect(listed.status).toBe('queued');
+      expect(listed.failure).toBeNull();
+      expect((detail.json() as { failure: unknown }).failure).toBeNull();
+    });
+
+    it('reports the reason and where it failed, and never the stored error text', async () => {
+      const { session, notebookId, documentId, versionId } = await failedDocument(
+        'nbk64-failed@example.com',
+      );
+      await pool.query(
+        `UPDATE document_versions
+         SET ingestion_status = 'failed', ingestion_error = $2,
+             failure_reason = 'no-text-layer', failed_at = 'converting'
+         WHERE id = $1`,
+        [versionId, DIAGNOSTIC],
+      );
+
+      const { list, detail } = await readBoth(session, notebookId, documentId);
+
+      const expected = { reason: 'no-text-layer', failedAt: 'converting' };
+      expect((list.json() as Array<{ failure: unknown }>)[0].failure).toEqual(expected);
+      expect((detail.json() as { failure: unknown }).failure).toEqual(expected);
+      expect(list.body).not.toContain('zx81');
+      expect(detail.body).not.toContain('zx81');
+    });
+
+    it("reports a failure recorded before reasons existed as 'unexpected', with no stage", async () => {
+      const { session, notebookId, documentId, versionId } = await failedDocument(
+        'nbk64-legacy@example.com',
+      );
+      // The row as pre-NBK-64 code left it, then migration 0012's backfill
+      // applied to it (the migration is idempotent, like its predecessors).
+      await pool.query(
+        `UPDATE document_versions
+         SET ingestion_status = 'failed', ingestion_error = $2,
+             failure_reason = NULL, failed_at = NULL
+         WHERE id = $1`,
+        [versionId, DIAGNOSTIC],
+      );
+      await pool.query(
+        await readFile(
+          new URL('../src/db/migrations/0012_document_version_failure_reason.sql', import.meta.url),
+          'utf8',
+        ),
+      );
+
+      const { list, detail } = await readBoth(session, notebookId, documentId);
+
+      const expected = { reason: 'unexpected', failedAt: null };
+      expect((list.json() as Array<{ failure: unknown }>)[0].failure).toEqual(expected);
+      expect((detail.json() as { failure: unknown }).failure).toEqual(expected);
+      expect(list.body).not.toContain('zx81');
+    });
+  });
+
   describe('GET .../documents/:documentId/versions/:versionId', () => {
     /** Writes stage 2's output onto one Version, as the job would. */
     async function seedVersion(

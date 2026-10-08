@@ -8,6 +8,7 @@ import {
   withState,
 } from '@ngrx/signals';
 import { Subscription } from 'rxjs';
+import type { DocumentFailure } from '../api/models';
 import { DocumentsService } from '../api/services/documents.service';
 import { AppEvent, AppEventsService } from '../events/app-events.service';
 import { errorMessage } from '../shared/error-message';
@@ -61,6 +62,9 @@ export interface Document {
   notebookId: string;
   filename: string;
   status: DocumentStatus;
+  // Why the latest Version failed Ingestion: null unless `status` is
+  // `failed` (NBK-64). Never the backend's raw error text, which stays there.
+  failure: DocumentFailure | null;
   abstract: string | null;
   createdAt: string;
   latestVersion: DocumentVersion;

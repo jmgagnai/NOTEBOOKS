@@ -1,7 +1,12 @@
 import { z } from 'zod';
 import type { AppEventDraft } from '../events/bus.js';
 import { notebookTopic } from '../events/schema.js';
-import type { DocumentStatus } from '../documents/schema.js';
+import type {
+  DocumentFailure,
+  DocumentStatus,
+  FailedAt,
+  FailureReason,
+} from '../documents/schema.js';
 
 /**
  * What the three ingestion Stages have genuinely in common, and nothing else.
@@ -20,6 +25,10 @@ import type { DocumentStatus } from '../documents/schema.js';
  * - the App Event a status change is announced as. That envelope is a
  *   *published contract* — `documents.store.ts` parses it — so three copies of
  *   it is three ways for one of them to drift out of what the frontend reads.
+ * - turning a caught error into a failure reason (`IngestionFailure`,
+ *   `attemptFailed`, NBK-64). Users see that reason, so three ways of
+ *   deciding it would be three ways to tell them different things about the
+ *   same failure.
  *
  * **Not shared, deliberately:**
  *
@@ -129,3 +138,55 @@ export function eventErrorSummary(error: string): string {
  * left for the rest of the envelope.
  */
 const MAX_EVENT_ERROR_CHARS = 500;
+
+/**
+ * A Stage's error that knows why, in user terms, the work could not be done
+ * (NBK-63).
+ *
+ * Raised where the cause is recognised — the converter seeing a scan, a
+ * provider call failing — so the reason is decided at the source instead of
+ * guessed later from the message, which is written for developers and free
+ * to change. Anything thrown that is not one of these is recorded as
+ * `unexpected`.
+ */
+export class IngestionFailure extends Error {
+  override readonly name = 'IngestionFailure';
+
+  constructor(
+    readonly reason: FailureReason,
+    message: string,
+    options?: ErrorOptions,
+  ) {
+    super(message, options);
+  }
+}
+
+/**
+ * What a Stage writes when an attempt throws: the full error for operators,
+ * and the failure reason for users.
+ */
+export interface AttemptFailure {
+  error: string;
+  /** Null while a retry is pending: only the final transition to `failed` carries a reason. */
+  failure: DocumentFailure | null;
+}
+
+/**
+ * Turns what a Stage caught into what it records, given whether pg_boss will
+ * retry and the status the Stage was working in.
+ *
+ * The one place a thrown error becomes a failure reason, shared by all three
+ * Stages so a new classification is a new `IngestionFailure` at its source and
+ * nothing here. Each Stage writes the result in its own `UPDATE`, setting the
+ * reason columns on every transition, so moving to any status but `failed`
+ * clears them (migration 0012 refuses a reason on any other status).
+ */
+export function attemptFailed(
+  err: unknown,
+  { willRetry, failedAt }: { willRetry: boolean; failedAt: FailedAt },
+): AttemptFailure {
+  const error = err instanceof Error ? err.message : String(err);
+  if (willRetry) return { error, failure: null };
+  const reason = err instanceof IngestionFailure ? err.reason : 'unexpected';
+  return { error, failure: { reason, failedAt } };
+}

@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { access, readFile, rename } from 'node:fs/promises';
 import { basename, dirname, extname, join, parse } from 'node:path';
+import { IngestionFailure } from './stage.js';
 
 async function fileExists(path: string): Promise<boolean> {
   try {
@@ -257,7 +258,8 @@ export function createDoclingConverter(options: DoclingOptions = {}): MarkdownCo
       extname(inputName).toLowerCase() === '.pdf' &&
       looksScanned(await readFile(produced, 'utf8'))
     ) {
-      throw new Error(
+      throw new IngestionFailure(
+        'no-text-layer',
         `${inputName} has no text layer (a scanned PDF), and OCR is disabled. ` +
           'Upload a PDF whose text is selectable.',
       );
