@@ -73,11 +73,6 @@ export class Sidebar {
   /** The Notebook the current route is inside, if any. */
   protected readonly notebookId = computed(() => this.page().paramMap.get('notebookId'));
 
-  /** Only the Notebook page itself, not its Search or Document pages (spec 07 story 12). */
-  protected readonly onNotebookPage = computed(
-    () => this.page().routeConfig?.path === NOTEBOOK_PAGE_PATH,
-  );
-
   /**
    * Component state only, like the Documents pane's hidden state: a reload
    * starts expanded again, or collapsed on a narrow window.
@@ -86,6 +81,15 @@ export class Sidebar {
 
   private readonly onDocumentPage = computed(
     () => this.page().routeConfig?.path === DOCUMENT_PAGE_PATH,
+  );
+
+  /**
+   * The pages with a chat pane whose Chat Thread the sidebar switches: the
+   * Notebook page (spec 07 story 12) and, since spec 08, the Document page.
+   * Not Search, which has none.
+   */
+  protected readonly showsChatThreads = computed(
+    () => this.page().routeConfig?.path === NOTEBOOK_PAGE_PATH || this.onDocumentPage(),
   );
 
   /**
