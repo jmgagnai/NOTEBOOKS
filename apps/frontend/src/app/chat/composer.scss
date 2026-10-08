@@ -1,0 +1,134 @@
+// The question box (NBK-45, spec 04 "Composer"): one bordered 8 px box, the
+// textarea inside it borderless, so the whole box reads as the control.
+:host {
+  display: block;
+  flex: none;
+  padding: 8px 12px 12px;
+}
+
+// The error row (story 23): error-container tint, the message, Dismiss.
+.composer__error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 4px 4px 4px 12px;
+  border-radius: var(--mat-sys-corner-medium);
+  background: var(--mat-sys-error-container);
+  color: var(--mat-sys-on-error-container);
+}
+
+.composer__error-icon {
+  flex: none;
+}
+
+.composer__error-text {
+  flex: 1 1 auto;
+  font: var(--mat-sys-body-small);
+}
+
+.composer__error-dismiss.mat-mdc-icon-button {
+  --mat-icon-button-icon-color: var(--mat-sys-on-error-container);
+  --mat-icon-button-state-layer-color: var(--mat-sys-on-error-container);
+}
+
+.composer {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 8px 6px 12px;
+  border: 1px solid var(--mat-sys-outline);
+  border-radius: var(--mat-sys-corner-medium);
+  background: var(--mat-sys-surface);
+  transition: border-color 0.12s;
+
+  // Spec 01's one focus exception: the ring would wrap the whole box the
+  // user is typing in, so the border darkens instead (spec 04, story 15e).
+  &:focus-within {
+    border-color: var(--app-outline-focus);
+  }
+
+  &--closed {
+    background: var(--mat-sys-surface-container);
+  }
+
+  // While answering the box is closed but not idle: the accent border and
+  // the bar along the top edge say an answer is on its way (story 15).
+  &--answering {
+    border-color: var(--mat-sys-primary-container);
+  }
+
+  &__progress {
+    position: absolute;
+    top: 0;
+    left: 8px;
+    right: 8px;
+    height: 2px;
+    --mdc-linear-progress-track-color: transparent;
+  }
+
+  // Takes the send button's place at the same size, so the bar's row does
+  // not jump when the state flips.
+  &__answering {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--app-control-height);
+    height: var(--app-control-height);
+  }
+
+  &__input {
+    border: 0;
+    resize: none;
+    font: inherit;
+    line-height: var(--mat-sys-body-medium-line-height);
+    color: var(--mat-sys-on-surface);
+    background: transparent;
+    padding: 6px 0;
+    min-height: calc(var(--mat-sys-body-medium-line-height) + 12px);
+    // Grows with the draft (story 4) to about six lines, then scrolls.
+    max-height: calc(6 * var(--mat-sys-body-medium-line-height) + 12px);
+    overflow-y: auto;
+
+    &::placeholder {
+      color: var(--mat-sys-on-surface-variant);
+    }
+
+    &:focus-visible {
+      outline: none;
+    }
+  }
+
+  &__bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  &__hint {
+    font: var(--mat-sys-body-small);
+    color: var(--mat-sys-on-surface-variant);
+  }
+
+  // The send control is the box's one primary action, so it is filled like
+  // a primary button rather than subtle like the app's other icon buttons.
+  &__send.mat-mdc-icon-button {
+    --mat-icon-button-icon-color: var(--mat-sys-on-primary);
+    --mat-icon-button-state-layer-color: var(--mat-sys-on-primary);
+    background: var(--mat-sys-primary);
+
+    &:hover:not(:disabled) {
+      background: var(--app-primary-hover);
+    }
+
+    &:active:not(:disabled) {
+      background: var(--app-primary-pressed);
+    }
+
+    &:disabled {
+      background: var(--mat-sys-surface-container-high);
+    }
+  }
+}

@@ -161,6 +161,9 @@ html {
   --app-primary-hover: #115ea3;
   --app-primary-pressed: #0c3b5e;
   --app-text-disabled: #bdbdbd;
+  // The chat composer's focused border (spec 04): a step darker than the
+  // strong border, standing in for the focus ring the box does not draw.
+  --app-outline-focus: #8a8a8a;
   --app-title-bar-height: 48px;
   --app-control-height: 32px;
   // The Copilot sparkle gradient. Spec 01 allows it in exactly one place —

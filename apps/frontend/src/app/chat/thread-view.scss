@@ -35,12 +35,6 @@
     padding: 8px 12px;
   }
 
-  &__error {
-    flex: none;
-    padding: 0 12px;
-    color: var(--mat-sys-error);
-  }
-
   &__head {
     flex: none;
     display: flex;
@@ -183,17 +177,6 @@
   &__citation-version {
     color: var(--mat-sys-on-surface-variant);
     font-variant-numeric: tabular-nums;
-  }
-
-  // The border marks where the scrolling stops (NBK-35): without it a long
-  // Thread's last message runs straight into the question box.
-  &__composer {
-    flex: none;
-    display: flex;
-    align-items: flex-end;
-    gap: 0.5rem;
-    padding: 8px 12px 12px;
-    border-top: 1px solid var(--mat-sys-surface-container-high);
   }
 }
 

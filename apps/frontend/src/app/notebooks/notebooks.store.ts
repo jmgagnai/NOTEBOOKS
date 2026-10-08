@@ -50,13 +50,21 @@ export const NotebooksStore = signalStore(
       }
     },
 
-    async createNotebook(title: string): Promise<void> {
+    /**
+     * Resolves to the created Notebook's id, or `null` when the create failed
+     * (and `error` says why), so the home page can open it (NBK-55). It is in
+     * the list before this resolves, which is what lets the Notebook page —
+     * with no "get one Notebook" endpoint — find its title straight away.
+     */
+    async createNotebook(title: string): Promise<string | null> {
       patchState(store, { error: null });
       try {
         const notebook = await notebooksService.createNotebook({ body: { title } });
         patchState(store, { notebooks: [...store.notebooks(), notebook] });
+        return notebook.id;
       } catch (err) {
         patchState(store, { error: errorMessage(err, 'Failed to create Notebook.') });
+        return null;
       }
     },
 
