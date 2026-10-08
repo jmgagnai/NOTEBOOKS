@@ -9,9 +9,13 @@ import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-/** The explicit set spec 01 "Icons" registers, plus spec 02's three and the title bar's sign-out. */
+/**
+ * The explicit set spec 01 "Icons" registers, plus spec 02's three, the title
+ * bar's sign-out and spec 04's history (the Chat Threads navigator's title).
+ */
 const NAMES = [
   'add',
+  'history',
   'search',
   'more-horizontal',
   'delete',

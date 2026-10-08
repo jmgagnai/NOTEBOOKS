@@ -202,12 +202,52 @@ export const ChatStore = signalStore(
       }
     }
 
+    /** Opens a Chat Thread and loads its messages. */
+    async function openThread(notebookId: string, threadId: string): Promise<void> {
+      patchState(store, {
+        activeThreadId: threadId,
+        // The previous Thread's messages belong to a different Chat Thread,
+        // and so does anything that was streaming into it.
+        messages: [],
+        streamingAnswer: null,
+        messagesLoading: true,
+        error: null,
+      });
+      try {
+        const messages = (await chatService.listChatMessages({
+          notebookId,
+          threadId,
+        })) as ChatMessage[];
+        patchState(store, { messages, messagesLoading: false });
+      } catch (err) {
+        patchState(store, {
+          messagesLoading: false,
+          error: errorMessage(err, 'Failed to load the Chat Thread.'),
+        });
+      }
+    }
+
     return {
+      /**
+       * Loads the Notebook's Chat Threads and, when none is open, opens the
+       * most recently created one (NBK-43, spec 04 "Default Thread": a user
+       * opening a Notebook that has Threads lands in context rather than on
+       * an empty card). Decided here rather than in the navigator because
+       * it is a rule about the data — whichever component triggers the load
+       * gets the same open Thread — and because this is the one place that
+       * knows the load has just finished. By `createdAt`, not list position:
+       * the backend lists newest first today, but that ordering is its
+       * choice, and the rule is "most recent".
+       */
       async loadThreads(notebookId: string): Promise<void> {
         patchState(store, { threadsLoading: true, error: null });
         try {
           const threads = (await chatService.listChatThreads({ notebookId })) as ChatThread[];
           patchState(store, { threads, threadsLoading: false });
+          if (store.activeThreadId() === null && threads.length > 0) {
+            const newest = threads.reduce((a, b) => (b.createdAt > a.createdAt ? b : a));
+            await openThread(notebookId, newest.id);
+          }
         } catch (err) {
           patchState(store, {
             threadsLoading: false,
@@ -252,30 +292,7 @@ export const ChatStore = signalStore(
         }
       },
 
-      /** Opens a Chat Thread and loads its messages. */
-      async openThread(notebookId: string, threadId: string): Promise<void> {
-        patchState(store, {
-          activeThreadId: threadId,
-          // The previous Thread's messages belong to a different Chat Thread,
-          // and so does anything that was streaming into it.
-          messages: [],
-          streamingAnswer: null,
-          messagesLoading: true,
-          error: null,
-        });
-        try {
-          const messages = (await chatService.listChatMessages({
-            notebookId,
-            threadId,
-          })) as ChatMessage[];
-          patchState(store, { messages, messagesLoading: false });
-        } catch (err) {
-          patchState(store, {
-            messagesLoading: false,
-            error: errorMessage(err, 'Failed to load the Chat Thread.'),
-          });
-        }
-      },
+      openThread,
 
       /**
        * Asks a question and appends the exchange.

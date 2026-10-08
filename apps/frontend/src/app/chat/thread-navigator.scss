@@ -2,9 +2,9 @@
 @use '../workspace-card';
 
 // The Chat Threads navigator of a Notebook (NBK-10, split out of the chat
-// panel in NBK-34). The card it sits in is the page's (NBK-35); this fills
-// it as a column — the header row fixed, the Thread list scrolling — so the
-// host stretches to the card's height.
+// panel in NBK-34, a list of rows since NBK-43). The card it sits in is the
+// page's (NBK-35); this fills it as a column — the header row fixed, the
+// Thread list scrolling — so the host stretches to the card's height.
 :host {
   display: flex;
   flex-direction: column;
@@ -18,35 +18,32 @@
   flex: 1 1 auto;
   min-height: 0;
 
-  // The workspace card's header row, wrapping because at 240 px the title
-  // and the start-a-Thread box do not share a line.
   &__head {
     @include workspace-card.head;
-    flex-wrap: wrap;
-    padding-top: 8px;
-    padding-bottom: 8px;
   }
 
   &__title {
     @include workspace-card.title;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  // 16 px, as the prototype drew it: an icon the size of the text beside
+  // it, not the 20 px a button's icon takes.
+  &__title-icon {
+    width: 16px;
+    height: 16px;
+    font-size: 16px;
+    color: var(--mat-sys-on-surface-variant);
+  }
+
+  &__spacer {
+    flex: 1 1 auto;
   }
 
   &__body {
     @include workspace-card.body;
-  }
-
-  &__field {
-    @include controls.field;
-  }
-
-  &__field-label {
-    @include controls.field-label;
-  }
-
-  &__new-thread {
-    @include controls.field-row;
-    flex: 1 1 100%;
-    margin-bottom: 0;
   }
 
   &__empty {
@@ -59,42 +56,78 @@
     padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: 2px;
   }
 
-  &__thread {
-    border: 1px solid var(--mat-sys-outline-variant);
-    border-radius: var(--mat-sys-corner-medium);
-
-    // The open Thread, so a reader can tell which Thread they are in
-    // when several are listed.
-    &--active {
-      border-color: var(--mat-sys-primary);
-    }
-  }
-
+  // One row per Thread: the whole row is the button, so the hit area is the
+  // row and the selected mark can be drawn on the button itself.
   &__thread-open {
     display: flex;
     flex-direction: column;
-    gap: 0.15rem;
+    gap: 2px;
     width: 100%;
-    padding: 0.6rem 0.75rem;
+    min-width: 0;
+    padding: 8px 10px;
     border: 0;
+    // Always present, transparent, so the open row's bar does not shift
+    // the text of its neighbours.
+    border-left: 3px solid transparent;
+    border-radius: var(--mat-sys-corner-extra-small);
     background: transparent;
-    color: inherit;
+    color: var(--mat-sys-on-surface);
     font: inherit;
     text-align: left;
     cursor: pointer;
+
+    &:hover {
+      background: var(--mat-sys-surface-container);
+    }
+
+    // The open Thread (spec 04 "Navigator"): tinted fill, brand bar on the
+    // left, a 2 px brand outline drawn inside the row, bold title in the
+    // dark brand colour — weight as well as colour, so it stays
+    // unmistakable where the tint alone would not.
+    &--active {
+      background: var(--app-selected-fill);
+      border-left-color: var(--mat-sys-primary);
+      outline: 2px solid var(--mat-sys-primary);
+      outline-offset: -2px;
+
+      &:hover {
+        background: var(--app-selected-fill-hover);
+      }
+
+      .thread-navigator__thread-title {
+        color: var(--mat-sys-on-primary-container);
+        font-weight: 700;
+      }
+
+      .thread-navigator__thread-meta {
+        color: var(--app-primary-hover);
+      }
+    }
+
+    // The global focus ring would fight the selected outline on the open
+    // row and sit inside the bar on the others; drawn outside instead.
+    &:focus-visible {
+      outline-offset: 2px;
+    }
   }
 
   &__thread-title {
-    font-weight: 600;
+    font: var(--mat-sys-body-medium);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
-  // Attribution, not a heading: whose Thread this is matters, but it must not
-  // compete with the title it belongs to.
-  &__thread-author {
-    font-size: var(--mat-sys-body-small-size);
+  // Attribution and start date, not a heading: whose Thread this is matters,
+  // but it must not compete with the title it belongs to.
+  &__thread-meta {
+    font: var(--mat-sys-body-small);
     color: var(--mat-sys-on-surface-variant);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }
