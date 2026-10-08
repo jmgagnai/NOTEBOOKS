@@ -276,6 +276,10 @@ export class DocumentDetailPage implements OnInit, OnDestroy {
     // otherwise the one the Citation link names, else the newest (NBK-43).
     void this.chatStore.loadThreads(this.notebookId, this.query().get('thread'));
     this.chatStore.watchNotebook(this.notebookId);
+    // The Version on screen follows Ingestion while the page is open
+    // (NBK-93), from the same Notebook stream the Notebook page follows;
+    // the router has destroyed that page, and closed its watch, by now.
+    this.store.watchNotebook(this.notebookId);
   }
 
   /**
@@ -324,6 +328,7 @@ export class DocumentDetailPage implements OnInit, OnDestroy {
     // The store is root-provided and outlives this page, so an opened
     // Document — and especially its up-to-200-page content — has to be
     // dropped explicitly rather than held until the next one replaces it.
+    this.store.stopWatching();
     this.store.clearOpenDocument();
     this.leaveChat();
   }

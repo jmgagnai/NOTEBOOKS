@@ -134,6 +134,7 @@ export async function renderRouted(
   documentsService: Partial<DocumentsService>,
   chatService: Partial<ChatService>,
 ) {
+  const appEvents = appEventsStub();
   const rendered = await render(RouterShell, {
     deferBlockBehavior: DeferBlockBehavior.Playthrough,
     routes: [
@@ -151,11 +152,11 @@ export async function renderRouted(
       { provide: ChatService, useValue: chatService },
       { provide: DocumentTransferService, useValue: {} },
       { provide: AuthService, useValue: { getCurrentUser: vi.fn().mockResolvedValue(SIGNED_IN) } },
-      appEventsStub().provider,
+      appEvents.provider,
     ],
   });
   await TestBed.inject(AuthStore).checkSession();
-  return rendered;
+  return { ...rendered, appEvents };
 }
 
 /** A chat client for a Notebook holding those two Chat Threads, both empty. */
@@ -167,11 +168,10 @@ export function twoThreads(): Partial<ChatService> {
 }
 
 /**
- * What the Version-scoped read returns for an older Version of the fixture
- * Document — v1 of 2, superseded — with `overrides` on top: the shape a
- * followed Citation reads the page from.
+ * What the Version-scoped read returns for a Version of the fixture
+ * Document, with `overrides` on top: v1, latest unless overridden.
  */
-export function supersededVersionDetail(versionId: string, overrides: object = {}) {
+export function versionDetail(versionId: string, overrides: object = {}) {
   return {
     documentId: DOCUMENT_ID,
     notebookId: NOTEBOOK_ID,
@@ -189,8 +189,16 @@ export function supersededVersionDetail(versionId: string, overrides: object = {
     chatSnippet: null,
     executiveSummary: null,
     metadata: null,
-    isLatestVersion: false,
-    latestVersionNumber: 2,
+    isLatestVersion: true,
+    latestVersionNumber: 1,
     ...overrides,
   };
+}
+
+/**
+ * The same for an older Version — v1 of 2, superseded: the shape a followed
+ * Citation reads the page from.
+ */
+export function supersededVersionDetail(versionId: string, overrides: object = {}) {
+  return versionDetail(versionId, { isLatestVersion: false, latestVersionNumber: 2, ...overrides });
 }

@@ -86,6 +86,26 @@ interface DocumentVersionStatusChanged {
 
 const DOCUMENT_VERSION_STATUS_CHANGED = 'document-version-status-changed';
 
+// Two readings of the Ingestion stage order, which is the backend's:
+// `documentStatusSchema` in apps/backend/src/documents/schema.ts lists the
+// statuses in pipeline order — change these with it.
+
+/**
+ * The statuses after which a Version's generated artifacts are written (or
+ * never will be): the Document page re-reads its open Version on reaching
+ * one (NBK-93).
+ */
+const ARTIFACTS_SETTLED: ReadonlySet<DocumentStatus> = new Set(['summarized', 'ready', 'failed']);
+
+/** The statuses a Version has its Converted Markdown in (NBK-93). */
+const CONVERTED: ReadonlySet<DocumentStatus> = new Set([
+  'converted',
+  'summarizing',
+  'summarized',
+  'indexing',
+  'ready',
+]);
+
 /** Narrows a generic app event to a Document Version status change, or null. */
 function asStatusChange(event: AppEvent): DocumentVersionStatusChanged | null {
   if (event.type !== DOCUMENT_VERSION_STATUS_CHANGED) return null;
@@ -591,6 +611,185 @@ export const DocumentsStore = signalStore(
         await Promise.all([runWorkers(), askConflicts()]);
       }
 
+      /**
+       * The open Document follows its Version through Ingestion (NBK-93): the
+       * Document page's badge and failure sentence move with each event, as
+       * the list's badges do. Only for the Version on screen — a pinned older
+       * Version has finished Ingestion, and a newer one (a re-upload while
+       * reading) is not what the reader is looking at.
+       */
+      function followOpenVersion(notebookId: string, change: DocumentVersionStatusChanged): void {
+        const open = store.openDocument();
+        if (!open || open.id !== change.documentId || open.version.id !== change.versionId) return;
+        patchState(store, {
+          openDocument: { ...open, status: change.status, failure: change.failure },
+        });
+        // The event says what changed, not the Executive Summary or metadata
+        // it brought (ADR-0004), so the Version is read again once they can
+        // exist — by its id, never as "latest", so the page stays on it.
+        if (ARTIFACTS_SETTLED.has(change.status)) {
+          void refreshOpenVersion(notebookId, change.documentId, change.versionId);
+        }
+        // A reader who opened the full Document before it was converted is
+        // shown "not converted yet"; once conversion is done, read it again.
+        const content = store.openContent();
+        if (
+          content?.versionId === change.versionId &&
+          content.markdown === null &&
+          CONVERTED.has(change.status)
+        ) {
+          void refreshOpenContent(notebookId, change.documentId, change.versionId);
+        }
+      }
+
+      /**
+       * Reads the open Version again and updates it in place — no loading
+       * state, no error, the Converted Markdown kept — unlike
+       * `loadDocumentVersion`, which starts the page over. It takes the
+       * artifacts from the read and keeps what the page already knows better:
+       * the status and failure, which events have kept newer than any read
+       * (and which the Version-scoped read carries no reason for), and
+       * whether this is the latest Version — a re-upload mid-read is not
+       * this page's to announce. It does not take a turn in the
+       * newest-read-wins order (NBK-87): it lands only if no read of the open
+       * Document has started since, so a Citation followed meanwhile wins.
+       */
+      async function refreshOpenVersion(
+        notebookId: string,
+        documentId: string,
+        versionId: string,
+      ): Promise<void> {
+        const request = openRequest;
+        try {
+          const detail = (await documentsService.getDocumentVersion({
+            notebookId,
+            documentId,
+            versionId,
+          })) as DocumentVersionDetail;
+          const open = store.openDocument();
+          if (request !== openRequest || open?.version.id !== versionId) return;
+          patchState(store, {
+            openDocument: {
+              ...fromVersionDetail(detail),
+              status: open.status,
+              failure: open.failure,
+              isLatestVersion: open.isLatestVersion,
+              latestVersionNumber: open.latestVersionNumber,
+            },
+          });
+        } catch {
+          // The status is already shown from the event; failing to bring in
+          // the artifacts leaves the page as it was, which a reload mends.
+        }
+      }
+
+      /**
+       * Reads the open Version's Converted Markdown again once conversion is
+       * done, for a reader shown "not converted yet" (NBK-93). Quietly, like
+       * `refreshOpenVersion`: the sentence stays until the Markdown is there,
+       * and a failed read leaves it.
+       */
+      async function refreshOpenContent(
+        notebookId: string,
+        documentId: string,
+        versionId: string,
+      ): Promise<void> {
+        if (contentInFlight === versionId) return;
+        contentInFlight = versionId;
+        try {
+          const content = await documentsService.getDocumentVersionContent({
+            notebookId,
+            documentId,
+            versionId,
+          });
+          if (contentInFlight !== versionId) return;
+          contentInFlight = null;
+          if (store.openContent()?.versionId !== versionId) return;
+          patchState(store, { openContent: content });
+        } catch {
+          if (contentInFlight === versionId) contentInFlight = null;
+        }
+      }
+
+      /** The Documents list's badges follow each Document's latest Version (NBK-6). */
+      function followList(notebookId: string, change: DocumentVersionStatusChanged): void {
+        const target = store
+          .documents()
+          .find(
+            (document) =>
+              document.id === change.documentId && document.latestVersion.id === change.versionId,
+          );
+        // The badge shows the *latest* Version's status, so a late event
+        // about a Version that has since been superseded by a re-upload
+        // must not drag it backwards.
+        if (!target) return;
+
+        patchState(store, {
+          documents: store
+            .documents()
+            .map((document) =>
+              document === target
+                ? { ...document, status: change.status, failure: change.failure }
+                : document,
+            ),
+        });
+
+        // An app event carries *what changed*, never bulk data — per
+        // ADR-0004 a NOTIFY payload must stay well inside Postgres's
+        // 8000-byte cap — so the newly generated Abstract is not in it.
+        // Reaching "summarized" (NBK-7) is therefore the cue to re-read
+        // this one Document over the normal API, which is exactly the
+        // "an event is a hint; re-read the truth" contract the ADR sets.
+        if (change.status === 'summarized') {
+          void documentsService
+            .getDocument({ notebookId, documentId: change.documentId })
+            .then((fresh) => {
+              patchState(store, {
+                documents: store
+                  .documents()
+                  .map((document) =>
+                    document.id === fresh.id ? { ...document, ...fresh } : document,
+                  ),
+              });
+            })
+            .catch(() => {
+              // The badge is already correct; failing to enrich it with an
+              // Abstract is not worth an error banner over a background
+              // event the user never asked for.
+            });
+        }
+      }
+
+      // `loadDocumentContent`, also used by the live stream (NBK-93).
+      async function loadContent(
+        notebookId: string,
+        documentId: string,
+        versionId: string,
+      ): Promise<void> {
+        if (store.openContent()?.versionId === versionId) return;
+        if (contentInFlight === versionId) return;
+        contentInFlight = versionId;
+        patchState(store, { openContentLoading: true, error: null });
+        try {
+          const openContent = await documentsService.getDocumentVersionContent({
+            notebookId,
+            documentId,
+            versionId,
+          });
+          // Overtaken by another Version, or by another Document opened.
+          if (contentInFlight !== versionId) return;
+          contentInFlight = null;
+          patchState(store, { openContent, openContentLoading: false });
+        } catch (err) {
+          if (contentInFlight !== versionId) return;
+          contentInFlight = null;
+          patchState(store, {
+            openContentLoading: false,
+            error: errorMessage(err, 'Failed to load the Document content.'),
+          });
+        }
+      }
+
       return {
         async loadDocuments(notebookId: string): Promise<void> {
           patchState(store, { loading: true, error: null });
@@ -693,34 +892,7 @@ export const DocumentsStore = signalStore(
          * payload that can run past 200 pages, so it is only ever fetched
          * because a reader asked for it, and only once per Version.
          */
-        async loadDocumentContent(
-          notebookId: string,
-          documentId: string,
-          versionId: string,
-        ): Promise<void> {
-          if (store.openContent()?.versionId === versionId) return;
-          if (contentInFlight === versionId) return;
-          contentInFlight = versionId;
-          patchState(store, { openContentLoading: true, error: null });
-          try {
-            const openContent = await documentsService.getDocumentVersionContent({
-              notebookId,
-              documentId,
-              versionId,
-            });
-            // Overtaken by another Version, or by another Document opened.
-            if (contentInFlight !== versionId) return;
-            contentInFlight = null;
-            patchState(store, { openContent, openContentLoading: false });
-          } catch (err) {
-            if (contentInFlight !== versionId) return;
-            contentInFlight = null;
-            patchState(store, {
-              openContentLoading: false,
-              error: errorMessage(err, 'Failed to load the Document content.'),
-            });
-          }
-        },
+        loadDocumentContent: loadContent,
 
         /** Drops the open Document, so navigating away doesn't leak it. */
         clearOpenDocument(): void {
@@ -908,52 +1080,8 @@ export const DocumentsStore = signalStore(
           watching = appEvents.stream([`notebook:${notebookId}`]).subscribe((event) => {
             const change = asStatusChange(event);
             if (!change) return;
-            const target = store
-              .documents()
-              .find(
-                (document) =>
-                  document.id === change.documentId &&
-                  document.latestVersion.id === change.versionId,
-              );
-            // The badge shows the *latest* Version's status, so a late event
-            // about a Version that has since been superseded by a re-upload
-            // must not drag it backwards.
-            if (!target) return;
-
-            patchState(store, {
-              documents: store
-                .documents()
-                .map((document) =>
-                  document === target
-                    ? { ...document, status: change.status, failure: change.failure }
-                    : document,
-                ),
-            });
-
-            // An app event carries *what changed*, never bulk data — per
-            // ADR-0004 a NOTIFY payload must stay well inside Postgres's
-            // 8000-byte cap — so the newly generated Abstract is not in it.
-            // Reaching "summarized" (NBK-7) is therefore the cue to re-read
-            // this one Document over the normal API, which is exactly the
-            // "an event is a hint; re-read the truth" contract the ADR sets.
-            if (change.status === 'summarized') {
-              void documentsService
-                .getDocument({ notebookId, documentId: change.documentId })
-                .then((fresh) => {
-                  patchState(store, {
-                    documents: store
-                      .documents()
-                      .map((document) =>
-                        document.id === fresh.id ? { ...document, ...fresh } : document,
-                      ),
-                  });
-                })
-                .catch(() => {
-                  // The badge is already correct; failing to enrich it with an
-                  // Abstract is not worth an error banner over a background
-                  // event the user never asked for.
-                });
-            }
+            followOpenVersion(notebookId, change);
+            followList(notebookId, change);
           });
         },
 
