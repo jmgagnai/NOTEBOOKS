@@ -50,18 +50,6 @@
         <p class="document-detail-page__failure" data-testid="failure-reason">{{ sentence }}</p>
       }
 
-      @if (details().length > 0) {
-        <details class="document-detail-page__details">
-          <summary>Details</summary>
-          <dl>
-            @for (entry of details(); track entry.label) {
-              <dt>{{ entry.label }}</dt>
-              <dd>{{ entry.value }}</dd>
-            }
-          </dl>
-        </details>
-      }
-
       @if (viewingSupersededVersion()) {
         <!--
           Arrived from a Citation pointing at an older Version. Per
@@ -78,6 +66,18 @@
           }}
           is.
         </p>
+      }
+
+      @if (details().length > 0) {
+        <details class="document-detail-page__details">
+          <summary>Details</summary>
+          <dl>
+            @for (entry of details(); track entry.label) {
+              <dt>{{ entry.label }}</dt>
+              <dd>{{ entry.value }}</dd>
+            }
+          </dl>
+        </details>
       }
 
       <!--
@@ -102,10 +102,10 @@
       -->
       <section class="document-detail-page__content">
         <!--
-          A quiet text control rather than a Material button (spec 08):
+          The Subtle variant rather than a Material text button (spec 08):
           going on to the full Document should read as reading on.
         -->
-        <button type="button" class="document-detail-page__read-on" (click)="toggleFullContent()">
+        <button type="button" class="app-button" (click)="toggleFullContent()">
           {{ expanded() ? 'Hide the full Document' : 'Read the full Document' }}
         </button>
 

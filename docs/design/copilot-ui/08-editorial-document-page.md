@@ -154,6 +154,14 @@ comment saying why they are not theme tokens, so the theme-token check still
 passes. The Markdown view renders the summary and the full content in that
 scale.
 
+_Amended by NBK-85:_ the title takes the app's `page-title` role (40/52, the
+largest headline in the app, already used by the other pages' titles) and the
+body a new `document` app role (17/30, so a line height of about 1.76),
+defined with the other app roles in the theme and documented in
+`docs/frontend-theme.md` — one source for the reading type rather than a
+page-local copy. Only the measure stays a page-level property. A Markdown
+heading never renders below the text around it.
+
 **Two panes.** On wide windows the page is a two-column flat layout — chat
 pane, thin divider, Document pane — at roughly one third / two thirds, in the
 same flat style as the Notebook page (spec 07). The Document pane scrolls on

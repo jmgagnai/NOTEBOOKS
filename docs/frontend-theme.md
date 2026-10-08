@@ -73,8 +73,9 @@ from rendering as pills, which is also why anything drawn as a circle
 Since spec 07 (NBK-78) the app has no grey canvas and no pane cards: every
 page is flat white, and panes are separated by 1 px `outline-variant` lines,
 the way Copilot Notebooks looks. `mat-card` is overridden to match (white,
-square, no border, no shadow, whatever its appearance), so the Document and
-Search pages' cards read as the page itself. On the Notebook page the panes
+square, no border, no shadow, whatever its appearance), so the Search page's
+card reads as the page itself; the Document page has no card at all since
+spec 08, and draws its header row's 1 px line itself. On the Notebook page the panes
 come from the `card`/`head`/`title`/`body` mixins in
 `apps/frontend/src/app/_workspace-card.scss` (white, no border, no corner);
 the workspace grid draws the lines by having a 1 px gap over an
@@ -103,7 +104,9 @@ read. Each role has a shorthand token (`--mat-sys-<role>`, usable as
 (font only; margins stay the browser's or the component's), so page headings
 sit on the scale without per-page rules. Rendered Markdown
 (`markdown-view.scss`) keeps a taller hierarchy for document headings
-(`headline-small` 24 px, then `title-large`, `title-medium`).
+(`headline-small` 24 px, then `title-large`, `title-medium`, never below the
+surrounding text), and the Document page's "Executive Summary" section
+heading takes `headline-small` too, to sit with them (spec 08).
 
 ### Spec 07 roles
 

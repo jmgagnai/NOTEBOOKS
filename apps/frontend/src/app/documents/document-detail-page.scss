@@ -15,7 +15,6 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    min-height: var(--app-control-height);
     padding: 0.5rem 1rem;
     background: var(--mat-sys-surface);
     border-bottom: 1px solid var(--mat-sys-outline-variant);
@@ -33,11 +32,14 @@
 
   // About 72 characters of the article's type: long lines are what make a
   // 200-page Document tiring, not its length. In `ch`, so the measure
-  // follows the type rather than the window.
+  // follows the type rather than the window. A page property, not a theme
+  // token: no other page sets a reading measure (spec 08).
+  --document-page-measure: 72ch;
+
   &__article {
     box-sizing: border-box;
     width: 100%;
-    max-width: calc(72ch + 4rem);
+    max-width: calc(var(--document-page-measure) + 4rem);
     margin: 0 auto;
     padding: 2.5rem 2rem 4rem;
     font: var(--app-type-document);
@@ -115,27 +117,6 @@
     margin: 0 0 0.5rem;
   }
 
-  // "Read the full Document": a quiet text control, so going on reads as
-  // reading on rather than operating a form.
-  &__read-on {
-    padding: 0;
-    border: 0;
-    background: none;
-    font: var(--mat-sys-title-medium);
-    color: var(--mat-sys-primary);
-    cursor: pointer;
-
-    &:hover {
-      text-decoration: underline;
-    }
-
-    &:focus-visible {
-      outline: 2px solid var(--mat-sys-primary);
-      outline-offset: 2px;
-      border-radius: var(--mat-sys-corner-extra-small);
-    }
-  }
-
   &__pending {
     color: var(--mat-sys-on-surface-variant);
     font-style: italic;
@@ -150,6 +131,6 @@
     border-radius: var(--mat-sys-corner-extra-small);
     background: var(--mat-sys-primary-container);
     color: var(--mat-sys-on-primary-container);
-    font: var(--mat-sys-body-medium);
+    font: var(--mat-sys-body-small);
   }
 }

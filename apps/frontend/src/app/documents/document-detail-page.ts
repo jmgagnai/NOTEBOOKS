@@ -127,6 +127,12 @@ export class DocumentDetailPage implements OnInit, OnDestroy {
     return this.citedVersionId ?? this.store.openDocument()?.version.id ?? null;
   }
 
+  // The metadata keys read below (`title`, `authors`, `publishedOn`,
+  // `documentType`, `language`, `subject`, `keywords`) mirror
+  // `documentMetadataSchema` in apps/backend/src/ingestion/generated-artifacts.ts,
+  // their source of truth: the generated client types metadata as an open
+  // record, so a renamed key there would silently blank it here.
+
   /**
    * The title extracted at Ingestion (NBK-7), or null when the Document did
    * not state one or is not summarised yet. Spec 08: it is the page's
