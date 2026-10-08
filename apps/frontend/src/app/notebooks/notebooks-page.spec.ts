@@ -1,6 +1,19 @@
+import { Component } from '@angular/core';
+import { TestBed } from '@angular/core/testing';
+import { Router } from '@angular/router';
 import { fireEvent, render, screen, waitFor } from '@testing-library/angular';
 import { NotebooksPage } from './notebooks-page';
 import { NotebooksService } from '../api/services/notebooks.service';
+import { provideAppIcons } from '../shared/fluent-icons';
+
+/** Where "Create Notebook" lands; the real Notebook page is not under test here. */
+@Component({ selector: 'app-opened-notebook', template: 'Opened Notebook' })
+class OpenedNotebook {}
+
+/** The page's providers, with `notebooksService` standing in for the API client. */
+function pageProviders(notebooksService: Partial<Record<keyof NotebooksService, unknown>>) {
+  return [{ provide: NotebooksService, useValue: notebooksService }, provideAppIcons()];
+}
 
 // Seam-3 test (per NBK-1's testing decisions): render the real page +
 // SignalStore, mocking only the generated ng-openapi-gen client interface —
@@ -13,7 +26,7 @@ describe('NotebooksPage', () => {
     ]);
 
     await render(NotebooksPage, {
-      providers: [{ provide: NotebooksService, useValue: { listNotebooks } }],
+      providers: pageProviders({ listNotebooks }),
     });
 
     expect(await screen.findByText('Q3 Contracts')).toBeTruthy();
@@ -21,52 +34,81 @@ describe('NotebooksPage', () => {
     expect(listNotebooks).toHaveBeenCalled();
   });
 
-  it('offers an Open link into each Notebook (NBK-5 detail view)', async () => {
+  // NBK-55: a Notebook is a card whose body is a link into it, so opening
+  // one is a single click (or Enter) rather than a separate "Open" button.
+  it('shows each Notebook as a card linking to it, with its creation date', async () => {
     const listNotebooks = vi
       .fn()
       .mockResolvedValue([
-        { id: '1', title: 'Q3 Contracts', createdAt: '2026-01-01T00:00:00.000Z' },
+        { id: '1', title: 'Q3 Contracts', createdAt: '2026-01-15T12:00:00.000Z' },
       ]);
 
     await render(NotebooksPage, {
-      providers: [{ provide: NotebooksService, useValue: { listNotebooks } }],
+      providers: pageProviders({ listNotebooks }),
     });
 
-    await screen.findByText('Q3 Contracts');
-    expect(screen.getByRole('button', { name: 'Open' })).toBeTruthy();
+    const card = await screen.findByRole('link', { name: /Q3 Contracts/ });
+    expect(card.getAttribute('href')).toBe('/notebooks/1');
+    expect(card.textContent).toContain('Created Jan 15, 2026');
+    expect(screen.queryByRole('button', { name: 'Open' })).toBeNull();
   });
 
-  it('shows an empty state when the Notebook list is empty', async () => {
+  it('shows an empty state with the Create button when the Notebook list is empty', async () => {
     const listNotebooks = vi.fn().mockResolvedValue([]);
 
     await render(NotebooksPage, {
-      providers: [{ provide: NotebooksService, useValue: { listNotebooks } }],
+      providers: pageProviders({ listNotebooks }),
     });
 
     expect(await screen.findByText('No Notebooks yet.')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Notebooks' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Create Notebook' })).toBeTruthy();
+    expect(screen.queryByLabelText('New Notebook title')).toBeNull();
   });
 
-  it('creates a Notebook through the form', async () => {
-    const listNotebooks = vi.fn().mockResolvedValue([]);
+  // NBK-55 (spec 05 "Create"): no title is asked for up front — the new
+  // Notebook opens straight away, where its header title is editable.
+  it('creates an "Untitled Notebook" and opens it', async () => {
+    const listNotebooks = vi
+      .fn()
+      .mockResolvedValue([
+        { id: '1', title: 'Q3 Contracts', createdAt: '2026-01-15T12:00:00.000Z' },
+      ]);
     const createNotebook = vi.fn().mockResolvedValue({
-      id: '1',
-      title: 'New Research',
-      createdAt: '2026-01-01T00:00:00.000Z',
+      id: '7',
+      title: 'Untitled Notebook',
+      createdAt: '2026-01-16T12:00:00.000Z',
     });
 
     await render(NotebooksPage, {
-      providers: [{ provide: NotebooksService, useValue: { listNotebooks, createNotebook } }],
+      providers: pageProviders({ listNotebooks, createNotebook }),
+      routes: [{ path: 'notebooks/:notebookId', component: OpenedNotebook }],
     });
+    await screen.findByText('Q3 Contracts');
 
+    fireEvent.click(screen.getByRole('button', { name: 'Create Notebook' }));
+
+    expect(createNotebook).toHaveBeenCalledWith({ body: { title: 'Untitled Notebook' } });
+    const router = TestBed.inject(Router);
+    await vi.waitFor(() => expect(router.url).toBe('/notebooks/7'));
+  });
+
+  it('stays on the page and says why when creating fails', async () => {
+    const listNotebooks = vi.fn().mockResolvedValue([]);
+    const createNotebook = vi
+      .fn()
+      .mockRejectedValue({ error: { message: 'Title must not be empty.' } });
+
+    await render(NotebooksPage, {
+      providers: pageProviders({ listNotebooks, createNotebook }),
+      routes: [{ path: 'notebooks/:notebookId', component: OpenedNotebook }],
+    });
     await screen.findByText('No Notebooks yet.');
 
-    fireEvent.input(screen.getByLabelText('New Notebook title'), {
-      target: { value: 'New Research' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Create Notebook' }));
 
-    expect(await screen.findByText('New Research')).toBeTruthy();
-    expect(createNotebook).toHaveBeenCalledWith({ body: { title: 'New Research' } });
+    expect(await screen.findByText('Title must not be empty.')).toBeTruthy();
+    expect(TestBed.inject(Router).url).toBe('/');
   });
 
   it('renames a Notebook', async () => {
@@ -82,7 +124,7 @@ describe('NotebooksPage', () => {
     });
 
     await render(NotebooksPage, {
-      providers: [{ provide: NotebooksService, useValue: { listNotebooks, renameNotebook } }],
+      providers: pageProviders({ listNotebooks, renameNotebook }),
     });
 
     await screen.findByText('Q3 Contracts');
@@ -106,7 +148,7 @@ describe('NotebooksPage', () => {
     const deleteNotebook = vi.fn().mockResolvedValue(null);
 
     await render(NotebooksPage, {
-      providers: [{ provide: NotebooksService, useValue: { listNotebooks, deleteNotebook } }],
+      providers: pageProviders({ listNotebooks, deleteNotebook }),
     });
 
     await screen.findByText('Q3 Contracts');
@@ -131,9 +173,7 @@ describe('NotebooksPage', () => {
     });
 
     await render(NotebooksPage, {
-      providers: [
-        { provide: NotebooksService, useValue: { listNotebooks, deleteNotebook, restoreNotebook } },
-      ],
+      providers: pageProviders({ listNotebooks, deleteNotebook, restoreNotebook }),
     });
 
     await screen.findByText('Q3 Contracts');
@@ -159,7 +199,7 @@ describe('NotebooksPage', () => {
     const deleteNotebook = vi.fn().mockResolvedValue(null);
 
     await render(NotebooksPage, {
-      providers: [{ provide: NotebooksService, useValue: { listNotebooks, deleteNotebook } }],
+      providers: pageProviders({ listNotebooks, deleteNotebook }),
     });
 
     await screen.findByText('Q3 Contracts');
@@ -177,7 +217,7 @@ describe('NotebooksPage', () => {
     const deleteNotebook = vi.fn().mockResolvedValue(null);
 
     await render(NotebooksPage, {
-      providers: [{ provide: NotebooksService, useValue: { listNotebooks, deleteNotebook } }],
+      providers: pageProviders({ listNotebooks, deleteNotebook }),
     });
 
     await screen.findByText('Q3 Contracts');
@@ -199,7 +239,7 @@ describe('NotebooksPage', () => {
     const deleteNotebook = vi.fn().mockResolvedValue(null);
 
     await render(NotebooksPage, {
-      providers: [{ provide: NotebooksService, useValue: { listNotebooks, deleteNotebook } }],
+      providers: pageProviders({ listNotebooks, deleteNotebook }),
     });
     await screen.findByText('Q3 Contracts');
 
