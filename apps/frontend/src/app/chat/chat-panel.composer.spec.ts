@@ -197,7 +197,8 @@ describe('Chat panel (ThreadNavigator + ThreadView) — asking', () => {
     // Story 15c (NBK-71): the question shows the moment it is sent, as a
     // pending question (NBK-70), so that is the moment it comes into view, at
     // the bottom where the newest exchange sits. The recorded question taking
-    // its place is the same question already in view, so it is not a move.
+    // its place is the same question already in view, so it is not a move of
+    // its own — but the answer recorded with it is (story 15d, below).
     it('brings the question just asked into view at the bottom on send, and not again when it is recorded', async () => {
       const { settle } = await askInFlight();
 
@@ -210,32 +211,55 @@ describe('Chat panel (ThreadNavigator + ThreadView) — asking', () => {
       await waitFor(() => expect(pendingRow()).toBeNull());
       await screen.findByText('Revenue in Q3 was 12.4M.');
       expect(scrollIntoView).toHaveBeenCalledTimes(1);
-      expect(scrollTo).not.toHaveBeenCalled();
     });
 
-    // Story 15d: the reader starts a long answer at its first line. Only the
-    // first block moves the view — no following the bottom as it grows, and
-    // the recorded answer taking the preview's place is not a move either.
-    it("brings the answer's start to the top on its first block, and then leaves the view alone", async () => {
+    // Story 15d, as amended: the list follows the answer to its end — each
+    // block as it streams in, and the recorded answer taking the preview's
+    // place — so the newest text, its Citations and the question box stay in
+    // view without scrolling by hand.
+    it('follows the bottom as the answer streams in, and when it is recorded', async () => {
       const { settle } = await askInFlight();
-      // The send's own move (rule 2) is the test above's; set it aside.
       await waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
       scrollIntoView.mockClear();
+      const list = listOf('What was revenue in Q2?');
+      const toBottom = () =>
+        expect(scrollTo).toHaveBeenLastCalledWith(
+          expect.objectContaining({ top: list.scrollHeight }),
+        );
 
       appEvents.events.next(chunk(0, '## Revenue'));
+      await screen.findByTestId('chat-streaming-answer');
+      await waitFor(() => expect(scrolled(scrollTo)).toEqual([list]));
+      toBottom();
 
-      const answer = await screen.findByTestId('chat-streaming-answer');
-      await waitFor(() => expect(scrolled(scrollIntoView)).toEqual([answer]));
-      expect(scrollIntoView).toHaveBeenCalledWith(expect.objectContaining({ block: 'start' }));
-
+      scrollTo.mockClear();
       appEvents.events.next(chunk(1, 'Revenue in Q3 was 12.4M.'));
       await screen.findByText('Revenue in Q3 was 12.4M.');
+      await waitFor(() => expect(scrolled(scrollTo)).toEqual([list]));
+      toBottom();
+
+      scrollTo.mockClear();
       settle(q3Exchange());
       await waitFor(() => expect(screen.queryByTestId('chat-streaming-answer')).toBeNull());
       await screen.findByText('What was revenue in Q3?', { selector: 'p' });
+      await waitFor(() => expect(scrolled(scrollTo)).toContain(list));
+      toBottom();
+      // No jump back to the answer's start.
+      expect(scrollIntoView).not.toHaveBeenCalled();
+    });
 
-      expect(scrollIntoView).toHaveBeenCalledTimes(1);
-      expect(scrollTo).not.toHaveBeenCalled();
+    it('follows the bottom when an answer is recorded without streaming', async () => {
+      const { settle } = await askInFlight();
+      await waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
+      const list = listOf('What was revenue in Q2?');
+
+      settle(q3Exchange());
+
+      await screen.findByText('Revenue in Q3 was 12.4M.');
+      await waitFor(() => expect(scrolled(scrollTo)).toContain(list));
+      expect(scrollTo).toHaveBeenLastCalledWith(
+        expect.objectContaining({ top: list.scrollHeight }),
+      );
     });
   });
 

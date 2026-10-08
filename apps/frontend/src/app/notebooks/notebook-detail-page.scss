@@ -8,14 +8,26 @@ $stack-below: 900px;
 
 // The Notebook workspace (NBK-35): the pane grid filling the page column
 // beside the sidebar (NBK-79), so the panes scroll and the page never does.
-// The shell gives that column a definite height, which is what `100%`
-// resolves against. No header row above the grid since NBK-82.
-.notebook-detail-page {
+// No header row above the grid since NBK-82.
+//
+// Pinned to the host rather than `height: 100%`: the routed page grows to
+// at least the shell's column (styles.scss), which is also to say it grows
+// with its content, so `100%` resolved against the whole Chat Thread — the
+// page scrolled as one, and the question box with its answering spinner sat
+// at the bottom of it, out of sight after a question was sent. Pinned, the
+// panes are exactly the column's height and the Thread scrolls inside its
+// own, above a question box that stays in view (as the Document page does
+// since spec 08).
+:host {
   position: relative;
+}
+
+.notebook-detail-page {
+  position: absolute;
+  inset: 0;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
-  height: 100%;
 
   &__spacer {
     flex: 1 1 auto;
