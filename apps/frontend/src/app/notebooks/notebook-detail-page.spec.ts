@@ -2423,3 +2423,49 @@ describe('NBK-49: empty state', () => {
     expect(icon?.getAttribute('data-mat-icon-name')).toBe('add');
   });
 });
+
+describe('NBK-50: batch panel', () => {
+  /** The Upload batch block, which spec 03 places inside the Documents panel. */
+  const batchBlock = () => within(documentsPanel()).getByRole('region', { name: 'Upload batch' });
+
+  it('shows the batch at the top of the Documents panel, above the list, one badged row per file', async () => {
+    const uploads = heldUploads();
+    await renderWithUpload(uploads.uploadDocument, [documentFor('a.txt', { status: 'ready' })]);
+
+    pick([fileNamed('b.txt'), fileNamed('c.txt')]);
+
+    const block = batchBlock();
+    const list = within(documentsPanel()).getByRole('list', { name: 'Documents' });
+    expect(block.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const rows = within(within(block).getByRole('list', { name: 'Upload progress' })).getAllByRole(
+      'listitem',
+    );
+    expect(rows).toHaveLength(2);
+    ['b.txt', 'c.txt'].forEach((filename, index) => {
+      expect(within(rows[index]).getByText(filename)).toBeTruthy();
+      // The per-file status is the shared badge (NBK-32), not page-local text.
+      expect(within(rows[index]).getByText('Uploading').classList).toContain('app-badge');
+    });
+  });
+
+  it('asks the conflict question inside the batch block, and steers the batch from there', async () => {
+    const existing = documentFor('report.txt', { status: 'ready' });
+    const uploads = heldUploads();
+    await renderWithUpload(uploads.uploadDocument, [existing]);
+
+    pick([fileNamed('report.txt'), fileNamed('fresh.txt')]);
+
+    const question = await within(batchBlock()).findByRole('dialog', {
+      name: 'Document already exists',
+    });
+    expect(within(batchBlock()).getByRole('button', { name: 'Cancel' })).toBeTruthy();
+
+    fireEvent.click(within(question).getByRole('button', { name: 'Skip' }));
+    uploads.fail('fresh.txt');
+
+    expect(await within(batchBlock()).findByText('0 uploaded, 1 skipped, 1 failed')).toBeTruthy();
+    expect(within(batchBlock()).getByRole('button', { name: 'Retry failed' })).toBeTruthy();
+    fireEvent.click(within(batchBlock()).getByRole('button', { name: 'Dismiss' }));
+    expect(within(documentsPanel()).queryByRole('region', { name: 'Upload batch' })).toBeNull();
+  });
+});

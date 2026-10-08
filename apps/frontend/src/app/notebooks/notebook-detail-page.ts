@@ -14,7 +14,6 @@ import {
 import { Title } from '@angular/platform-browser';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
-import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
@@ -23,11 +22,11 @@ import { ThreadView } from '../chat/thread-view';
 import { DocumentFilter } from '../documents/document-filter';
 import { DocumentList } from '../documents/document-list';
 import { DocumentsEmptyState } from '../documents/documents-empty-state';
-import { ConflictChoice, Document, DocumentsStore } from '../documents/documents.store';
+import { Document, DocumentsStore } from '../documents/documents.store';
+import { UploadBatchPanel } from '../documents/upload-batch-panel';
 import { UPLOAD_ACCEPT } from '../documents/upload-rules';
 import { APP_NAME } from '../shared/app-name';
 import { EditableTitle } from '../shared/editable-title';
-import { StatusBadge } from '../shared/status-badge';
 import { UndoSnackBar } from '../shared/undo-snack-bar';
 import { NotebooksStore } from './notebooks.store';
 
@@ -98,7 +97,6 @@ function droppedEntries(dataTransfer: DataTransfer | null): {
   imports: [
     EditableTitle,
     MatButtonModule,
-    MatCheckboxModule,
     MatIconModule,
     MatProgressSpinnerModule,
     MatTooltipModule,
@@ -106,9 +104,9 @@ function droppedEntries(dataTransfer: DataTransfer | null): {
     DocumentList,
     DocumentsEmptyState,
     RouterLink,
-    StatusBadge,
     ThreadNavigator,
     ThreadView,
+    UploadBatchPanel,
   ],
   templateUrl: './notebook-detail-page.html',
   styleUrl: './notebook-detail-page.scss',
@@ -238,57 +236,12 @@ export class NotebookDetailPage implements OnInit, OnDestroy {
   /** The picker only offers the accepted document types (NBK-16). */
   protected readonly accept = UPLOAD_ACCEPT;
 
-  /** The upload batch, if the one in the store belongs to this Notebook. */
-  protected readonly batch = computed(() => {
-    const batch = this.store.batch();
-    return batch?.notebookId === this.notebookId ? batch : null;
-  });
-
-  /** The end-of-batch summary line, once nothing is waiting or in flight. */
-  protected readonly batchSummaryLine = computed(() => {
-    const summary = this.store.batchSummary();
-    if (!summary || !this.batch() || this.store.batchRunning()) return null;
-    const uploaded =
-      summary.newVersions > 0
-        ? `${summary.uploaded} uploaded (${summary.newVersions} as new Versions)`
-        : `${summary.uploaded} uploaded`;
-    return `${uploaded}, ${summary.skipped} skipped, ${summary.failed} failed`;
-  });
-
   protected onFileSelected(event: Event): void {
     const input = event.target as HTMLInputElement;
     const files = Array.from(input.files ?? []);
     if (files.length === 0) return;
     void this.store.uploadDocuments(this.notebookId, files);
     input.value = '';
-  }
-
-  /** Re-sends every failed file of the batch (NBK-17). */
-  protected retryFailed(): void {
-    void this.store.retryFailed();
-  }
-
-  /** Stops the files of the batch not sent yet; in-flight ones finish (NBK-17). */
-  protected cancelBatch(): void {
-    this.store.cancelBatch();
-  }
-
-  /** Clears the panel once the batch is done (NBK-17). */
-  protected dismissBatch(): void {
-    this.store.dismissBatch();
-  }
-
-  /**
-   * The conflict dialog's "apply to all remaining conflicts" tick (NBK-19).
-   * Page state, not store state: it is part of the answer being composed,
-   * and is sent with it.
-   */
-  protected readonly applyToAll = signal(false);
-
-  /** Answers the open conflict dialog, with the tick as it stands. */
-  protected answerConflict(choice: ConflictChoice): void {
-    this.store.answerConflict(choice, this.applyToAll());
-    this.applyToAll.set(false);
   }
 
   /**

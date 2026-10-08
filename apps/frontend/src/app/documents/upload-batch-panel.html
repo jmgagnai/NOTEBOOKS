@@ -1,0 +1,74 @@
+<!--
+  The progress panel (NBK-16): every file of the batch with its status and,
+  where it was skipped or failed, why — then the summary once the batch is
+  done. It replaces the single spinner, which could not say which of forty
+  files was the slow one.
+-->
+@if (batch(); as batch) {
+  <section class="upload-batch" aria-label="Upload batch">
+    <ul class="upload-batch__items" aria-label="Upload progress">
+      @for (item of batch.items; track item.id) {
+        <li class="upload-batch__item">
+          <span class="upload-batch__filename" [title]="item.file.name">{{ item.file.name }}</span>
+          <app-status-badge [status]="item.status" />
+          @if (item.reason) {
+            <span class="upload-batch__reason">{{ item.reason }}</span>
+          }
+        </li>
+      }
+    </ul>
+
+    <!--
+      The conflict question (NBK-19): a file whose name is an existing
+      Document is held back until the user says whether it becomes a new
+      Version of that Document or is skipped. Inline rather than an overlay,
+      a highlighted block inside the batch (NBK-50), because the rest of the
+      batch keeps moving around it while the question is open — the user is
+      asked, not blocked.
+    -->
+    @if (store.conflict(); as conflict) {
+      <div class="upload-batch__conflict" role="dialog" aria-labelledby="conflict-dialog-title">
+        <h3 id="conflict-dialog-title" class="upload-batch__conflict-title">
+          Document already exists
+        </h3>
+        <p class="upload-batch__conflict-text">
+          "{{ conflict.filename }}" already exists in this Notebook. Upload this file as a new
+          Version of that Document, or skip it?
+        </p>
+        <mat-checkbox [checked]="applyToAll()" (change)="applyToAll.set($event.checked)">
+          Apply to all remaining conflicts
+        </mat-checkbox>
+        <div class="upload-batch__conflict-actions">
+          <button mat-button type="button" (click)="answerConflict('skip')">Skip</button>
+          <button mat-flat-button type="button" (click)="answerConflict('new-version')">
+            New Version
+          </button>
+        </div>
+      </div>
+    }
+
+    <!--
+      Steering the batch (NBK-17). Retry failed re-sends every failure
+      without re-selecting, so a network blip costs one click. The spinner
+      sits on this line while the batch runs, so the block does not grow a
+      row for it.
+    -->
+    <div class="upload-batch__foot">
+      @if (store.batchRunning()) {
+        <mat-progress-spinner mode="indeterminate" diameter="16" />
+      }
+      @if (summaryLine(); as summary) {
+        <p class="upload-batch__summary">{{ summary }}</p>
+      }
+      <span class="upload-batch__spacer"></span>
+      @if (store.batchRunning()) {
+        <button mat-button type="button" (click)="cancel()">Cancel</button>
+      } @else {
+        @if ((store.batchSummary()?.failed ?? 0) > 0) {
+          <button mat-button type="button" (click)="retryFailed()">Retry failed</button>
+        }
+        <button mat-button type="button" (click)="dismiss()">Dismiss</button>
+      }
+    </div>
+  </section>
+}
