@@ -11,12 +11,16 @@ import { StrictHttpResponse } from '../strict-http-response';
 
 import { createChatThread } from '../fn/chat/create-chat-thread';
 import { CreateChatThread$Params } from '../fn/chat/create-chat-thread';
+import { deleteChatThread } from '../fn/chat/delete-chat-thread';
+import { DeleteChatThread$Params } from '../fn/chat/delete-chat-thread';
 import { listChatMessages } from '../fn/chat/list-chat-messages';
 import { ListChatMessages$Params } from '../fn/chat/list-chat-messages';
 import { listChatThreads } from '../fn/chat/list-chat-threads';
 import { ListChatThreads$Params } from '../fn/chat/list-chat-threads';
 import { renameChatThread } from '../fn/chat/rename-chat-thread';
 import { RenameChatThread$Params } from '../fn/chat/rename-chat-thread';
+import { restoreChatThread } from '../fn/chat/restore-chat-thread';
+import { RestoreChatThread$Params } from '../fn/chat/restore-chat-thread';
 import { sendChatMessage } from '../fn/chat/send-chat-message';
 import { SendChatMessage$Params } from '../fn/chat/send-chat-message';
 
@@ -164,6 +168,39 @@ export class ChatService extends BaseService {
 } => r.body);
   }
 
+  /** Path part for operation `deleteChatThread()` */
+  static readonly DeleteChatThreadPath = '/notebooks/{notebookId}/threads/{threadId}';
+
+  /**
+   * Delete a Chat Thread (its author only).
+   *
+   * Soft-deletes the Chat Thread: it leaves the list and every route answers 404 for it, but its messages and their Citations are kept, and an Administrator can restore it. Only the user who started the Thread may delete it (ADR-0001 amendment).
+   *
+   * This method provides access to the full `HttpResponse`, allowing access to response headers.
+   * To access only the response body, use `deleteChatThread()` instead.
+   *
+   * This method doesn't expect any request body.
+   */
+  deleteChatThread$Response(params: DeleteChatThread$Params, context?: HttpContext): Promise<StrictHttpResponse<'null'>> {
+    const obs = deleteChatThread(this.http, this.rootUrl, params, context);
+    return firstValueFrom(obs);
+  }
+
+  /**
+   * Delete a Chat Thread (its author only).
+   *
+   * Soft-deletes the Chat Thread: it leaves the list and every route answers 404 for it, but its messages and their Citations are kept, and an Administrator can restore it. Only the user who started the Thread may delete it (ADR-0001 amendment).
+   *
+   * This method provides access only to the response body.
+   * To access the full response (for headers, for example), `deleteChatThread$Response()` instead.
+   *
+   * This method doesn't expect any request body.
+   */
+  deleteChatThread(params: DeleteChatThread$Params, context?: HttpContext): Promise<'null'> {
+    const resp = this.deleteChatThread$Response(params, context);
+    return resp.then((r: StrictHttpResponse<'null'>): 'null' => r.body);
+  }
+
   /** Path part for operation `renameChatThread()` */
   static readonly RenameChatThreadPath = '/notebooks/{notebookId}/threads/{threadId}';
 
@@ -212,6 +249,75 @@ export class ChatService extends BaseService {
 'createdAt': string;
 }> {
     const resp = this.renameChatThread$Response(params, context);
+    return resp.then((r: StrictHttpResponse<{
+'id': string;
+'notebookId': string;
+'title': string;
+'author': {
+'id': string;
+'email': string;
+};
+'createdAt': string;
+}>): {
+'id': string;
+'notebookId': string;
+'title': string;
+'author': {
+'id': string;
+'email': string;
+};
+'createdAt': string;
+} => r.body);
+  }
+
+  /** Path part for operation `restoreChatThread()` */
+  static readonly RestoreChatThreadPath = '/notebooks/{notebookId}/threads/{threadId}/restore';
+
+  /**
+   * Restore a deleted Chat Thread (Administrator only).
+   *
+   * Brings a deleted Chat Thread back with its messages. Only an Administrator — a user whose email is in the backend's `ADMIN_EMAILS` — may call it; the app's UI never does. See docs/administration.md.
+   *
+   * This method provides access to the full `HttpResponse`, allowing access to response headers.
+   * To access only the response body, use `restoreChatThread()` instead.
+   *
+   * This method doesn't expect any request body.
+   */
+  restoreChatThread$Response(params: RestoreChatThread$Params, context?: HttpContext): Promise<StrictHttpResponse<{
+'id': string;
+'notebookId': string;
+'title': string;
+'author': {
+'id': string;
+'email': string;
+};
+'createdAt': string;
+}>> {
+    const obs = restoreChatThread(this.http, this.rootUrl, params, context);
+    return firstValueFrom(obs);
+  }
+
+  /**
+   * Restore a deleted Chat Thread (Administrator only).
+   *
+   * Brings a deleted Chat Thread back with its messages. Only an Administrator — a user whose email is in the backend's `ADMIN_EMAILS` — may call it; the app's UI never does. See docs/administration.md.
+   *
+   * This method provides access only to the response body.
+   * To access the full response (for headers, for example), `restoreChatThread$Response()` instead.
+   *
+   * This method doesn't expect any request body.
+   */
+  restoreChatThread(params: RestoreChatThread$Params, context?: HttpContext): Promise<{
+'id': string;
+'notebookId': string;
+'title': string;
+'author': {
+'id': string;
+'email': string;
+};
+'createdAt': string;
+}> {
+    const resp = this.restoreChatThread$Response(params, context);
     return resp.then((r: StrictHttpResponse<{
 'id': string;
 'notebookId': string;

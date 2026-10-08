@@ -55,6 +55,10 @@ export interface BuildAppOptions {
   // registered and answers 503, so the published contract has one shape
   // whether or not an OpenRouter key is configured.
   embed?: Embedder;
+  // The Administrators' emails (GLOSSARY.md), as `ADMIN_EMAILS` lists them:
+  // who may restore a deleted Chat Thread (NBK-95). Matched without regard
+  // to case or surrounding spaces. Omitted, there is no Administrator.
+  administrators?: readonly string[];
 }
 
 /**
@@ -70,6 +74,7 @@ export async function buildApp({
   appEvents,
   chat,
   embed,
+  administrators = [],
 }: BuildAppOptions): Promise<FastifyInstance> {
   const app = Fastify({ logger: false });
 
@@ -118,7 +123,11 @@ export async function buildApp({
 
   registerAuthRoutes(app, pool);
   registerNotebookRoutes(app, pool);
-  registerChatRoutes(app, { pool, chat });
+  registerChatRoutes(app, {
+    pool,
+    chat,
+    administrators: new Set(administrators.map((email) => email.trim().toLowerCase())),
+  });
   registerSearchRoutes(app, { pool, embed });
   if (s3 && documentsBucket) {
     registerDocumentRoutes(app, { pool, s3, documentsBucket, jobs });
