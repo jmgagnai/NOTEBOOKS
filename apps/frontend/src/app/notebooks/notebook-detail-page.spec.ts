@@ -246,6 +246,11 @@ function documentRow(filename: string) {
     .find((row) => within(row).queryByText(filename) !== null)!;
 }
 
+/** The row's link: the one Tab stop of a row, named by its filename. */
+function rowLink(filename: string) {
+  return within(documentRow(filename)).getByRole('link', { name: new RegExp(filename) });
+}
+
 /** Opens the row's "…" menu and returns its `action` item, named "<action> <filename>". */
 async function rowMenuItem(filename: string, action: 'Open' | 'Download' | 'Delete') {
   fireEvent.click(
@@ -1433,11 +1438,19 @@ describe('NotebookDetailPage', () => {
       expect(within(documentRow('three.txt')).getByText('v3')).toBeTruthy();
     });
 
-    it('shows the full filename on hover', async () => {
+    // One popover, not a native `title` on top of the Abstract's (NBK-47):
+    // the filename the row truncates is that popover's first line.
+    it('shows the full filename on hover, as the first line of the Abstract popover', async () => {
       const long = 'a-very-long-quarterly-report-name-that-will-not-fit-the-panel.pdf';
-      await renderWithUpload(vi.fn(), [documentFor(long)]);
+      await renderWithUpload(vi.fn(), [documentFor(long, { abstract: 'Revenue by region.' })]);
 
-      expect(within(documentRow(long)).getByTitle(long)).toBeTruthy();
+      expect(documentRow(long).querySelector('[title]')).toBeNull();
+      fireEvent.mouseEnter(rowLink(long));
+      await waitFor(() =>
+        expect(document.querySelector('mat-tooltip-component')?.textContent?.trim()).toBe(
+          `${long}\nRevenue by region.`,
+        ),
+      );
     });
 
     it('opens the Document when the row is activated', async () => {
@@ -1453,7 +1466,7 @@ describe('NotebookDetailPage', () => {
       await screen.findByText('report.txt');
 
       // A link, so Enter opens it as a click does.
-      const open = within(documentRow('report.txt')).getByRole('link', { name: /report\.txt/ });
+      const open = rowLink('report.txt');
       expect(open.getAttribute('href')).toBe(`/notebooks/${NOTEBOOK_ID}/documents/doc-report.txt`);
       fireEvent.click(open);
 
@@ -1466,8 +1479,6 @@ describe('NotebookDetailPage', () => {
         documentFor('b.txt'),
         documentFor('c.txt'),
       ]);
-      const rowLink = (filename: string) =>
-        within(documentRow(filename)).getByRole('link', { name: new RegExp(filename) });
 
       expect(['a.txt', 'b.txt', 'c.txt'].map((name) => rowLink(name).tabIndex)).toEqual([
         0, -1, -1,
@@ -1483,6 +1494,23 @@ describe('NotebookDetailPage', () => {
       // The Tab stop follows the focus, so Tab out and back lands here again.
       expect(rowLink('b.txt').tabIndex).toBe(0);
       expect(rowLink('a.txt').tabIndex).toBe(-1);
+    });
+
+    // Spec 03 story 21: the list is one Tab stop, "…" buttons included —
+    // ArrowRight reaches a row's "…" from its link and ArrowLeft goes back.
+    it('reaches the "…" button with ArrowRight from its row, without a Tab stop of its own', async () => {
+      await renderWithUpload(vi.fn(), [documentFor('a.txt'), documentFor('b.txt')]);
+      const more = (filename: string) =>
+        within(documentRow(filename)).getByRole('button', { name: `Actions for ${filename}` });
+
+      expect(['a.txt', 'b.txt'].map((name) => more(name).tabIndex)).toEqual([-1, -1]);
+
+      rowLink('b.txt').focus();
+      fireEvent.keyDown(rowLink('b.txt'), { key: 'ArrowRight' });
+      expect(document.activeElement).toBe(more('b.txt'));
+
+      fireEvent.keyDown(more('b.txt'), { key: 'ArrowLeft' });
+      expect(document.activeElement).toBe(rowLink('b.txt'));
     });
 
     it('offers Open, Download and Delete in the row menu, reachable by keyboard', async () => {
@@ -1923,7 +1951,7 @@ describe('NotebookDetailPage', () => {
 
       const navigator = screen.getByRole('navigation', { name: 'Chat Threads' });
       const chat = screen.getByRole('region', { name: 'Chat' });
-      const documents = screen.getByRole('complementary', { name: 'Documents' });
+      const documents = documentsPanel();
 
       expect(within(navigator).getByRole('button', { name: 'New Chat Thread' })).toBeTruthy();
       expect(
@@ -2084,7 +2112,7 @@ describe('NotebookDetailPage', () => {
 
       fireEvent.click(showDocumentsButton()!);
 
-      expect(screen.getByRole('complementary', { name: 'Documents' })).toBeTruthy();
+      expect(documentsPanel()).toBeTruthy();
       expect(
         within(screen.getByRole('list', { name: 'Documents' })).getByText('a.txt'),
       ).toBeTruthy();
@@ -2249,14 +2277,13 @@ describe('NotebookDetailPage', () => {
   describe('NBK-47: Abstract popover', () => {
     const ABSTRACT = 'A quarterly report covering revenue growth across three regions.';
 
-    /** The row's link, the one element of a row that takes the focus. */
-    function rowLink(filename: string) {
-      return within(documentRow(filename)).getByRole('link');
-    }
-
-    /** What the popover on screen says, or null when none is showing. */
+    /**
+     * What the popover on screen says below its first line (the filename,
+     * NBK-42), or null when none is showing.
+     */
     function popoverText() {
-      return document.querySelector('mat-tooltip-component')?.textContent?.trim() ?? null;
+      const text = document.querySelector('mat-tooltip-component')?.textContent?.trim();
+      return text === undefined ? null : text.split('\n').slice(1).join('\n');
     }
 
     /** Focuses `link` the way Tab does, so the focus counts as the keyboard's. */
@@ -2339,7 +2366,7 @@ describe('NotebookDetailPage', () => {
       const link = rowLink('report.txt');
       await waitFor(() => expect(link.getAttribute('aria-describedby')).toBeTruthy());
       expect(document.getElementById(link.getAttribute('aria-describedby')!)?.textContent).toBe(
-        ABSTRACT,
+        `report.txt\n${ABSTRACT}`,
       );
     });
 
@@ -2351,121 +2378,121 @@ describe('NotebookDetailPage', () => {
       expect(documentRow('report.txt').textContent).not.toContain(ABSTRACT);
     });
   });
-});
 
-describe('NBK-49: empty state', () => {
-  /** The empty state's own "Add Documents", inside the Documents panel. */
-  function emptyStateAddDocuments() {
-    return within(screen.getByRole('complementary', { name: 'Documents' })).getByRole('button', {
-      name: 'Add Documents',
-    }) as HTMLButtonElement;
-  }
+  describe('NBK-49: empty state', () => {
+    /** The empty state's own "Add Documents", inside the Documents panel. */
+    function emptyStateAddDocuments() {
+      return within(documentsPanel()).getByRole('button', {
+        name: 'Add Documents',
+      }) as HTMLButtonElement;
+    }
 
-  /** The page header's "Add Documents", outside the Documents panel. */
-  function headerAddDocuments() {
-    const panel = screen.getByRole('complementary', { name: 'Documents' });
-    return screen
-      .getAllByRole('button', { name: 'Add Documents' })
-      .find((button) => !panel.contains(button)) as HTMLButtonElement;
-  }
+    /** The page header's "Add Documents", outside the Documents panel. */
+    function headerAddDocuments() {
+      const panel = documentsPanel();
+      return screen
+        .getAllByRole('button', { name: 'Add Documents' })
+        .find((button) => !panel.contains(button)) as HTMLButtonElement;
+    }
 
-  it('an empty Notebook invites the first upload where the list would be', async () => {
-    await renderWithUpload(vi.fn());
-    const panel = screen.getByRole('complementary', { name: 'Documents' });
+    it('an empty Notebook invites the first upload where the list would be', async () => {
+      await renderWithUpload(vi.fn());
+      const panel = documentsPanel();
 
-    expect(within(panel).getByText('No Documents yet.')).toBeTruthy();
-    expect(within(panel).getByText(/Add Documents to start asking questions\./)).toBeTruthy();
-    expect(emptyStateAddDocuments()).toBeTruthy();
-    expect(screen.getAllByRole('button', { name: 'Add Documents' })).toHaveLength(2);
-  });
+      expect(within(panel).getByText('No Documents yet.')).toBeTruthy();
+      expect(within(panel).getByText(/Add Documents to start asking questions\./)).toBeTruthy();
+      expect(emptyStateAddDocuments()).toBeTruthy();
+      expect(screen.getAllByRole('button', { name: 'Add Documents' })).toHaveLength(2);
+    });
 
-  it("the empty state's Add Documents opens the same picker, which starts a batch", async () => {
-    const request = deferred<Record<string, unknown>>();
-    const uploadDocument = vi.fn().mockReturnValue(request.promise);
-    await renderWithUpload(uploadDocument);
-    const input = screen.getByLabelText('Upload Documents') as HTMLInputElement;
-    const open = vi.spyOn(input, 'click');
+    it("the empty state's Add Documents opens the same picker, which starts a batch", async () => {
+      const request = deferred<Record<string, unknown>>();
+      const uploadDocument = vi.fn().mockReturnValue(request.promise);
+      await renderWithUpload(uploadDocument);
+      const input = screen.getByLabelText('Upload Documents') as HTMLInputElement;
+      const open = vi.spyOn(input, 'click');
 
-    fireEvent.click(emptyStateAddDocuments());
-    expect(open).toHaveBeenCalledTimes(1);
+      fireEvent.click(emptyStateAddDocuments());
+      expect(open).toHaveBeenCalledTimes(1);
 
-    pick([fileNamed('a.txt')]);
-    expect(await screen.findByRole('list', { name: 'Upload progress' })).toBeTruthy();
-    expect(sentNames(uploadDocument)).toEqual(['a.txt']);
-  });
+      pick([fileNamed('a.txt')]);
+      expect(await screen.findByRole('list', { name: 'Upload progress' })).toBeTruthy();
+      expect(sentNames(uploadDocument)).toEqual(['a.txt']);
+    });
 
-  it('goes away while a batch runs, and stays away once a Document exists', async () => {
-    const request = deferred<Record<string, unknown>>();
-    await renderWithUpload(vi.fn().mockReturnValue(request.promise));
+    it('goes away while a batch runs, and stays away once a Document exists', async () => {
+      const request = deferred<Record<string, unknown>>();
+      await renderWithUpload(vi.fn().mockReturnValue(request.promise));
 
-    pick([fileNamed('a.txt')]);
-    await screen.findByRole('list', { name: 'Upload progress' });
-    expect(screen.queryByText('No Documents yet.')).toBeNull();
-    expect(screen.getAllByRole('button', { name: 'Add Documents' })).toHaveLength(1);
+      pick([fileNamed('a.txt')]);
+      await screen.findByRole('list', { name: 'Upload progress' });
+      expect(screen.queryByText('No Documents yet.')).toBeNull();
+      expect(screen.getAllByRole('button', { name: 'Add Documents' })).toHaveLength(1);
 
-    request.resolve(documentFor('a.txt'));
-    await screen.findByText('1 uploaded, 0 skipped, 0 failed');
-    expect(screen.queryByText('No Documents yet.')).toBeNull();
-    expect(screen.getAllByRole('button', { name: 'Add Documents' })).toHaveLength(1);
-  });
+      request.resolve(documentFor('a.txt'));
+      await screen.findByText('1 uploaded, 0 skipped, 0 failed');
+      expect(screen.queryByText('No Documents yet.')).toBeNull();
+      expect(screen.getAllByRole('button', { name: 'Add Documents' })).toHaveLength(1);
+    });
 
-  it('is not shown for a Notebook that has Documents', async () => {
-    await renderWithUpload(vi.fn(), [documentFor('a.txt')]);
+    it('is not shown for a Notebook that has Documents', async () => {
+      await renderWithUpload(vi.fn(), [documentFor('a.txt')]);
 
-    expect(screen.queryByText('No Documents yet.')).toBeNull();
-    expect(screen.getAllByRole('button', { name: 'Add Documents' })).toHaveLength(1);
-  });
+      expect(screen.queryByText('No Documents yet.')).toBeNull();
+      expect(screen.getAllByRole('button', { name: 'Add Documents' })).toHaveLength(1);
+    });
 
-  it("the header's Add Documents carries the add icon", async () => {
-    await renderWithUpload(vi.fn());
+    it("the header's Add Documents carries the add icon", async () => {
+      await renderWithUpload(vi.fn());
 
-    const icon = headerAddDocuments().querySelector('mat-icon');
-    expect(icon?.getAttribute('data-mat-icon-name')).toBe('add');
-  });
-});
-
-describe('NBK-50: batch panel', () => {
-  /** The Upload batch block, which spec 03 places inside the Documents panel. */
-  const batchBlock = () => within(documentsPanel()).getByRole('region', { name: 'Upload batch' });
-
-  it('shows the batch at the top of the Documents panel, above the list, one badged row per file', async () => {
-    const uploads = heldUploads();
-    await renderWithUpload(uploads.uploadDocument, [documentFor('a.txt', { status: 'ready' })]);
-
-    pick([fileNamed('b.txt'), fileNamed('c.txt')]);
-
-    const block = batchBlock();
-    const list = within(documentsPanel()).getByRole('list', { name: 'Documents' });
-    expect(block.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    const rows = within(within(block).getByRole('list', { name: 'Upload progress' })).getAllByRole(
-      'listitem',
-    );
-    expect(rows).toHaveLength(2);
-    ['b.txt', 'c.txt'].forEach((filename, index) => {
-      expect(within(rows[index]).getByText(filename)).toBeTruthy();
-      // The per-file status is the shared badge (NBK-32), not page-local text.
-      expect(within(rows[index]).getByText('Uploading').classList).toContain('app-badge');
+      const icon = headerAddDocuments().querySelector('mat-icon');
+      expect(icon?.getAttribute('data-mat-icon-name')).toBe('add');
     });
   });
 
-  it('asks the conflict question inside the batch block, and steers the batch from there', async () => {
-    const existing = documentFor('report.txt', { status: 'ready' });
-    const uploads = heldUploads();
-    await renderWithUpload(uploads.uploadDocument, [existing]);
+  describe('NBK-50: batch panel', () => {
+    /** The Upload batch block, which spec 03 places inside the Documents panel. */
+    const batchBlock = () => within(documentsPanel()).getByRole('region', { name: 'Upload batch' });
 
-    pick([fileNamed('report.txt'), fileNamed('fresh.txt')]);
+    it('shows the batch at the top of the Documents panel, above the list, one badged row per file', async () => {
+      const uploads = heldUploads();
+      await renderWithUpload(uploads.uploadDocument, [documentFor('a.txt', { status: 'ready' })]);
 
-    const question = await within(batchBlock()).findByRole('dialog', {
-      name: 'Document already exists',
+      pick([fileNamed('b.txt'), fileNamed('c.txt')]);
+
+      const block = batchBlock();
+      const list = within(documentsPanel()).getByRole('list', { name: 'Documents' });
+      expect(block.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      const rows = within(
+        within(block).getByRole('list', { name: 'Upload progress' }),
+      ).getAllByRole('listitem');
+      expect(rows).toHaveLength(2);
+      ['b.txt', 'c.txt'].forEach((filename, index) => {
+        expect(within(rows[index]).getByText(filename)).toBeTruthy();
+        // The per-file status is the shared badge (NBK-32), not page-local text.
+        expect(within(rows[index]).getByText('Uploading').classList).toContain('app-badge');
+      });
     });
-    expect(within(batchBlock()).getByRole('button', { name: 'Cancel' })).toBeTruthy();
 
-    fireEvent.click(within(question).getByRole('button', { name: 'Skip' }));
-    uploads.fail('fresh.txt');
+    it('asks the conflict question inside the batch block, and steers the batch from there', async () => {
+      const existing = documentFor('report.txt', { status: 'ready' });
+      const uploads = heldUploads();
+      await renderWithUpload(uploads.uploadDocument, [existing]);
 
-    expect(await within(batchBlock()).findByText('0 uploaded, 1 skipped, 1 failed')).toBeTruthy();
-    expect(within(batchBlock()).getByRole('button', { name: 'Retry failed' })).toBeTruthy();
-    fireEvent.click(within(batchBlock()).getByRole('button', { name: 'Dismiss' }));
-    expect(within(documentsPanel()).queryByRole('region', { name: 'Upload batch' })).toBeNull();
+      pick([fileNamed('report.txt'), fileNamed('fresh.txt')]);
+
+      const question = await within(batchBlock()).findByRole('dialog', {
+        name: 'Document already exists',
+      });
+      expect(within(batchBlock()).getByRole('button', { name: 'Cancel' })).toBeTruthy();
+
+      fireEvent.click(within(question).getByRole('button', { name: 'Skip' }));
+      uploads.fail('fresh.txt');
+
+      expect(await within(batchBlock()).findByText('0 uploaded, 1 skipped, 1 failed')).toBeTruthy();
+      expect(within(batchBlock()).getByRole('button', { name: 'Retry failed' })).toBeTruthy();
+      fireEvent.click(within(batchBlock()).getByRole('button', { name: 'Dismiss' }));
+      expect(within(documentsPanel()).queryByRole('region', { name: 'Upload batch' })).toBeNull();
+    });
   });
 });

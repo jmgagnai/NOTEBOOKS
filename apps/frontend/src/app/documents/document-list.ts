@@ -25,12 +25,15 @@ export interface DocumentKind {
 }
 
 /**
- * The type icon per MIME type (NBK-42, spec 03 "Row anatomy"). Keyed by the
- * latest Version's MIME type because that is the canonical type the backend
- * recorded, not whatever the browser guessed on upload. The keys mirror the
- * values of `ACCEPTED_EXTENSIONS` in apps/backend/src/documents/file-types.ts,
- * the source of truth for what a Version can be; a type not listed there
- * (none today) falls back to the plain Document icon.
+ * The type icon per MIME type (NBK-42, spec 03 "Row anatomy"). Purely a
+ * presentation map, not a mirrored backend constant: it decides nothing
+ * about what may be uploaded (that mirror is `ACCEPTED_UPLOAD_EXTENSIONS` in
+ * ./upload-rules.ts), and a MIME type missing from it only falls back to the
+ * plain Document icon. Keyed by the latest Version's MIME type because that
+ * is the canonical type the backend recorded, not whatever the browser
+ * guessed on upload; the keys are the MIME values of `ACCEPTED_EXTENSIONS` in
+ * apps/backend/src/documents/file-types.ts, so a type added there wants a row
+ * here, or it shows the plain icon.
  */
 const DOCUMENT_KINDS: Record<string, DocumentKind> = {
   'application/pdf': { icon: 'document-pdf', label: 'PDF' },
@@ -112,7 +115,11 @@ export class DocumentList {
   protected readonly inProgress = isInProgress;
   protected readonly stage = statusLabel;
   protected readonly failureReason = FAILURE_REASON;
-  protected readonly noAbstract = NO_ABSTRACT;
+
+  /** The Abstract popover's text: the full filename, then the Abstract. */
+  protected popover(document: Document): string {
+    return `${document.filename}\n${document.abstract ?? NO_ABSTRACT}`;
+  }
 
   /** The row holding the list's one Tab stop: the last one focused, else the first. */
   protected readonly activeIndex = signal(0);
@@ -121,16 +128,31 @@ export class DocumentList {
     Math.min(this.activeIndex(), this.documents().length - 1),
   );
   private readonly rowLinks = viewChildren<ElementRef<HTMLElement>>('rowLink');
+  private readonly rowMores = viewChildren('rowMore', { read: ElementRef<HTMLElement> });
 
   /**
-   * Up/Down/Home/End between the rows' links. Only when a row link has the
-   * focus, so the arrow keys inside an open menu or on the "…" button keep
-   * their own meaning.
+   * Up/Down/Home/End between the rows' links, and Right/Left between a
+   * row's link and its "…" button, which has no Tab stop of its own. Only
+   * from those two, so the arrow keys inside an open menu keep their own
+   * meaning.
    */
   protected onKeydown(event: KeyboardEvent): void {
     const links = this.rowLinks().map((ref) => ref.nativeElement);
-    const current = links.indexOf(event.target as HTMLElement);
+    const mores = this.rowMores().map((ref) => ref.nativeElement as HTMLElement);
+    const target = event.target as HTMLElement;
+    const onMore = mores.indexOf(target);
+    if (onMore !== -1 && event.key === 'ArrowLeft') {
+      event.preventDefault();
+      links[onMore].focus();
+      return;
+    }
+    const current = links.indexOf(target);
     if (current === -1) return;
+    if (event.key === 'ArrowRight') {
+      event.preventDefault();
+      mores[current].focus();
+      return;
+    }
     const last = links.length - 1;
     const next =
       event.key === 'ArrowDown'

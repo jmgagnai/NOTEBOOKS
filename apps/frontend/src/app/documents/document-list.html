@@ -1,7 +1,8 @@
 <!--
   Arrow keys move between rows (spec 03 story 21) with a roving tabindex: one
-  Tab stop for the whole list, so a keyboard user does not tab through forty
-  rows to reach the chat.
+  Tab stop for the whole list, "…" buttons included, so a keyboard user does
+  not tab through forty rows to reach the chat. ArrowRight on a row's link
+  reaches its "…" button and ArrowLeft comes back.
 -->
 <ul class="document-list" aria-label="Documents" (keydown)="onKeydown($event)">
   @for (document of documents(); track document.id; let index = $index) {
@@ -16,7 +17,9 @@
         filename: the link is what takes the keyboard focus, and Material's
         tooltip makes its text the link's accessible description. It sits
         beside the row so it never covers the rows above and below, and is
-        off on touch screens, where the Document page is the read.
+        off on touch screens, where the Document page is the read. Its first
+        line is the full filename the row truncates, so the filename needs no
+        native `title` of its own: two tooltips would stack on one hover.
       -->
       <a
         #rowLink
@@ -24,7 +27,7 @@
         [routerLink]="['/notebooks', notebookId(), 'documents', document.id]"
         [tabindex]="index === tabStop() ? 0 : -1"
         (focus)="activeIndex.set(index)"
-        [matTooltip]="document.abstract ?? noAbstract"
+        [matTooltip]="popover(document)"
         matTooltipPosition="right"
         matTooltipTouchGestures="off"
         [matTooltipClass]="
@@ -35,9 +38,7 @@
           <mat-icon [svgIcon]="kind(document).icon" />
         </span>
         <span class="document-row__text">
-          <span class="document-row__name" [title]="document.filename">{{
-            document.filename
-          }}</span>
+          <span class="document-row__name">{{ document.filename }}</span>
           <!--
             The secondary line, only when there is something to say. Stage and
             version are both shown when both apply: a new Version just landed
@@ -72,8 +73,10 @@
         </span>
       }
       <button
+        #rowMore
         mat-icon-button
         type="button"
+        tabindex="-1"
         class="document-row__more"
         [matMenuTriggerFor]="actions"
         [matMenuTriggerData]="{ document }"

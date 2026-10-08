@@ -126,9 +126,17 @@
 // rules reach it through `::ng-deep`; the `document-abstract` class keeps
 // them off every other tooltip. An Abstract is 50-100 words: wider than a
 // one-line tooltip and left-aligned so it reads as a paragraph.
+// Its first line is the filename, set apart in the caption's bold weight;
+// `pre-line` is what breaks the text at the newline between them.
 ::ng-deep .document-abstract .mat-mdc-tooltip-surface {
   max-width: 320px;
   text-align: start;
+  white-space: pre-line;
+
+  &::first-line {
+    font-weight: var(--mat-sys-label-medium-weight);
+    font-style: normal;
+  }
 }
 
 // No Abstract yet: the placeholder is in italics, so it does not read as one.
