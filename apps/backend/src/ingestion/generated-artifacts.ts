@@ -101,7 +101,8 @@ export const ARTIFACT_SPECS = {
       "an Executive Summary: a one-to-two-page summary of this document's key points for a human reader who " +
       'will decide from it whether to read the full document. Use short Markdown sections with headings and ' +
       "bullet points where they help. Cover the document's purpose, its main findings or provisions, and any " +
-      'conclusions, obligations or figures a reader must not miss.',
+      'conclusions, obligations or figures a reader must not miss. Do not begin with a title or an ' +
+      '"Executive Summary" heading — the page already shows one — but open with your first section.',
     // Structured Markdown, so the cut is at a section boundary: whole
     // heading-delimited sections go, never part of one. Cutting its trailing
     // *sentences* instead would end the summary mid-table or on a heading

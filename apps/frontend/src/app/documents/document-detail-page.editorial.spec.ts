@@ -1,5 +1,10 @@
-import { screen, within } from '@testing-library/angular';
-import { NOTEBOOK_ID, SUMMARIZED_DETAIL, renderPage } from './document-detail-page.spec-helpers';
+import { fireEvent, screen, within } from '@testing-library/angular';
+import {
+  NOTEBOOK_ID,
+  SUMMARIZED_DETAIL,
+  VERSION_ID,
+  renderPage,
+} from './document-detail-page.spec-helpers';
 
 /** The value listed under `label` in a definition list. */
 function detail(container: HTMLElement, label: string): string | undefined {
@@ -100,5 +105,89 @@ describe('DocumentDetailPage — editorial reading view', () => {
 
     await screen.findByTestId('byline');
     expect(screen.queryByText('Details')).toBeNull();
+  });
+});
+
+/**
+ * NBK-89: the page heads the Executive Summary itself, and the generated
+ * summary nearly always opens with a title of its own — 52 of 53 local
+ * Documents, in the four shapes below. That title is left out; nothing else
+ * in the summary, and nothing in the Converted Markdown, is.
+ */
+describe('DocumentDetailPage — the Executive Summary under its own heading', () => {
+  const SECTION = '## Key points\n\n- Revenue grew 18% year on year.\n';
+
+  function renderSummary(executiveSummary: string, extra: object = {}) {
+    return renderPage({
+      getDocument: vi.fn().mockResolvedValue({ ...SUMMARIZED_DETAIL, executiveSummary }),
+      ...extra,
+    });
+  }
+
+  /** The page's Executive Summary section: its own heading and what follows. */
+  async function summarySection(): Promise<HTMLElement> {
+    const heading = await screen.findByRole('heading', { level: 2, name: 'Executive Summary' });
+    return heading.closest('section')!;
+  }
+
+  const occurrences = (element: HTMLElement, text: string) =>
+    (element.textContent ?? '').split(text).length - 1;
+
+  it.each([
+    ['a level-1 heading', '# Executive Summary'],
+    ['a level-2 heading', '## Executive Summary'],
+    ['a bold line', '**Executive Summary**'],
+    ['a heading naming the Document', '# Executive Summary: *Sandworms of Dune*'],
+  ])('leaves out a leading title given as %s', async (_shape, title) => {
+    await renderSummary(`${title}\n\n${SECTION}`);
+
+    const section = await summarySection();
+    await within(section).findByRole('heading', { name: 'Key points' });
+    expect(occurrences(section, 'Executive Summary')).toBe(1);
+    expect(section.textContent).not.toContain('Sandworms of Dune');
+  });
+
+  it('leaves out a title that is not on the first line, after blank lines', async () => {
+    await renderSummary(`\n\n# executive summary\n\n\n${SECTION}`);
+
+    const section = await summarySection();
+    await within(section).findByRole('heading', { name: 'Key points' });
+    expect(section.textContent?.toLowerCase().split('executive summary').length).toBe(2);
+  });
+
+  it('renders a summary that opens with a section of its own unchanged', async () => {
+    await renderSummary(`## Purpose\n\nWhy this report exists.\n\n${SECTION}`);
+
+    const section = await summarySection();
+    expect(await within(section).findByRole('heading', { name: 'Purpose' })).toBeTruthy();
+    expect(within(section).getByRole('heading', { name: 'Key points' })).toBeTruthy();
+  });
+
+  it('keeps an "Executive Summary" heading that is not the first line, and the words in a paragraph', async () => {
+    await renderSummary(
+      `## Purpose\n\nThis Executive Summary is short.\n\n## Executive Summary of the annex\n\nMore.\n`,
+    );
+
+    const section = await summarySection();
+    expect(
+      await within(section).findByRole('heading', { name: 'Executive Summary of the annex' }),
+    ).toBeTruthy();
+    expect(within(section).getByText('This Executive Summary is short.')).toBeTruthy();
+  });
+
+  it('renders the full Converted Markdown as it is, even when it opens with that heading', async () => {
+    const getDocumentVersionContent = vi.fn().mockResolvedValue({
+      versionId: VERSION_ID,
+      markdown: '# Executive Summary\n\nThe report opens on its own summary.\n',
+    });
+    await renderSummary(`# Executive Summary\n\n${SECTION}`, { getDocumentVersionContent });
+    await summarySection();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Read the full Document' }));
+
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Executive Summary' }),
+    ).toBeTruthy();
+    expect(screen.getByText('The report opens on its own summary.')).toBeTruthy();
   });
 });
