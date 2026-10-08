@@ -109,6 +109,21 @@ is zsh, and two zsh defaults fail quietly where bash would not:
   `no matches found` before grep runs. Quote globs meant for the command:
   `--include='*.ts'`.
 
+## macOS has no `timeout`
+
+`timeout 30 <cmd>` is GNU coreutils, and this machine has neither it nor
+`gtimeout`: the call fails with `command not found`. Perl's alarm survives
+`exec`, so it stands in, exiting 142 when the deadline hits and with the
+command's own code otherwise:
+
+```bash
+perl -e 'alarm shift; exec @ARGV' 30 node --import tsx src/server.ts
+```
+
+Point it at the process that does the work. `tsx` and `npx` start a child
+`node`, and the alarm kills only the parent, leaving that child running;
+`node --import tsx` is one process.
+
 ## A local Postgres on 5432 shadows the Docker one
 
 `pnpm infra:up` publishes the compose Postgres on `*:5432`. A Homebrew or
