@@ -64,6 +64,42 @@ export interface DoclingOptions {
   docker?: string;
   /** Hard cap on one conversion, in ms. Defaults to `DOCLING_TIMEOUT_MS` or 60 minutes. */
   timeoutMs?: number;
+  /** Docling's table-structure mode for PDFs. Defaults to `DOCLING_TABLE_MODE` or `fast`. */
+  tableMode?: DoclingTableMode;
+}
+
+/**
+ * Docling's `--table-mode`: how hard its table-structure model works on each
+ * table a PDF's layout model finds. Only PDFs go through that model; DOCX,
+ * XLSX, HTML, CSV and Markdown tables are read straight from their markup.
+ */
+const DOCLING_TABLE_MODES = ['fast', 'accurate'] as const;
+
+export type DoclingTableMode = (typeof DOCLING_TABLE_MODES)[number];
+
+function isDoclingTableMode(value: string): value is DoclingTableMode {
+  return (DOCLING_TABLE_MODES as readonly string[]).includes(value);
+}
+
+/**
+ * The table mode conversions run under: `override` if given, else
+ * `DOCLING_TABLE_MODE` from the env, else `fast`.
+ *
+ * Why `fast` by default (NBK-72): the table-structure model is part of what makes
+ * stage 1 slow and memory-hungry on CPU, and on the PDFs checked so far
+ * `fast` produced the same Markdown tables as `accurate`.
+ *
+ * Why an unknown value throws instead of falling back: this runs when the
+ * backend builds its converter at boot, and a typo that silently changed how
+ * every Document is converted is worse than a backend that refuses to start.
+ */
+export function resolveDoclingTableMode(override?: DoclingTableMode): DoclingTableMode {
+  if (override) return override;
+  const configured = process.env.DOCLING_TABLE_MODE;
+  if (configured === undefined) return 'fast';
+  if (isDoclingTableMode(configured)) return configured;
+  const accepted = DOCLING_TABLE_MODES.map((mode) => `"${mode}"`).join(' or ');
+  throw new Error(`DOCLING_TABLE_MODE must be ${accepted}, got "${configured}".`);
 }
 
 /** Mount points inside the container. Nothing outside them is visible to it. */
@@ -135,6 +171,14 @@ const MIN_TEXT_CHARS_FOR_TEXT_PDF = 20;
  * ingested as an empty Document. Supporting scans is a feature with its own
  * memory budget, not a flag.
  *
+ * Why tables are never off, only `fast` or `accurate` (NBK-72): the CLI has
+ * no switch to skip table structure, and skipping it through Docling's
+ * Python API does not degrade a table to plain text — the layout model still
+ * claims the region and the table comes out empty, so every figure in it is
+ * silently missing from the Converted Markdown and from everything
+ * downstream. `--table-mode fast` is the cheap setting that keeps the text;
+ * see `resolveDoclingTableMode`.
+ *
  * Why an output *file* and not stdout: Docling and its transitive Python
  * dependencies write warnings and progress to stdout, which would corrupt
  * the Markdown; and a file still holds the result if this process dies after
@@ -145,6 +189,7 @@ export function createDoclingConverter(options: DoclingOptions = {}): MarkdownCo
   const image = options.image ?? process.env.DOCLING_IMAGE ?? DOCLING_IMAGE;
   const docker = options.docker ?? process.env.DOCKER_BIN ?? 'docker';
   const timeoutMs = resolveDoclingTimeoutMs(options.timeoutMs);
+  const tableMode = resolveDoclingTableMode(options.tableMode);
 
   return async function convertWithDocling({
     inputPath,
@@ -184,6 +229,8 @@ export function createDoclingConverter(options: DoclingOptions = {}): MarkdownCo
       '--artifacts-path',
       DOCLING_ARTIFACTS_PATH,
       '--no-ocr',
+      '--table-mode',
+      tableMode,
       '--to',
       'md',
       '--output',

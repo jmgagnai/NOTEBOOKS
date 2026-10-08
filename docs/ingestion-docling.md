@@ -98,6 +98,35 @@ memory budget (per-page, or on a machine with more than 8GB for Docker),
 and a decision about which engine. The EasyOCR weights are in the image if
 that day comes.
 
+### Tables are converted `fast`, never skipped
+
+Every PDF table goes through Docling's table-structure model, in the mode
+`DOCLING_TABLE_MODE` names: `fast` by default, or `accurate`. The converter
+always passes `--table-mode` explicitly, so an image bump that changed
+Docling's own default would not change ours.
+
+There is no "off". The pinned image's CLI has no `--no-tables` (it
+hard-codes table structure on), and turning it off through Docling's
+Python API was tried (NBK-72): the layout model still claims the table's
+region, the table comes out empty, and its text appears nowhere in the
+Markdown — not as a table, not as paragraphs. Every figure in a table would
+be missing from the Converted Markdown, and so from Chunks, search and
+chat, with no failure reason to say so.
+
+Measured on the pinned image (4 CPUs, 8GB), on a hand-built 40-page PDF
+with 80 ruled tables: `accurate` took 331 s and peaked at 2.0 GB, `fast`
+270 s and 1.93 GB, and table structure off 180 s and 1.76 GB — with every
+table gone. `fast`'s Markdown was byte-identical to `accurate`'s. That is a
+best case for `fast` (clean grids, no merged or spanning cells); if real
+documents' tables come out mangled, `accurate` is the setting to try.
+
+The mode only matters for PDFs: DOCX, XLSX, HTML, CSV and Markdown tables
+are read from their markup, with no model involved. And it applies to
+conversions that run after it changes, stage-1 retries included. Documents
+already converted keep their Converted Markdown; nothing records which mode
+a Version was converted under, and nothing re-converts. Upload the file
+again to get a new Version converted the new way.
+
 ### What the user is told when conversion fails
 
 Each way stage 1 can fail is recorded with a failure reason (NBK-65,
@@ -190,6 +219,10 @@ validation tweak.
 | `DOCLING_IMAGE`      | `ghcr.io/docling-project/docling-serve-cpu:v1.1.0` | Image to run                 |
 | `DOCKER_BIN`         | `docker`                                           | The `docker` binary          |
 | `DOCLING_TIMEOUT_MS` | `3600000`                                          | Hard cap on one conversion   |
+| `DOCLING_TABLE_MODE` | `fast`                                             | `fast` or `accurate`, PDFs only |
+
+`DOCLING_TABLE_MODE` accepts exactly `fast` or `accurate`; any other value
+stops the backend at startup with an error naming the variable.
 
 The timeout is an hour because the layout model runs on every page on CPU:
 a 540-page novel takes the pinned image well over ten minutes on a
@@ -229,7 +262,7 @@ function) is the seam, and most tests stub it:
 `apps/backend/test/docling.converter.test.ts` covers the converter itself,
 in two halves:
 
-- The OCR policy and the `docker run` argument list, against a fake `docker`
+- The OCR policy, the table mode and the `docker run` argument list, against a fake `docker`
   script that records its arguments and writes a canned result. Always runs.
 - The real container: a Markdown file, a hand-built one-page PDF (so the PDF
   pipeline and its model loading are exercised), and a corrupt PDF. Skipped

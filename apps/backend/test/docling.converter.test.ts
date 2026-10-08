@@ -3,11 +3,12 @@ import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { IngestionFailure } from '../src/ingestion/stage.js';
 import {
   DOCLING_ARTIFACTS_PATH,
   DOCLING_IMAGE,
+  type DoclingOptions,
   createDoclingConverter,
   looksScanned,
   markdownOutputPath,
@@ -157,6 +158,48 @@ describe('Docling converter: arguments and OCR policy (fake docker)', () => {
 
     expect(await fake.invocations()).toHaveLength(1);
     expect(await readFile(outputPath, 'utf8')).toBe('');
+  });
+});
+
+describe('Docling converter: table mode (fake docker)', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  async function tableModeArg(options: Pick<DoclingOptions, 'tableMode'> = {}): Promise<string> {
+    const workDir = await mkdtemp(join(tmpdir(), 'nbk-docling-fake-'));
+    const inputPath = join(workDir, 'report.pdf');
+    const outputPath = markdownOutputPath(workDir);
+    await writeFile(inputPath, textPdf('Quarterly report'));
+    const fake = await fakeDocker(workDir, '# Quarterly report\n\nRevenue grew in every region.\n');
+
+    await createDoclingConverter({ docker: fake.docker, ...options })({ inputPath, outputPath });
+
+    const [args] = await fake.invocations();
+    expect(args.filter((arg) => arg === '--table-mode')).toHaveLength(1);
+    return args[args.indexOf('--table-mode') + 1];
+  }
+
+  it('uses the fast table mode when DOCLING_TABLE_MODE is unset', async () => {
+    vi.stubEnv('DOCLING_TABLE_MODE', undefined);
+    expect(await tableModeArg()).toBe('fast');
+  });
+
+  it('uses the table mode DOCLING_TABLE_MODE names', async () => {
+    vi.stubEnv('DOCLING_TABLE_MODE', 'accurate');
+    expect(await tableModeArg()).toBe('accurate');
+  });
+
+  it('lets the tableMode option override DOCLING_TABLE_MODE', async () => {
+    vi.stubEnv('DOCLING_TABLE_MODE', 'accurate');
+    expect(await tableModeArg({ tableMode: 'fast' })).toBe('fast');
+  });
+
+  it('refuses to build a converter for a DOCLING_TABLE_MODE it does not know', () => {
+    vi.stubEnv('DOCLING_TABLE_MODE', 'Fast');
+    expect(() => createDoclingConverter()).toThrow(
+      /DOCLING_TABLE_MODE must be "fast" or "accurate", got "Fast"/,
+    );
   });
 });
 

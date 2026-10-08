@@ -54,6 +54,11 @@ async function reportDatabase(pool: Pool, url: string): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  // Built before anything opens a connection: it validates its env settings
+  // (DOCLING_TABLE_MODE, NBK-72) and throws on a bad one, and a throw after
+  // the pool and the LISTEN connection exist would log and then leave the
+  // process hanging on them instead of exiting.
+  const convertToMarkdown = createDoclingConverter();
   const pool = createPool(DATABASE_URL);
   await reportDatabase(pool, DATABASE_URL);
   await runMigrations(pool);
@@ -117,7 +122,7 @@ async function main(): Promise<void> {
       pool,
       s3,
       documentsBucket: DOCUMENTS_BUCKET,
-      convertToMarkdown: createDoclingConverter(),
+      convertToMarkdown,
       ...(OPENROUTER_API_KEY
         ? {
             complete: createOpenRouterCompleter({ apiKey: OPENROUTER_API_KEY }),
