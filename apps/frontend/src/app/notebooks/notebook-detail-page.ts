@@ -20,6 +20,9 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { ThreadNavigator } from '../chat/thread-navigator';
 import { ThreadView } from '../chat/thread-view';
+import { DocumentFilter } from '../documents/document-filter';
+import { DocumentList } from '../documents/document-list';
+import { DocumentsEmptyState } from '../documents/documents-empty-state';
 import { ConflictChoice, Document, DocumentsStore } from '../documents/documents.store';
 import { UPLOAD_ACCEPT } from '../documents/upload-rules';
 import { APP_NAME } from '../shared/app-name';
@@ -71,18 +74,18 @@ function droppedEntries(dataTransfer: DataTransfer | null): {
 /**
  * A Notebook's workspace (NBK-5, framed in NBK-35): a slim header, then
  * three cards side by side — the Chat Threads navigator, the open Thread and
- * the Documents panel with its cards and their upload, open, delete, restore
- * and download actions. Notebooks have no dedicated `GET /notebooks/:id`
- * endpoint, so the Notebook itself (its title, for the header and the browser
- * tab) is looked up from `NotebooksStore`'s already-loaded list by route id,
- * the same list the top-level Notebooks page uses.
+ * the Documents panel with its rows (`DocumentList`, NBK-42) and their
+ * upload, open, delete, restore and download actions. Notebooks have no
+ * dedicated `GET /notebooks/:id` endpoint, so the Notebook itself (its
+ * title, for the header and the browser tab) is looked up from
+ * `NotebooksStore`'s already-loaded list by route id, the same list the
+ * top-level Notebooks page uses.
  *
- * Each card carries that Document's Abstract (NBK-7) — the summary
- * GLOSSARY.md writes "to be skimmed in a list" — and links to the Document
- * itself, where the Executive Summary and the full converted content live.
+ * Each row links to the Document itself, where the Abstract (NBK-7), the
+ * Executive Summary and the full converted content live.
  *
  * While open, it also follows this Notebook's live app events (NBK-6) so a
- * Document's status badge tracks the background pipeline without a refresh.
+ * Document's row tracks the background pipeline without a refresh.
  *
  * The chat cards (NBK-10, split in NBK-34) are the Notebook's Chat Threads
  * and the open Thread. Per NBK-1 a Notebook's detail page is "composed of a
@@ -99,6 +102,9 @@ function droppedEntries(dataTransfer: DataTransfer | null): {
     MatIconModule,
     MatProgressSpinnerModule,
     MatTooltipModule,
+    DocumentFilter,
+    DocumentList,
+    DocumentsEmptyState,
     RouterLink,
     StatusBadge,
     ThreadNavigator,
@@ -198,6 +204,36 @@ export class NotebookDetailPage implements OnInit, OnDestroy {
       injector: this.injector,
     });
   }
+
+  /**
+   * The Notebook's size and how much of it is ready (NBK-48): "25 Documents",
+   * or "23/25 ready" while some are still ingesting or failed. One line read
+   * by both the panel header and "Show Documents", so the two never disagree;
+   * it follows the store, so App Events move it without a refetch.
+   */
+  protected readonly documentCount = computed(() => {
+    const documents = this.store.documents();
+    const ready = documents.filter((d) => d.status === 'ready').length;
+    if (ready < documents.length) return `${ready}/${documents.length} ready`;
+    return documents.length === 1 ? '1 Document' : `${documents.length} Documents`;
+  });
+
+  /** What the user typed in "Filter Documents" (NBK-48). */
+  protected readonly documentFilter = signal('');
+
+  /**
+   * The rows the panel lists (NBK-48): the store's Documents whose filename
+   * contains the filter text, ignoring case. Client-side on purpose — the
+   * list is already here, and the API's search is semantic, which is "Search
+   * this Notebook", not this. Surrounding blanks are ignored so a stray
+   * space does not empty the list.
+   */
+  protected readonly filteredDocuments = computed(() => {
+    const documents = this.store.documents();
+    const text = this.documentFilter().trim().toLocaleLowerCase();
+    if (!text) return documents;
+    return documents.filter((d) => d.filename.toLocaleLowerCase().includes(text));
+  });
 
   /** The picker only offers the accepted document types (NBK-16). */
   protected readonly accept = UPLOAD_ACCEPT;

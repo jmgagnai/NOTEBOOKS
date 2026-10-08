@@ -1,24 +1,23 @@
 <div class="thread-view">
   @if (activeThread(); as thread) {
     <div class="thread-view__head">
-      <h3>{{ thread.title }}</h3>
       <!--
-        Renaming is open to anyone (ADR-0001), so this is not gated on
-        being the author — the author line stays as the record of who
-        started it.
+        Spec 04 "Thread view header" (NBK-51): the title is the rename
+        control, as the Notebook title is. Renaming is open to anyone
+        (ADR-0001), so it is not gated on being the author — "Started by"
+        stays as the record of who started it. The heading keeps the Thread
+        findable by its title for assistive technology.
       -->
-      <div class="thread-view__rename">
-        <label class="thread-view__field">
-          <span class="thread-view__field-label">Rename Chat Thread</span>
-          <input
-            type="text"
-            aria-label="Rename Chat Thread"
-            [value]="renameTitle()"
-            (input)="renameTitle.set($any($event.target).value)"
-          />
-        </label>
-        <button mat-button type="button" (click)="rename()">Rename</button>
-      </div>
+      <h3 class="thread-view__title">
+        <app-editable-title
+          size="medium"
+          [title]="thread.title"
+          editLabel="Rename Chat Thread"
+          tooltip="Rename Chat Thread"
+          (titleChange)="rename(thread.id, $event)"
+        />
+      </h3>
+      <span class="thread-view__started-by">Started by {{ thread.author.email }}</span>
     </div>
 
     @if (store.messagesLoading()) {
