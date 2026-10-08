@@ -202,6 +202,42 @@ describe('DocumentDetailPage', () => {
     expect(await screen.findByText('Document not found.')).toBeTruthy();
   });
 
+  // NBK-68: a failed Document says why, in the same sentence the Documents
+  // panel's warning uses — written out here rather than read from
+  // FAILURE_SENTENCES so a change to the wording is a deliberate test change.
+  it('says why a failed Document failed, beside its status', async () => {
+    const getDocument = vi.fn().mockResolvedValue({
+      ...SUMMARIZED_DETAIL,
+      status: 'failed',
+      executiveSummary: null,
+      failure: { reason: 'no-text-layer', failedAt: 'converting' },
+    });
+
+    await render(DocumentDetailPage, {
+      providers: [activatedRoute(), { provide: DocumentsService, useValue: { getDocument } }],
+    });
+
+    expect(
+      await screen.findByText(
+        'This PDF has no selectable text (it looks like a scan). Upload a PDF whose text can be selected.',
+      ),
+    ).toBeTruthy();
+  });
+
+  it('shows no failure reason for a Document that has not failed', async () => {
+    const getDocument = vi
+      .fn()
+      .mockResolvedValue({ ...SUMMARIZED_DETAIL, status: 'ready', failure: null });
+
+    await render(DocumentDetailPage, {
+      providers: [activatedRoute(), { provide: DocumentsService, useValue: { getDocument } }],
+    });
+
+    await screen.findByText('quarterly.pdf');
+    expect(screen.queryByTestId('failure-reason')).toBeNull();
+    expect(screen.queryByText(/Upload a PDF whose text can be selected/)).toBeNull();
+  });
+
   /**
    * Seam-3 tests for the other half of NBK-12's acceptance criteria:
    * "clicking a Citation in the Angular UI opens that exact Document Version,
