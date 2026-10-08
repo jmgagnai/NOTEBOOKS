@@ -25,8 +25,12 @@
   on one row, the send button kept at the bottom as the draft grows. No
   attach and no microphone: the app has neither feature (story 46).
 -->
-<div class="composer" [class.composer--closed]="closed()" [class.composer--answering]="answering()">
-  @if (answering()) {
+<div
+  class="composer"
+  [class.composer--closed]="closed()"
+  [class.composer--answering]="answeringHere()"
+>
+  @if (answeringHere()) {
     <!-- Along the top edge; the spinner beside the box is what is announced. -->
     <mat-progress-bar class="composer__progress" mode="indeterminate" aria-hidden="true" />
   }
@@ -41,7 +45,7 @@
     (input)="draft.set($any($event.target).value); fit()"
     (keydown.enter)="onEnter($event)"
   ></textarea>
-  @if (answering()) {
+  @if (answeringHere()) {
     <span class="composer__answering" role="status" aria-label="Answering">
       <mat-progress-spinner mode="indeterminate" diameter="20" aria-hidden="true" />
     </span>

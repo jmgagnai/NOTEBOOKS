@@ -96,6 +96,13 @@ export async function tooltipOf(element: HTMLElement): Promise<string | undefine
 /** The question box, however it is currently rendered (enabled or not). */
 export const questionBox = () => screen.getByLabelText('Ask a question') as HTMLTextAreaElement;
 
+/** The composer's Send button, while the box is not answering. */
+export const sendButton = () => screen.getByRole('button', { name: 'Send' }) as HTMLButtonElement;
+
+/** The navigator's "New Chat Thread" button. */
+export const newThreadButton = () =>
+  screen.getByRole('button', { name: 'New Chat Thread' }) as HTMLButtonElement;
+
 /** The question most tests ask, and the exchange that records it. */
 export const ASK = 'What was revenue in Q3?';
 export const q3Exchange = () => ({

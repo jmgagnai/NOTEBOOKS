@@ -72,6 +72,15 @@ export class Composer {
   protected readonly answering = computed(() => this.store.sending());
 
   /**
+   * Whether the answering state is shown here: only in an open Thread. Back
+   * on the landing while an answer is still out (NBK-81) the box stays
+   * closed — spec 07 keeps sending disabled while a question is being sent —
+   * but there is no answer on screen, so the progress bar, the spinner and
+   * the "reopens when the answer is in" hint would point at nothing.
+   */
+  protected readonly answeringHere = computed(() => this.answering() && this.threadOpen());
+
+  /**
    * The box is closed while answering, and while a Chat Thread is being
    * started — by this box or the navigator's button — so a second send
    * cannot start a second Thread (spec 07 story 35). With no Thread open it
@@ -89,7 +98,8 @@ export class Composer {
   protected readonly canSend = computed(() => !this.closed() && this.draft().trim().length > 0);
 
   protected readonly hint = computed(() => {
-    if (this.answering()) return 'Answering… the box reopens when the answer is in';
+    if (this.answeringHere()) return 'Answering… the box reopens when the answer is in';
+    if (this.answering()) return 'You can ask again once the current answer is in';
     return 'Enter to send · Shift+Enter for a new line';
   });
 

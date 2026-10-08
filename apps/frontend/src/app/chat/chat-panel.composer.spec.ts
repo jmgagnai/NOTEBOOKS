@@ -6,6 +6,8 @@ import {
   message,
   tooltipOf,
   questionBox,
+  sendButton,
+  newThreadButton,
   ASK,
   q3Exchange,
   pendingRow,
@@ -29,14 +31,13 @@ describe('Chat panel (ThreadNavigator + ThreadView) — asking', () => {
   describe('NBK-45: composer', () => {
     it('cannot send an empty draft', async () => {
       await draftAQuestion();
-      const send = () => screen.getByRole('button', { name: 'Send' }) as HTMLButtonElement;
-      expect(send().disabled).toBe(false);
+      expect(sendButton().disabled).toBe(false);
 
       fireEvent.input(questionBox(), { target: { value: '   ' } });
 
       // Whitespace is nothing to ask: the same rule `send` applies, shown
       // on the button rather than discovered on click.
-      expect(send().disabled).toBe(true);
+      expect(sendButton().disabled).toBe(true);
     });
 
     it('sends on Enter, while Shift+Enter is left to add a line', async () => {
@@ -403,9 +404,6 @@ describe('Chat panel (ThreadNavigator + ThreadView) — asking', () => {
   describe('NBK-81: asking from the landing', () => {
     const INVITATION = 'Ask anything about the Documents in this Notebook';
     const SUMMARIZE = 'Summarize the Documents in this Notebook';
-    const send = () => screen.getByRole('button', { name: 'Send' }) as HTMLButtonElement;
-    const newThread = () =>
-      screen.getByRole('button', { name: 'New Chat Thread' }) as HTMLButtonElement;
 
     /** The landing of a Notebook with no Chat Threads, `ASK` typed into its box. */
     async function draftOnTheLanding(overrides: Partial<Record<string, unknown>> = {}) {
@@ -439,7 +437,7 @@ describe('Chat panel (ThreadNavigator + ThreadView) — asking', () => {
       const sendChatMessage = vi.fn().mockResolvedValue(q3Exchange());
       await draftOnTheLanding({ createChatThread, sendChatMessage });
 
-      fireEvent.click(send());
+      fireEvent.click(sendButton());
 
       expect(await screen.findByText('Revenue in Q3 was 12.4M.')).toBeTruthy();
       expect(createChatThread).toHaveBeenCalledTimes(1);
@@ -493,13 +491,13 @@ describe('Chat panel (ThreadNavigator + ThreadView) — asking', () => {
       const { sendChatMessage } = heldSend();
       await draftOnTheLanding({ createChatThread, sendChatMessage });
 
-      fireEvent.click(send());
-      await waitFor(() => expect(send().disabled).toBe(true));
+      fireEvent.click(sendButton());
+      await waitFor(() => expect(sendButton().disabled).toBe(true));
       expect(questionBox().disabled).toBe(true);
-      expect(newThread().disabled).toBe(true);
-      fireEvent.click(send());
+      expect(newThreadButton().disabled).toBe(true);
+      fireEvent.click(sendButton());
       fireEvent.keyDown(questionBox(), { key: 'Enter' });
-      fireEvent.click(newThread());
+      fireEvent.click(newThreadButton());
       expect(createChatThread).toHaveBeenCalledTimes(1);
 
       created(thread({ title: 'New Chat Thread' }));
@@ -520,7 +518,7 @@ describe('Chat panel (ThreadNavigator + ThreadView) — asking', () => {
         sendChatMessage,
       });
 
-      fireEvent.click(send());
+      fireEvent.click(sendButton());
 
       const alert = await screen.findByRole('alert');
       expect(within(alert).getByText('The database is unavailable.')).toBeTruthy();
@@ -528,6 +526,28 @@ describe('Chat panel (ThreadNavigator + ThreadView) — asking', () => {
       expect(questionBox().disabled).toBe(false);
       expect(questionBox().value).toBe(ASK);
       expect(screen.getByRole('heading', { name: 'Notebook' })).toBeTruthy();
+    });
+
+    // Spec 07: sending stays disabled while a question is being sent, also
+    // from the landing the asker went back to — but the landing has no
+    // answer on screen, so it must not claim one is being written there.
+    it('keeps the landing box closed while a question is answered elsewhere, without the answering state', async () => {
+      const { settle } = await sendHeld();
+      await screen.findByRole('status', { name: 'Answering' });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Back to Notebook' }));
+
+      await screen.findByRole('heading', { name: 'Notebook' });
+      expect(questionBox().disabled).toBe(true);
+      expect(sendButton().disabled).toBe(true);
+      expect(screen.queryByRole('status', { name: 'Answering' })).toBeNull();
+      expect(screen.queryByText('Answering… the box reopens when the answer is in')).toBeNull();
+      expect(screen.getByText('You can ask again once the current answer is in')).toBeTruthy();
+
+      settle(q3Exchange());
+
+      await waitFor(() => expect(questionBox().disabled).toBe(false));
+      expect(screen.getByText('Enter to send · Shift+Enter for a new line')).toBeTruthy();
     });
 
     // Story 43: an open Thread with nothing in it is an empty message area,
@@ -540,7 +560,7 @@ describe('Chat panel (ThreadNavigator + ThreadView) — asking', () => {
       expect(screen.queryByText(INVITATION)).toBeNull();
       expect(screen.queryByRole('button', { name: SUMMARIZE })).toBeNull();
 
-      fireEvent.click(send());
+      fireEvent.click(sendButton());
 
       expect(await screen.findByText('Revenue in Q3 was 12.4M.')).toBeTruthy();
       expect(createChatThread).not.toHaveBeenCalled();
