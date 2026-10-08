@@ -181,6 +181,15 @@ const initialState: ChatState = {
   error: null,
 };
 
+/**
+ * The fixed title a Thread starts with (NBK-43, spec 04 "Default Thread"),
+ * whichever control starts it — the navigator's button or a question sent
+ * from the landing (NBK-81):
+ * the create request requires a non-empty title, and the user renames the
+ * Thread from the Thread view's header once they know what it is about.
+ */
+export const NEW_THREAD_TITLE = 'New Chat Thread';
+
 /** What every event about one streamed answer carries, if it is one. */
 function streamFields(event: AppEvent): { threadId: string; streamId: string } | null {
   const threadId = event.data['threadId'];
@@ -216,6 +225,14 @@ export const ChatStore = signalStore(
     // the same shape as DocumentsStore's.
     let watching: Subscription | null = null;
 
+    /**
+     * Whether `threadId` is still the open Thread: a read that resolves after
+     * the Thread was closed (NBK-81) or swapped for another must not land.
+     */
+    function stillOpen(threadId: string): boolean {
+      return store.activeThreadId() === threadId;
+    }
+
     function stopWatching(): void {
       watching?.unsubscribe();
       watching = null;
@@ -242,7 +259,7 @@ export const ChatStore = signalStore(
           notebookId,
           threadId,
         })) as ChatMessage[];
-        if (store.activeThreadId() !== threadId) return;
+        if (!stillOpen(threadId)) return;
         patchState(store, {
           messages,
           // Only if it is still the same answer: a newer one may have
@@ -276,7 +293,7 @@ export const ChatStore = signalStore(
         })) as ChatMessage[];
         // Closed (NBK-81) or swapped for another while the read was out:
         // these are no longer the messages on screen.
-        if (store.activeThreadId() !== threadId) return;
+        if (!stillOpen(threadId)) return;
         // An ask in this Thread can land while the read is out — the user
         // switched back mid-answer — and `sendMessage` has then appended an
         // exchange the snapshot predates. Keep it rather than let the older
@@ -290,7 +307,7 @@ export const ChatStore = signalStore(
         );
         patchState(store, { messages, messagesLoading: false });
       } catch (err) {
-        if (store.activeThreadId() !== threadId) return;
+        if (!stillOpen(threadId)) return;
         patchState(store, {
           messagesLoading: false,
           error: errorMessage(err, 'Failed to load the Chat Thread.'),

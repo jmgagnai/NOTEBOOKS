@@ -16,8 +16,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
-import { ChatStore } from './chat.store';
-import { NEW_THREAD_TITLE } from './thread-navigator';
+import { ChatStore, NEW_THREAD_TITLE } from './chat.store';
 
 /**
  * The question box (NBK-45, spec 04 "Composer"; a Copilot-style pill since

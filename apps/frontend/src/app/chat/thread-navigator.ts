@@ -4,14 +4,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
-import { ChatStore, ChatThread } from './chat.store';
-
-/**
- * The fixed title a Thread starts with (NBK-43, spec 04 "Default Thread"):
- * the create request requires a non-empty title, and the user renames the
- * Thread from the Thread view's header once they know what it is about.
- */
-export const NEW_THREAD_TITLE = 'New Chat Thread';
+import { ChatStore, ChatThread, NEW_THREAD_TITLE } from './chat.store';
 
 /**
  * The Chat Threads navigator of a Notebook (NBK-10, split out in NBK-34,

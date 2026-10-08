@@ -13,17 +13,17 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatMenuModule } from '@angular/material/menu';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { filter, map } from 'rxjs';
+import { NOTEBOOK_PAGE_PATH } from '../app.routes';
 import { ThreadNavigator } from '../chat/thread-navigator';
 import { Avatar } from '../shared/avatar';
 import { APP_NAME } from '../shared/brand';
 import { CopycatMark } from '../shared/copycat-mark';
 
-/** The route path of the Notebook page, the one route the Chat Threads show on. */
-const NOTEBOOK_PAGE_PATH = 'notebooks/:notebookId';
-
 /**
  * Below this viewport width the sidebar starts as the rail (spec 07
  * "Collapse"): the same 900 px the Notebook page stacks its panes at.
+ * Mirrors `$stack-below` in notebooks/notebook-detail-page.scss, which a
+ * TypeScript constant cannot share: change both together.
  */
 const COLLAPSED_BELOW_PX = 900;
 
@@ -79,9 +79,7 @@ export class Sidebar {
   );
 
   /** The Notebook the current route is inside, if any. */
-  protected readonly notebookId = computed(
-    () => (this.page().paramMap.get('notebookId') as string | null) ?? null,
-  );
+  protected readonly notebookId = computed(() => this.page().paramMap.get('notebookId'));
 
   /** Only the Notebook page itself, not its Search or Document pages (spec 07 story 12). */
   protected readonly onNotebookPage = computed(
@@ -94,6 +92,11 @@ export class Sidebar {
    */
   protected readonly collapsed = signal(
     (inject(DOCUMENT).defaultView?.innerWidth ?? Infinity) < COLLAPSED_BELOW_PX,
+  );
+
+  /** The collapse control's name and tooltip, which say what it will do. */
+  protected readonly toggleLabel = computed(() =>
+    this.collapsed() ? 'Expand sidebar' : 'Collapse sidebar',
   );
 
   protected toggle(): void {

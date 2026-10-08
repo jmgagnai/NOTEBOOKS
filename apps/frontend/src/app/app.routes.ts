@@ -5,9 +5,15 @@ import { RegisterPage } from './auth/register-page';
 import { NotebookDetailPage } from './notebooks/notebook-detail-page';
 import { NotebooksPage } from './notebooks/notebooks-page';
 
+/**
+ * The Notebook page's route path, exported because the sidebar tells that
+ * page apart from the other routes inside a Notebook (spec 07 story 12).
+ */
+export const NOTEBOOK_PAGE_PATH = 'notebooks/:notebookId';
+
 export const routes: Routes = [
   { path: '', component: NotebooksPage, canActivate: [authGuard] },
-  { path: 'notebooks/:notebookId', component: NotebookDetailPage, canActivate: [authGuard] },
+  { path: NOTEBOOK_PAGE_PATH, component: NotebookDetailPage, canActivate: [authGuard] },
   // Searching a Notebook's Documents (NBK-9). Its own page rather than a
   // panel on the Notebook, so a search is a place a user can be — and link
   // to — rather than a transient state of the document list.

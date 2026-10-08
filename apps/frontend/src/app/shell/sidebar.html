@@ -28,8 +28,8 @@
       mat-icon-button
       type="button"
       class="sidebar__toggle"
-      [attr.aria-label]="collapsed() ? 'Expand sidebar' : 'Collapse sidebar'"
-      [matTooltip]="collapsed() ? 'Expand sidebar' : 'Collapse sidebar'"
+      [attr.aria-label]="toggleLabel()"
+      [matTooltip]="toggleLabel()"
       matTooltipPosition="right"
       [attr.aria-expanded]="!collapsed()"
       (click)="toggle()"

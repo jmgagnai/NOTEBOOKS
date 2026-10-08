@@ -126,9 +126,7 @@ export class NotebookDetailPage implements OnInit, OnDestroy {
   private readonly undoSnackBar = inject(UndoSnackBar);
 
   protected readonly notebookId = this.route.snapshot.paramMap.get('notebookId')!;
-  protected readonly notebook = computed(
-    () => this.notebooksStore.notebooks().find((n) => n.id === this.notebookId) ?? null,
-  );
+  protected readonly notebook = computed(() => this.notebooksStore.byId(this.notebookId));
 
   // The browser tab names the Notebook (NBK-35, NBK-61) so several open
   // Notebooks are distinguishable; it follows a rename.

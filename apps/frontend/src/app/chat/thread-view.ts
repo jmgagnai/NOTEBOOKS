@@ -59,10 +59,10 @@ interface AnswerBlock {
  * Citation and the reason an old answer stays checkable.
  *
  * This component loads nothing: loading the Threads, watching the
- * Notebook's App Events and resetting the store belong to the Thread
- * navigator (`ThreadNavigator`), so that the two can sit in different cards
- * (NBK-35) without either depending on the other being rendered first; and
- * the Notebook list the landing's title comes from is the page's to load.
+ * Notebook's App Events and resetting the store belong to the Notebook page
+ * (`NotebookDetailPage`, since NBK-79), which outlives both this view and
+ * the sidebar's Thread navigator; and the Notebook list the landing's title
+ * comes from is the page's to load too.
  */
 @Component({
   selector: 'app-thread-view',
@@ -192,9 +192,7 @@ export class ThreadView {
   });
 
   /** The Notebook as the page's Notebooks store holds it; the page loads the list. */
-  private readonly notebook = computed(
-    () => this.notebooks.notebooks().find((n) => n.id === this.notebookId()) ?? null,
-  );
+  private readonly notebook = computed(() => this.notebooks.byId(this.notebookId()));
 
   /**
    * The landing's title (NBK-81), under the name the Notebook page falls
