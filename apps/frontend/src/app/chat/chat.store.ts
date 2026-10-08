@@ -113,6 +113,11 @@ interface ChatState {
   messagesLoading: boolean;
   /** True while a question is in flight. The recorded exchange ends it. */
   sending: boolean;
+  /**
+   * True while a Chat Thread is being created. Every control that starts
+   * one waits on it, so a double click starts one Thread, not two.
+   */
+  creatingThread: boolean;
   /** The answer currently streaming into the open Thread, if any (NBK-11). */
   streamingAnswer: StreamingAnswer | null;
   error: string | null;
@@ -125,6 +130,7 @@ const initialState: ChatState = {
   messages: [],
   messagesLoading: false,
   sending: false,
+  creatingThread: false,
   streamingAnswer: null,
   error: null,
 };
@@ -202,12 +208,52 @@ export const ChatStore = signalStore(
       }
     }
 
+    /** Opens a Chat Thread and loads its messages. */
+    async function openThread(notebookId: string, threadId: string): Promise<void> {
+      patchState(store, {
+        activeThreadId: threadId,
+        // The previous Thread's messages belong to a different Chat Thread,
+        // and so does anything that was streaming into it.
+        messages: [],
+        streamingAnswer: null,
+        messagesLoading: true,
+        error: null,
+      });
+      try {
+        const messages = (await chatService.listChatMessages({
+          notebookId,
+          threadId,
+        })) as ChatMessage[];
+        patchState(store, { messages, messagesLoading: false });
+      } catch (err) {
+        patchState(store, {
+          messagesLoading: false,
+          error: errorMessage(err, 'Failed to load the Chat Thread.'),
+        });
+      }
+    }
+
     return {
+      /**
+       * Loads the Notebook's Chat Threads and, when none is open, opens the
+       * most recently created one (NBK-43, spec 04 "Default Thread": a user
+       * opening a Notebook that has Threads lands in context rather than on
+       * an empty card). Decided here rather than in the navigator because
+       * it is a rule about the data — whichever component triggers the load
+       * gets the same open Thread — and because this is the one place that
+       * knows the load has just finished. By `createdAt`, not list position:
+       * the backend lists newest first today, but that ordering is its
+       * choice, and the rule is "most recent".
+       */
       async loadThreads(notebookId: string): Promise<void> {
         patchState(store, { threadsLoading: true, error: null });
         try {
           const threads = (await chatService.listChatThreads({ notebookId })) as ChatThread[];
           patchState(store, { threads, threadsLoading: false });
+          if (store.activeThreadId() === null && threads.length > 0) {
+            const newest = threads.reduce((a, b) => (b.createdAt > a.createdAt ? b : a));
+            await openThread(notebookId, newest.id);
+          }
         } catch (err) {
           patchState(store, {
             threadsLoading: false,
@@ -217,7 +263,8 @@ export const ChatStore = signalStore(
       },
 
       async createThread(notebookId: string, title: string): Promise<void> {
-        patchState(store, { error: null });
+        if (store.creatingThread()) return;
+        patchState(store, { error: null, creatingThread: true });
         try {
           const thread = (await chatService.createChatThread({
             notebookId,
@@ -233,6 +280,8 @@ export const ChatStore = signalStore(
           });
         } catch (err) {
           patchState(store, { error: errorMessage(err, 'Failed to start a Chat Thread.') });
+        } finally {
+          patchState(store, { creatingThread: false });
         }
       },
 
@@ -252,30 +301,7 @@ export const ChatStore = signalStore(
         }
       },
 
-      /** Opens a Chat Thread and loads its messages. */
-      async openThread(notebookId: string, threadId: string): Promise<void> {
-        patchState(store, {
-          activeThreadId: threadId,
-          // The previous Thread's messages belong to a different Chat Thread,
-          // and so does anything that was streaming into it.
-          messages: [],
-          streamingAnswer: null,
-          messagesLoading: true,
-          error: null,
-        });
-        try {
-          const messages = (await chatService.listChatMessages({
-            notebookId,
-            threadId,
-          })) as ChatMessage[];
-          patchState(store, { messages, messagesLoading: false });
-        } catch (err) {
-          patchState(store, {
-            messagesLoading: false,
-            error: errorMessage(err, 'Failed to load the Chat Thread.'),
-          });
-        }
-      },
+      openThread,
 
       /**
        * Asks a question and appends the exchange.
@@ -411,6 +437,15 @@ export const ChatStore = signalStore(
       reset(): void {
         stopWatching();
         patchState(store, initialState);
+      },
+
+      /**
+       * Clears the error the user has read (NBK-45). Only the message goes:
+       * an error row above the composer is about an ask that is over, so
+       * there is nothing else to undo.
+       */
+      dismissError(): void {
+        patchState(store, { error: null });
       },
     };
   }),

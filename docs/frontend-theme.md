@@ -26,6 +26,7 @@ form fields. Material hides the floating label at this density only for the
 |---|---|---|
 | Primary / accent | `--mat-sys-primary` (`--mat-sys-on-primary` white) | `#0F6CBD` |
 | Primary hover / pressed | `--app-primary-hover` / `--app-primary-pressed` | `#115EA3` / `#0C3B5E` |
+| Selected navigator row / its hover | `--app-selected-fill` / `--app-selected-fill-hover` | `#D6E8F9` / `#C7DEF6` |
 | Accent tint (selected rows, chips, in-progress badge) | `--mat-sys-primary-container` / `--mat-sys-on-primary-container` | `#EBF3FC` / `#0C3B5E` |
 | Page canvas | `--mat-sys-background` (`--mat-sys-on-background`) | `#F5F5F5` (`#242424`) |
 | Pane / card surface | `--mat-sys-surface` | `#FFFFFF` |
@@ -34,6 +35,7 @@ form fields. Material hides the floating label at this density only for the
 | Text / secondary text | `--mat-sys-on-surface` / `--mat-sys-on-surface-variant` | `#242424` / `#616161` |
 | Disabled text | `--app-text-disabled` | `#BDBDBD` |
 | Border / strong border | `--mat-sys-outline-variant` / `--mat-sys-outline` | `#E0E0E0` / `#D1D1D1` |
+| Chat composer's focused border (in place of a focus ring) | `--app-outline-focus` | `#8A8A8A` |
 | Error | `--mat-sys-error`, `--mat-sys-error-container` / `--mat-sys-on-error-container` | `#C50F1F`, `#FDE7E9` / `#C50F1F` |
 | Success (`ready`) | `--mat-sys-tertiary-container` / `--mat-sys-on-tertiary-container` (`--mat-sys-tertiary`) | `#E7F5E7` / `#0E700E` |
 | Dark overlays (tooltip, snack bar) | `--mat-sys-inverse-surface` / `--mat-sys-inverse-on-surface` / `--mat-sys-inverse-primary` | `#242424` / `#FFFFFF` / `#8AB9EA` |
@@ -48,11 +50,14 @@ colour role; nothing else in the app uses tertiary.
 | Controls (buttons, inputs, badges, menus' items) | `--mat-sys-corner-extra-small`, `--mat-sys-corner-small`, `--mat-sys-corner-full` | 4 px |
 | Cards, panes, menus | `--mat-sys-corner-medium`, `--mat-sys-corner-large` | 8 px |
 | Chat bubbles | `--mat-sys-corner-extra-large` | 12 px |
+| Fully round: avatars, Citation chips | `--app-corner-round` | 9999 px |
 | Elevation | `--mat-sys-level0` to `--mat-sys-level2` | `none` (a 1 px border instead) |
 | Floating overlays (menus, dialogs) | `--mat-sys-level3` to `--mat-sys-level5` | soft shadow |
 
 `corner-full` at 4 px is what keeps Material's filled and outlined buttons
-from rendering as pills. Every `mat-card` gets a 1 px `outline-variant`
+from rendering as pills, which is also why anything drawn as a circle
+(`<app-avatar>`, `<app-sparkle-avatar>`, the account button) or a round chip
+(Citation chips, spec 04) takes `--app-corner-round` instead. Every `mat-card` gets a 1 px `outline-variant`
 border and no shadow, whatever its appearance.
 
 ## Type scale
@@ -69,6 +74,7 @@ read. Each role has a shorthand token (`--mat-sys-<role>`, usable as
 | Small title | `title-small`, `label-large` | 600 14/20 | `h3`–`h6`; button labels |
 | Body | `body-medium`, `body-large` | 400 14/20 | `body`, inputs, list rows |
 | Caption | `body-small`, `label-medium` (600) | 12/16 | metadata, badges, tooltips |
+| Chip number (off the scale) | `label-small` | 600 11/16 | the number in a Citation chip (spec 04, NBK-52) only |
 
 `styles.scss` also styles bare `h1`/`h2`/`h3`–`h6` with the title roles
 (font only; margins stay the browser's or the component's), so page headings
@@ -82,6 +88,8 @@ sit on the scale without per-page rules. Rendered Markdown
 |---|---|---|
 | `--app-title-bar-height` | 48 px | the `mat-toolbar` height; pages fill `100vh` minus it |
 | `--app-control-height` | 32 px | buttons, icon buttons, the plain `.app-button` variants |
+| `--app-icon-size-small` | 14 px | a glyph inside a 24 px avatar (the assistant's sparkle) |
+| `--app-copilot-gradient` | azure → violet → magenta at 135° | the Copilot sparkle; used by `<app-sparkle-avatar>` (the assistant's chat avatar) and nowhere else, per spec 01 |
 
 `app-root` is a flex column; the routed page element (whatever follows the
 toolbar) gets `flex: 1 1 auto; min-height: 0`. That leaves it no definite
@@ -102,7 +110,8 @@ invisible over the box it draws, so there the ring goes on
 `.mdc-checkbox__background` (through `:has(:focus-visible)`) instead. The
 chat composer (spec 04) is the intended
 exception and opts out with its own `.<class>:focus-visible { outline: none }`
-rule, darkening its border instead.
+rule, darkening its border to `--app-outline-focus` through `:focus-within`
+instead (`chat/composer.scss`, NBK-45).
 
 ## Button variants
 
@@ -155,10 +164,14 @@ in `app.config.ts`; NBK-31, spec 01 "Icons"). A template imports
 <mat-icon svgIcon="arrow-left" />
 ```
 
-Registered names: `add`, `search`, `more-horizontal`, `delete`,
+Registered names: `add`, `history` (the Chat Threads navigator's title,
+NBK-43), `search`, `more-horizontal`, `delete`,
 `arrow-download`, `open`, `send`, `rename`, `chevron-down`, `notebook`,
 `document`, `sparkle`, `dismiss`, `checkmark`, `warning`, `arrow-left`,
-`panel-right-contract`, `panel-right-expand`, `sign-out`. `FluentIconName`
+`panel-right-contract`, `panel-right-expand`, `sign-out`, and the Document
+rows' type icons (NBK-42) `document-pdf`, `document-text` (Word),
+`document-one-page` (text, Markdown), `document-table` (Excel, CSV), with
+`document` for anything else. `FluentIconName`
 is the union of them. An unknown name renders an empty icon and logs through
 the `ErrorHandler`; it does not break the page.
 

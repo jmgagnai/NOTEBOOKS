@@ -1,0 +1,49 @@
+// Spec 04 "Empty state": centred in the Thread card, the sparkle over one
+// sentence and the prompts as a column of full-width secondary buttons.
+:host {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.thread-empty-state {
+  margin: auto;
+  max-width: 420px;
+  width: 100%;
+  padding: 16px 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+
+  &__sentence {
+    margin: 0;
+    font: var(--mat-sys-title-small);
+    color: var(--mat-sys-on-surface);
+  }
+
+  &__prompts {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  // The shared secondary button (`.app-button--secondary`) draws the prompt;
+  // this only lets it span the column and wrap, since a prompt is a sentence
+  // and the Thread card can be narrow.
+  &__prompt {
+    width: 100%;
+    height: auto;
+    min-height: var(--app-control-height);
+    padding-block: 6px;
+    justify-content: flex-start;
+    text-align: left;
+    white-space: normal;
+  }
+}

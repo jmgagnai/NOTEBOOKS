@@ -31,41 +31,6 @@
     flex: 1 1 auto;
   }
 
-  // The title as a button that reads as text: the section type step, no
-  // border, a subtle hover so it is discoverable as a control.
-  &__title {
-    min-width: 0;
-    height: var(--app-control-height);
-    padding: 0 6px;
-    border: 0;
-    border-radius: var(--mat-sys-corner-extra-small);
-    background: transparent;
-    font: var(--mat-sys-title-medium);
-    color: var(--mat-sys-on-surface);
-    text-align: left;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    cursor: text;
-
-    &:hover {
-      background: var(--mat-sys-surface-container-high);
-    }
-  }
-
-  // ...and the box it swaps to, same size and type so nothing jumps.
-  &__title-input {
-    box-sizing: border-box;
-    min-width: 320px;
-    height: var(--app-control-height);
-    padding: 0 6px;
-    border: 1px solid var(--mat-sys-primary);
-    border-radius: var(--mat-sys-corner-extra-small);
-    background: var(--mat-sys-surface);
-    font: var(--mat-sys-title-medium);
-    color: var(--mat-sys-on-surface);
-  }
-
   // The file input behind "Add Documents": off screen rather than
   // `display: none`, so it keeps working for everything that reaches it by
   // its accessible name.
@@ -202,123 +167,23 @@
     @include workspace-card.title;
   }
 
+  // The count beside the title (NBK-48), secondary text: context, not a heading.
+  &__panel-count {
+    color: var(--mat-sys-on-surface-variant);
+    font: var(--mat-sys-body-small);
+    white-space: nowrap;
+  }
+
   &__panel-body {
     @include workspace-card.body;
   }
 
+  // The filter's empty result (NBK-48): a note, not an error.
+  &__no-match {
+    color: var(--mat-sys-on-surface-variant);
+  }
+
   &__error {
     color: var(--mat-sys-error);
-  }
-
-  // The upload batch panel (NBK-16): one row per file, then the summary.
-  &__batch {
-    margin-bottom: 1rem;
-  }
-
-  &__batch-items {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-  }
-
-  &__batch-item {
-    display: flex;
-    align-items: baseline;
-    gap: 0.5rem;
-    flex-wrap: wrap;
-  }
-
-  &__batch-reason {
-    flex-basis: 100%;
-    font: var(--mat-sys-body-small);
-    color: var(--mat-sys-on-surface-variant);
-  }
-
-  &__batch-summary {
-    font-weight: 600;
-  }
-
-  // Steering the batch (NBK-17): Cancel while it runs, Retry failed and
-  // Dismiss once it is done.
-  &__batch-actions {
-    display: flex;
-    align-items: center;
-    gap: 0.25rem;
-  }
-
-  // The conflict dialog (NBK-19): inline under the batch rows, set off as a
-  // question the user has to answer, while the rows above keep moving.
-  &__conflict {
-    margin-top: 0.75rem;
-    padding: 0.75rem 1rem;
-    border: 1px solid var(--mat-sys-outline);
-    border-radius: var(--mat-sys-corner-medium);
-    background: var(--mat-sys-surface-container);
-  }
-
-  &__conflict-title {
-    margin: 0 0 0.5rem;
-    font: var(--mat-sys-title-medium);
-  }
-
-  &__conflict-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 0.5rem;
-    margin-top: 0.5rem;
-  }
-
-  // Document cards (NBK-7): each entry has to hold an Abstract, so it is a
-  // stacked card rather than a single-line list row.
-  &__cards {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-  }
-
-  &__card {
-    border: 1px solid var(--mat-sys-outline-variant);
-    border-radius: var(--mat-sys-corner-medium);
-    padding: 0.75rem 1rem;
-  }
-
-  &__card-head {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  &__card-actions {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 0.25rem;
-  }
-
-  &__abstract {
-    margin: 0.5rem 0;
-    font: var(--mat-sys-body-medium);
-
-    &--pending {
-      color: var(--mat-sys-on-surface-variant);
-      font-style: italic;
-    }
-  }
-
-  &__filename {
-    flex: 1;
-    min-width: 0;
-    overflow-wrap: anywhere;
-  }
-
-  &__version {
-    color: var(--mat-sys-on-surface-variant);
-    font: var(--mat-sys-body-small);
   }
 }

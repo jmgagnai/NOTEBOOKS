@@ -1,5 +1,3 @@
-@use './controls';
-
 // The open Chat Thread of a Notebook (NBK-10, split out of the chat panel in
 // NBK-34). The card it sits in is the page's (NBK-35); this fills it as a
 // column whose message list is the scrolling part and whose composer is the
@@ -17,40 +15,23 @@
   flex: 1 1 auto;
   min-height: 0;
 
-  &__field {
-    @include controls.field;
-  }
-
-  &__field-label {
-    @include controls.field-label;
-  }
-
-  &__rename {
-    @include controls.field-row;
-  }
-
-  &__empty {
-    @include controls.empty;
-    flex: 1 1 auto;
-    padding: 8px 12px;
-  }
-
-  &__error {
-    flex: none;
-    padding: 0 12px;
-    color: var(--mat-sys-error);
-  }
-
   &__head {
     flex: none;
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: 0.125rem;
     padding: 8px 12px 0;
+  }
 
-    h3 {
-      margin: 0 0 0.5rem;
-    }
+  // The heading only carries the semantics; the editable title sets the type.
+  &__title {
+    margin: 0;
+    font: inherit;
+  }
+
+  &__started-by {
+    font: var(--mat-sys-body-small);
+    color: var(--mat-sys-on-surface-variant);
   }
 
   &__messages {
@@ -62,32 +43,58 @@
     padding: 8px 12px;
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: 1rem;
   }
 
+  // A message row (NBK-44): the body and, beside it, an avatar. A question
+  // sits on the right with its avatar after it; an answer on the left with
+  // the sparkle before it — so a long Chat Thread can be skimmed for who
+  // said what from the silhouette alone.
   &__message {
-    padding: 0.6rem 0.75rem;
-    border-radius: var(--mat-sys-corner-extra-large);
-    background: var(--mat-sys-surface-container-low);
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
 
-    // Questions and answers are visually distinct, so a long Chat Thread
-    // can be skimmed for where each exchange starts.
     &--user {
-      background: var(--mat-sys-surface-container-high);
+      justify-content: flex-end;
     }
+  }
 
-    // The answer still being written (NBK-11). Marked as provisional because
-    // it is: it is not a message yet, and it can still be withdrawn if the
-    // stream fails.
-    &--streaming {
-      border: 1px dashed var(--mat-sys-outline-variant);
+  &__body {
+    min-width: 0;
+  }
 
-      // Each chunk is its own paragraph element, so they need the spacing a
-      // single pre-wrapped block got from its blank lines.
-      .thread-view__message-content + .thread-view__message-content {
-        margin-top: 0.6rem;
-      }
-    }
+  // The question's bubble: a subtle surface with the spec's 12 px corners,
+  // capped at three quarters of the row so it reads as speech, not a block.
+  &__bubble {
+    max-width: 75%;
+    padding: 0.5rem 0.75rem;
+    border-radius: var(--mat-sys-corner-extra-large);
+    background: var(--mat-sys-surface-container-high);
+  }
+
+  // An answer has no bubble: it is the page's prose, and takes the width.
+  &__answer {
+    flex: 1 1 auto;
+  }
+
+  // Nudged down so the avatar centres on the author line, not the row's top.
+  &__avatar {
+    flex: none;
+    margin-top: 2px;
+  }
+
+  // The answer still being written (NBK-11) is marked as provisional by its
+  // avatar pulsing: it is not a message yet, and can still be withdrawn if
+  // the stream fails.
+  &__avatar--live {
+    animation: thread-view-pulse 1.4s ease-in-out infinite;
+  }
+
+  // Each chunk is its own paragraph element, so they need the spacing a
+  // single pre-wrapped block got from its blank lines.
+  &__message--streaming &__message-content + &__message-content {
+    margin-top: 0.6rem;
   }
 
   &__message-author {
@@ -97,76 +104,21 @@
     margin-bottom: 0.25rem;
   }
 
-  &__message-content {
+  // A question as typed: its line breaks are the only structure it has.
+  // (An answer's prose is `AnswerBody`'s, rendered as Markdown — NBK-52.)
+  p.thread-view__message-content {
     margin: 0;
-    // Answers are Markdown prose with blank-line paragraph breaks. Rendering
-    // them as Markdown is still out of scope, so the line structure at least
-    // has to survive — including in a streamed answer, where one of these
-    // holds exactly one chunk.
     white-space: pre-wrap;
   }
+}
 
-  // A source marker inside the prose (NBK-12). Deliberately small and
-  // unobtrusive: it has to be reachable without interrupting the sentence it
-  // sits in.
-  &__marker {
-    color: var(--mat-sys-primary);
-    font-size: var(--mat-sys-body-small-size);
-    vertical-align: super;
-    text-decoration: none;
-    font-weight: 600;
-
-    &:hover,
-    &:focus-visible {
-      text-decoration: underline;
-    }
+@keyframes thread-view-pulse {
+  0%,
+  100% {
+    opacity: 1;
   }
 
-  &__citations {
-    list-style: none;
-    margin: 0.5rem 0 0;
-    padding: 0.5rem 0 0;
-    border-top: 1px dashed var(--mat-sys-outline-variant);
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-    font-size: var(--mat-sys-body-small-size);
-  }
-
-  &__citation a {
-    display: flex;
-    align-items: baseline;
-    gap: 0.4rem;
-    color: inherit;
-    text-decoration: none;
-
-    &:hover,
-    &:focus-visible {
-      text-decoration: underline;
-    }
-  }
-
-  &__citation-marker {
-    color: var(--mat-sys-primary);
-    font-weight: 600;
-  }
-
-  // The Version a Citation pins. Shown on every Citation, not only superseded
-  // ones, so "v1" next to a Document now on v3 reads as information rather
-  // than as a bug.
-  &__citation-version {
-    color: var(--mat-sys-on-surface-variant);
-    font-variant-numeric: tabular-nums;
-  }
-
-  // The border marks where the scrolling stops (NBK-35): without it a long
-  // Thread's last message runs straight into the question box.
-  &__composer {
-    flex: none;
-    display: flex;
-    align-items: flex-end;
-    gap: 0.5rem;
-    padding: 8px 12px 12px;
-    border-top: 1px solid var(--mat-sys-surface-container-high);
+  50% {
+    opacity: 0.45;
   }
 }

@@ -1,30 +1,53 @@
-import { Component, inject, OnInit, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { DatePipe, NgTemplateOutlet } from '@angular/common';
+import {
+  afterNextRender,
+  Component,
+  computed,
+  effect,
+  ElementRef,
+  inject,
+  Injector,
+  OnInit,
+  signal,
+  untracked,
+  viewChild,
+  viewChildren,
+} from '@angular/core';
+import { Router, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
-import { MatCardModule } from '@angular/material/card';
-import { MatFormFieldModule } from '@angular/material/form-field';
-import { MatInputModule } from '@angular/material/input';
-import { MatListModule } from '@angular/material/list';
+import { MatIconModule } from '@angular/material/icon';
+import { MatMenuModule } from '@angular/material/menu';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { EditableTitle } from '../shared/editable-title';
 import { UndoSnackBar } from '../shared/undo-snack-bar';
-import { Notebook, NotebooksStore } from './notebooks.store';
+import { NotebooksStore } from './notebooks.store';
 
 /**
- * Lets any authenticated user create, list, rename, delete, and restore
- * Notebooks (NBK-4). Per ADR-0001 there is no ownership restriction in the
- * UI either: every Notebook shown here can be renamed/deleted/restored by
- * whoever is logged in, regardless of who created it.
+ * What "Create Notebook" names a new Notebook (spec 05 "Create"): the create
+ * request needs a non-empty title, and the user renames it in place in the
+ * Notebook header it opens on, which the navigation's `editTitle` state
+ * opens for editing (spec 05 story 3).
+ */
+const UNTITLED_NOTEBOOK = 'Untitled Notebook';
+
+/**
+ * The Notebooks home (NBK-4, re-laid out as a grid of cards by NBK-55): lets
+ * any authenticated user create, open, rename, delete and restore Notebooks.
+ * Per ADR-0001 there is no ownership restriction in the UI either: every
+ * Notebook shown here can be renamed/deleted/restored by whoever is logged
+ * in, regardless of who created it.
  */
 @Component({
   selector: 'app-notebooks-page',
   standalone: true,
   imports: [
+    DatePipe,
+    EditableTitle,
     MatButtonModule,
-    MatCardModule,
-    MatFormFieldModule,
-    MatInputModule,
-    MatListModule,
+    MatIconModule,
+    MatMenuModule,
     MatProgressSpinnerModule,
+    NgTemplateOutlet,
     RouterLink,
   ],
   templateUrl: './notebooks-page.html',
@@ -32,46 +55,69 @@ import { Notebook, NotebooksStore } from './notebooks.store';
 })
 export class NotebooksPage implements OnInit {
   protected readonly store = inject(NotebooksStore);
+  private readonly router = inject(Router);
   private readonly undoSnackBar = inject(UndoSnackBar);
 
-  protected readonly newTitle = signal('');
+  // The empty state carries the Create button itself (spec 05), so the
+  // header's copy steps aside rather than offering it twice.
+  protected readonly isEmpty = computed(
+    () => !this.store.loading() && !this.store.error() && this.store.notebooks().length === 0,
+  );
 
-  protected readonly editingId = signal<string | null>(null);
-  protected readonly editingTitle = signal('');
+  // Guards against a double click creating two Untitled Notebooks.
+  protected readonly creating = signal(false);
+
+  /** The Notebook whose card is showing the rename box, picked from its "…" menu. */
+  protected readonly renamingId = signal<string | null>(null);
+
+  // Only the card being renamed renders the editable title, and its box
+  // opens as soon as it appears: the menu's "Rename" is the activation, so
+  // the user is not asked to click the title a second time (NBK-56).
+  // Untracked, so a list reload re-binding the title cannot reopen the box
+  // and throw away what is being typed.
+  private readonly renamingTitle = viewChild(EditableTitle);
+  private readonly openRenameBox = effect(() => {
+    const title = this.renamingTitle();
+    if (title) untracked(() => title.edit());
+  });
+
+  private readonly cardLinks = viewChildren<ElementRef<HTMLElement>>('cardLink');
+  private readonly injector = inject(Injector);
 
   ngOnInit(): void {
     void this.store.loadNotebooks();
   }
 
-  protected onNewTitleInput(event: Event): void {
-    this.newTitle.set((event.target as HTMLInputElement).value);
+  /**
+   * Puts the card's link back in place of the rename box. When the box
+   * closed on Enter or Escape it took the focus with it, so the focus goes
+   * to that card's link, the control the rename belongs to, once it is
+   * rendered again.
+   */
+  protected closeRename(id: string, refocus: boolean): void {
+    this.renamingId.set(null);
+    if (!refocus) return;
+    afterNextRender(
+      () =>
+        this.cardLinks()
+          .find((link) => link.nativeElement.dataset['notebookId'] === id)
+          ?.nativeElement.focus(),
+      { injector: this.injector },
+    );
   }
 
-  protected submitCreate(event: Event): void {
-    event.preventDefault();
-    const title = this.newTitle().trim();
-    if (!title) return;
-    void this.store.createNotebook(title);
-    this.newTitle.set('');
+  protected async create(): Promise<void> {
+    if (this.creating()) return;
+    this.creating.set(true);
+    try {
+      const id = await this.store.createNotebook(UNTITLED_NOTEBOOK);
+      if (id) await this.router.navigate(['/notebooks', id], { state: { editTitle: true } });
+    } finally {
+      this.creating.set(false);
+    }
   }
 
-  protected startRename(notebook: Notebook): void {
-    this.editingId.set(notebook.id);
-    this.editingTitle.set(notebook.title);
-  }
-
-  protected onEditTitleInput(event: Event): void {
-    this.editingTitle.set((event.target as HTMLInputElement).value);
-  }
-
-  protected cancelRename(): void {
-    this.editingId.set(null);
-  }
-
-  protected saveRename(id: string): void {
-    const title = this.editingTitle().trim();
-    this.editingId.set(null);
-    if (!title) return;
+  protected rename(id: string, title: string): void {
     void this.store.renameNotebook(id, title);
   }
 

@@ -12,18 +12,21 @@ import {
   viewChild,
 } from '@angular/core';
 import { Title } from '@angular/platform-browser';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
-import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { ThreadNavigator } from '../chat/thread-navigator';
 import { ThreadView } from '../chat/thread-view';
-import { ConflictChoice, Document, DocumentsStore } from '../documents/documents.store';
+import { DocumentFilter } from '../documents/document-filter';
+import { DocumentList, isInProgress } from '../documents/document-list';
+import { DocumentsEmptyState } from '../documents/documents-empty-state';
+import { Document, DocumentsStore } from '../documents/documents.store';
+import { UploadBatchPanel } from '../documents/upload-batch-panel';
 import { UPLOAD_ACCEPT } from '../documents/upload-rules';
 import { APP_NAME } from '../shared/app-name';
-import { StatusBadge } from '../shared/status-badge';
+import { EditableTitle } from '../shared/editable-title';
 import { UndoSnackBar } from '../shared/undo-snack-bar';
 import { NotebooksStore } from './notebooks.store';
 
@@ -70,18 +73,18 @@ function droppedEntries(dataTransfer: DataTransfer | null): {
 /**
  * A Notebook's workspace (NBK-5, framed in NBK-35): a slim header, then
  * three cards side by side — the Chat Threads navigator, the open Thread and
- * the Documents panel with its cards and their upload, open, delete, restore
- * and download actions. Notebooks have no dedicated `GET /notebooks/:id`
- * endpoint, so the Notebook itself (its title, for the header and the browser
- * tab) is looked up from `NotebooksStore`'s already-loaded list by route id,
- * the same list the top-level Notebooks page uses.
+ * the Documents panel with its rows (`DocumentList`, NBK-42) and their
+ * upload, open, delete, restore and download actions. Notebooks have no
+ * dedicated `GET /notebooks/:id` endpoint, so the Notebook itself (its
+ * title, for the header and the browser tab) is looked up from
+ * `NotebooksStore`'s already-loaded list by route id, the same list the
+ * top-level Notebooks page uses.
  *
- * Each card carries that Document's Abstract (NBK-7) — the summary
- * GLOSSARY.md writes "to be skimmed in a list" — and links to the Document
- * itself, where the Executive Summary and the full converted content live.
+ * Each row links to the Document itself, where the Abstract (NBK-7), the
+ * Executive Summary and the full converted content live.
  *
  * While open, it also follows this Notebook's live app events (NBK-6) so a
- * Document's status badge tracks the background pipeline without a refresh.
+ * Document's row tracks the background pipeline without a refresh.
  *
  * The chat cards (NBK-10, split in NBK-34) are the Notebook's Chat Threads
  * and the open Thread. Per NBK-1 a Notebook's detail page is "composed of a
@@ -92,15 +95,18 @@ function droppedEntries(dataTransfer: DataTransfer | null): {
   selector: 'app-notebook-detail-page',
   standalone: true,
   imports: [
+    EditableTitle,
     MatButtonModule,
-    MatCheckboxModule,
     MatIconModule,
     MatProgressSpinnerModule,
     MatTooltipModule,
+    DocumentFilter,
+    DocumentList,
+    DocumentsEmptyState,
     RouterLink,
-    StatusBadge,
     ThreadNavigator,
     ThreadView,
+    UploadBatchPanel,
   ],
   templateUrl: './notebook-detail-page.html',
   styleUrl: './notebook-detail-page.scss',
@@ -157,41 +163,35 @@ export class NotebookDetailPage implements OnInit, OnDestroy {
   }
 
   /**
-   * Renaming in place (NBK-35): the header title is a button that swaps to a
-   * text box holding `titleDraft`. Page state, like the Notebooks page's own
-   * rename form: nothing is sent until the draft is committed.
+   * Whether the navigation here asked for the title to open for editing:
+   * "Create Notebook" does (spec 05 story 3), because the title it gave the
+   * new Notebook is a placeholder. Read while the router is still
+   * activating this page, the only moment the navigation's state is at hand.
    */
-  protected readonly renaming = signal(false);
-  protected readonly titleDraft = signal('');
-  private readonly titleInput = viewChild<ElementRef<HTMLInputElement>>('titleInput');
+  private editTitleOnArrival =
+    inject(Router).currentNavigation()?.extras.state?.['editTitle'] === true;
 
-  // The box appears on demand, so it is focused when it does — otherwise a
-  // click on the title would leave the keyboard nowhere.
-  private readonly focusTitleInput = effect(() => {
-    this.titleInput()?.nativeElement.select();
+  private readonly headerTitle = viewChild(EditableTitle);
+
+  // Once the Notebook has loaded and the header has rendered its title, so
+  // the box opens on the real title rather than the "Notebook" placeholder;
+  // once only, so a later rename or list reload does not reopen it.
+  private readonly openTitleOnArrival = effect(() => {
+    const header = this.headerTitle();
+    if (!this.editTitleOnArrival || !header || !this.notebook()) return;
+    this.editTitleOnArrival = false;
+    afterNextRender(() => header.edit(), { injector: this.injector });
   });
 
-  protected startRename(): void {
-    this.titleDraft.set(this.notebook()?.title ?? '');
-    this.renaming.set(true);
-  }
-
   /**
-   * Enter and leaving the box both commit. Commit is a no-op once the box is
-   * gone: Enter closes it, and some browsers then fire the blur of the
-   * removed element, which must not rename a second time.
+   * Renaming in place (NBK-35): the header title is an `app-editable-title`
+   * (NBK-41), which only hands over a title that differs from the current
+   * one, so nothing is sent for a click-and-click-away.
    */
-  protected commitRename(): void {
-    if (!this.renaming()) return;
-    this.renaming.set(false);
-    const title = this.titleDraft().trim();
+  protected rename(title: string): void {
     const notebook = this.notebook();
-    if (!notebook || !title || title === notebook.title) return;
+    if (!notebook) return;
     void this.notebooksStore.renameNotebook(notebook.id, title);
-  }
-
-  protected cancelRename(): void {
-    this.renaming.set(false);
   }
 
   /**
@@ -224,25 +224,51 @@ export class NotebookDetailPage implements OnInit, OnDestroy {
     });
   }
 
+  /**
+   * The panel header's count (NBK-48): "23/25 ready" while some Document is
+   * still ingesting, else "25 Documents". A failed Document does not hold the
+   * in-progress form: it is not on its way to ready, and its row already
+   * carries the warning. It follows the store, so App Events move it without
+   * a refetch.
+   */
+  protected readonly documentCount = computed(() => {
+    const documents = this.store.documents();
+    if (documents.some((d) => isInProgress(d.status))) {
+      const ready = documents.filter((d) => d.status === 'ready').length;
+      return `${ready}/${documents.length} ready`;
+    }
+    return documents.length === 1 ? '1 Document' : `${documents.length} Documents`;
+  });
+
+  /** What the user typed in "Filter Documents" (NBK-48). */
+  protected readonly documentFilter = signal('');
+
+  /**
+   * The filter box is only rendered while there are Documents, so once the
+   * last one goes its text would linger out of sight and hide the next
+   * upload behind "No Documents match". Forgetting it with the list keeps
+   * what is filtered always on screen.
+   */
+  private readonly forgetFilterWhenEmpty = effect(() => {
+    if (this.store.documents().length === 0) this.documentFilter.set('');
+  });
+
+  /**
+   * The rows the panel lists (NBK-48): the store's Documents whose filename
+   * contains the filter text, ignoring case. Client-side on purpose — the
+   * list is already here, and the API's search is semantic, which is "Search
+   * this Notebook", not this. Surrounding blanks are ignored so a stray
+   * space does not empty the list.
+   */
+  protected readonly filteredDocuments = computed(() => {
+    const documents = this.store.documents();
+    const text = this.documentFilter().trim().toLocaleLowerCase();
+    if (!text) return documents;
+    return documents.filter((d) => d.filename.toLocaleLowerCase().includes(text));
+  });
+
   /** The picker only offers the accepted document types (NBK-16). */
   protected readonly accept = UPLOAD_ACCEPT;
-
-  /** The upload batch, if the one in the store belongs to this Notebook. */
-  protected readonly batch = computed(() => {
-    const batch = this.store.batch();
-    return batch?.notebookId === this.notebookId ? batch : null;
-  });
-
-  /** The end-of-batch summary line, once nothing is waiting or in flight. */
-  protected readonly batchSummaryLine = computed(() => {
-    const summary = this.store.batchSummary();
-    if (!summary || !this.batch() || this.store.batchRunning()) return null;
-    const uploaded =
-      summary.newVersions > 0
-        ? `${summary.uploaded} uploaded (${summary.newVersions} as new Versions)`
-        : `${summary.uploaded} uploaded`;
-    return `${uploaded}, ${summary.skipped} skipped, ${summary.failed} failed`;
-  });
 
   protected onFileSelected(event: Event): void {
     const input = event.target as HTMLInputElement;
@@ -250,34 +276,6 @@ export class NotebookDetailPage implements OnInit, OnDestroy {
     if (files.length === 0) return;
     void this.store.uploadDocuments(this.notebookId, files);
     input.value = '';
-  }
-
-  /** Re-sends every failed file of the batch (NBK-17). */
-  protected retryFailed(): void {
-    void this.store.retryFailed();
-  }
-
-  /** Stops the files of the batch not sent yet; in-flight ones finish (NBK-17). */
-  protected cancelBatch(): void {
-    this.store.cancelBatch();
-  }
-
-  /** Clears the panel once the batch is done (NBK-17). */
-  protected dismissBatch(): void {
-    this.store.dismissBatch();
-  }
-
-  /**
-   * The conflict dialog's "apply to all remaining conflicts" tick (NBK-19).
-   * Page state, not store state: it is part of the answer being composed,
-   * and is sent with it.
-   */
-  protected readonly applyToAll = signal(false);
-
-  /** Answers the open conflict dialog, with the tick as it stands. */
-  protected answerConflict(choice: ConflictChoice): void {
-    this.store.answerConflict(choice, this.applyToAll());
-    this.applyToAll.set(false);
   }
 
   /**

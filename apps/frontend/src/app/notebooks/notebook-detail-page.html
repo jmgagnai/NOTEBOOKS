@@ -16,33 +16,18 @@
     </button>
     <span class="notebook-detail-page__crumb">Notebooks &rsaquo;</span>
     <!--
-      The title is the rename control (NBK-35): a button that reads as text —
-      its accessible name is the title itself, the tooltip "Rename Notebook"
-      describes what activating it does — which swaps to a text box. Enter or
-      leaving the box commits through the Notebooks store, Escape discards.
+      The title is the rename control (NBK-35, shared since NBK-41): a button
+      that reads as text — its accessible name is the title itself, the
+      tooltip "Rename Notebook" describes what activating it does — which
+      swaps to a text box. The control owns the editing; the committed title
+      goes through the Notebooks store here.
     -->
-    @if (renaming()) {
-      <input
-        #titleInput
-        class="notebook-detail-page__title-input"
-        type="text"
-        aria-label="Notebook title"
-        [value]="titleDraft()"
-        (input)="titleDraft.set($any($event.target).value)"
-        (keydown.enter)="commitRename()"
-        (keydown.escape)="cancelRename()"
-        (blur)="commitRename()"
-      />
-    } @else {
-      <button
-        type="button"
-        class="notebook-detail-page__title"
-        matTooltip="Rename Notebook"
-        (click)="startRename()"
-      >
-        {{ notebook()?.title ?? 'Notebook' }}
-      </button>
-    }
+    <app-editable-title
+      [title]="notebook()?.title ?? 'Notebook'"
+      editLabel="Notebook title"
+      tooltip="Rename Notebook"
+      (titleChange)="rename($event)"
+    />
     <span class="notebook-detail-page__spacer"></span>
     <!--
       Search (NBK-9) is how a user looks something up in the Documents without
@@ -70,12 +55,14 @@
       [disabled]="store.batchRunning()"
       (click)="fileInput.click()"
     >
+      <mat-icon svgIcon="add" />
       Add Documents
     </button>
     <!--
       Only while the Documents panel is hidden (NBK-37): the way back, named
-      for what it does, reading the count so the user knows what they are
-      bringing back.
+      for what it does, reading "Documents <count>" (spec 02) so the user
+      knows what they are bringing back. The plain count, not the panel
+      header's ready line: a hidden panel is about size, not progress.
     -->
     @if (documentsHidden()) {
       <button
@@ -86,7 +73,8 @@
         (click)="showDocuments()"
       >
         <mat-icon svgIcon="panel-right-expand" />
-        Documents <span class="notebook-detail-page__count">{{ store.documents().length }}</span>
+        Documents
+        <span class="notebook-detail-page__count">{{ store.documents().length }}</span>
       </button>
     }
     <!--
@@ -154,6 +142,9 @@
       }
       <div class="notebook-detail-page__panel-head">
         <h2 class="notebook-detail-page__panel-title">Documents</h2>
+        <span class="notebook-detail-page__panel-count" data-testid="documents-count">{{
+          documentCount()
+        }}</span>
         <span class="notebook-detail-page__spacer"></span>
         <button
           #hideDocumentsButton
@@ -166,150 +157,55 @@
           <mat-icon svgIcon="panel-right-contract" />
         </button>
       </div>
-      <div class="notebook-detail-page__panel-body">
-        <!--
-        The progress panel (NBK-16): every file of the batch with its status and,
-        where it was skipped or failed, why — then the summary once the batch
-        is done. It replaces the single spinner, which could not say which of
-        forty files was the slow one.
+      <!--
+        The quick filter (NBK-48): under the header rather than in the
+        scrolling body, so it stays put while the rows move. Only once there
+        is something to filter.
       -->
+      @if (store.documents().length > 0) {
+        <app-document-filter [(query)]="documentFilter" />
+      }
+      <div class="notebook-detail-page__panel-body">
         @if (store.uploadRefused(); as refused) {
           <p class="notebook-detail-page__error">{{ refused }}</p>
         }
 
-        @if (batch(); as batch) {
-          <section class="notebook-detail-page__batch" aria-label="Upload batch">
-            @if (store.batchRunning()) {
-              <mat-progress-spinner mode="indeterminate" diameter="24" />
-            }
-            <ul class="notebook-detail-page__batch-items" aria-label="Upload progress">
-              @for (item of batch.items; track item.id) {
-                <li class="notebook-detail-page__batch-item">
-                  <span class="notebook-detail-page__filename">{{ item.file.name }}</span>
-                  <app-status-badge [status]="item.status" />
-                  @if (item.reason) {
-                    <span class="notebook-detail-page__batch-reason">{{ item.reason }}</span>
-                  }
-                </li>
-              }
-            </ul>
-            @if (batchSummaryLine(); as summary) {
-              <p class="notebook-detail-page__batch-summary">{{ summary }}</p>
-            }
-            <!--
-            Steering the batch (NBK-17). Retry failed re-sends every failure
-            without re-selecting, so a network blip costs one click.
-          -->
-            <div class="notebook-detail-page__batch-actions">
-              @if (store.batchRunning()) {
-                <button mat-button type="button" (click)="cancelBatch()">Cancel</button>
-              } @else {
-                @if ((store.batchSummary()?.failed ?? 0) > 0) {
-                  <button mat-button type="button" (click)="retryFailed()">Retry failed</button>
-                }
-                <button mat-button type="button" (click)="dismissBatch()">Dismiss</button>
-              }
-            </div>
-
-            <!--
-            The conflict dialog (NBK-19): a file whose name is an existing
-            Document is held back until the user says whether it becomes a new
-            Version of that Document or is skipped. Inline rather than an
-            overlay, next to the file it is about, because the rest of the
-            batch keeps moving in the panel above while the question is open
-            — the user is asked, not blocked.
-          -->
-            @if (store.conflict(); as conflict) {
-              <div
-                class="notebook-detail-page__conflict"
-                role="dialog"
-                aria-labelledby="conflict-dialog-title"
-              >
-                <h3 id="conflict-dialog-title" class="notebook-detail-page__conflict-title">
-                  Document already exists
-                </h3>
-                <p>
-                  "{{ conflict.filename }}" already exists in this Notebook. Upload this file as a
-                  new Version of that Document, or skip it?
-                </p>
-                <mat-checkbox [checked]="applyToAll()" (change)="applyToAll.set($event.checked)">
-                  Apply to all remaining conflicts
-                </mat-checkbox>
-                <div class="notebook-detail-page__conflict-actions">
-                  <button mat-button type="button" (click)="answerConflict('skip')">Skip</button>
-                  <button mat-flat-button type="button" (click)="answerConflict('new-version')">
-                    New Version
-                  </button>
-                </div>
-              </div>
-            }
-          </section>
-        }
+        <!--
+          The upload batch and its conflict question (NBK-16..19), a compact
+          block at the top of the list since NBK-50.
+        -->
+        <app-upload-batch-panel [notebookId]="notebookId" />
 
         @if (store.loading()) {
           <mat-progress-spinner mode="indeterminate" diameter="32" />
         } @else if (store.error(); as error) {
           <p class="notebook-detail-page__error">{{ error }}</p>
         } @else if (store.documents().length === 0) {
-          <p>No Documents yet.</p>
+          <!--
+            The first step, where the list would be (NBK-49): its button opens
+            the header's picker. Not while a batch runs — the batch panel above
+            is then what the Notebook has to show, and the picker is disabled.
+          -->
+          @if (!store.batchRunning()) {
+            <app-documents-empty-state (add)="fileInput.click()" />
+          }
         } @else {
           <!--
-          Document cards, not a flat list: per NBK-7 a card carries the
-          Document's Abstract (GLOSSARY.md: the 50-100 word artifact written
-          "to be skimmed in a list"), so each entry needs room for a line or
-          two of prose under its filename.
+          One compact row per Document (NBK-42, spec 03): the Abstract left
+          the list — the popover of spec 03 brings it back on the filename —
+          so the whole Notebook fits the panel. Delete stays the page's, so
+          the undo snack bar (NBK-33) is offered from here as before.
         -->
-          <ul class="notebook-detail-page__cards" aria-label="Documents">
-            @for (document of store.documents(); track document.id) {
-              <li class="notebook-detail-page__card">
-                <div class="notebook-detail-page__card-head">
-                  <span class="notebook-detail-page__filename">{{ document.filename }}</span>
-                  <app-status-badge [status]="document.status" />
-                  <span class="notebook-detail-page__version"
-                    >v{{ document.latestVersion.versionNumber }}</span
-                  >
-                </div>
-
-                @if (document.abstract) {
-                  <p class="notebook-detail-page__abstract">{{ document.abstract }}</p>
-                } @else {
-                  <p class="notebook-detail-page__abstract notebook-detail-page__abstract--pending">
-                    Abstract not generated yet.
-                  </p>
-                }
-
-                <div class="notebook-detail-page__card-actions">
-                  <!--
-                  Opening the Document is where its Executive Summary and the
-                  full converted content live (NBK-7).
-                -->
-                  <a
-                    mat-button
-                    [routerLink]="['/notebooks', notebookId, 'documents', document.id]"
-                    [attr.aria-label]="'Open ' + document.filename"
-                  >
-                    Open
-                  </a>
-                  <button
-                    mat-button
-                    type="button"
-                    [attr.aria-label]="'Download ' + document.filename"
-                    (click)="download(document)"
-                  >
-                    Download
-                  </button>
-                  <button
-                    mat-button
-                    type="button"
-                    [attr.aria-label]="'Delete ' + document.filename"
-                    (click)="delete(document)"
-                  >
-                    Delete
-                  </button>
-                </div>
-              </li>
-            }
-          </ul>
+          @if (filteredDocuments().length === 0) {
+            <p class="notebook-detail-page__no-match">No Documents match</p>
+          } @else {
+            <app-document-list
+              [notebookId]="notebookId"
+              [documents]="filteredDocuments()"
+              (download)="download($event)"
+              (delete)="delete($event)"
+            />
+          }
         }
       </div>
     </aside>

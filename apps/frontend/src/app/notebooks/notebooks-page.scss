@@ -1,35 +1,90 @@
 .notebooks-page {
-  max-width: 480px;
-  margin: 2rem auto;
+  padding: 24px;
+
+  &__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+
+  &__heading {
+    margin: 0;
+  }
 
   &__error {
     color: var(--mat-sys-error);
   }
 
-  &__create {
+  &__empty {
     display: flex;
+    flex-direction: column;
     align-items: flex-start;
-    gap: 0.5rem;
-    margin-bottom: 1rem;
+    gap: 8px;
+    color: var(--mat-sys-on-surface-variant);
 
-    mat-form-field {
-      flex: 1;
+    p {
+      margin: 0;
     }
   }
 
-  &__item {
+  // Four columns on a wide window down to one on a narrow one (spec 05).
+  &__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 16px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  &__card {
+    position: relative;
     display: flex;
-    align-items: center;
-    gap: 0.5rem;
+    flex-direction: column;
+    background: var(--mat-sys-surface);
+    border: 1px solid var(--mat-sys-outline-variant);
+    border-radius: var(--mat-sys-corner-medium);
+
+    &:hover,
+    &:focus-within {
+      border-color: var(--mat-sys-on-surface-variant);
+    }
   }
 
-  &__title {
-    flex: 1;
+  &__card-link {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 16px 48px 16px 16px;
+    border-radius: inherit;
+    color: inherit;
+    text-decoration: none;
   }
 
-  &__edit-input {
-    flex: 1;
-    font: inherit;
-    padding: 0.25rem 0.5rem;
+  &__card-icon {
+    color: var(--mat-sys-primary);
+  }
+
+  &__card-title {
+    display: -webkit-box;
+    overflow: hidden;
+    font: var(--mat-sys-title-small);
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+  }
+
+  &__card-created {
+    font: var(--mat-sys-body-small);
+    color: var(--mat-sys-on-surface-variant);
+  }
+
+  // Top right, over the card body's padding, so the title wraps clear of it.
+  &__card-menu {
+    position: absolute;
+    top: 8px;
+    right: 8px;
   }
 }

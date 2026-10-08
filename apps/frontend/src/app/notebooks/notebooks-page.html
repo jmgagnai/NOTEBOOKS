@@ -1,68 +1,94 @@
-<mat-card class="notebooks-page">
-  <mat-card-header>
-    <mat-card-title>Notebooks</mat-card-title>
-  </mat-card-header>
-
-  <mat-card-content>
-    <form class="notebooks-page__create" (submit)="submitCreate($event)">
-      <mat-form-field appearance="outline">
-        <mat-label>New Notebook title</mat-label>
-        <input
-          matInput
-          type="text"
-          [value]="newTitle()"
-          (input)="onNewTitleInput($event)"
-          required
-        />
-      </mat-form-field>
-      <button mat-flat-button type="submit">Create</button>
-    </form>
-
-    @if (store.loading()) {
-      <mat-progress-spinner mode="indeterminate" diameter="32" />
-    } @else if (store.error(); as error) {
-      <p class="notebooks-page__error">{{ error }}</p>
-    } @else if (store.notebooks().length === 0) {
-      <p>No Notebooks yet.</p>
-    } @else {
-      <mat-list>
-        @for (notebook of store.notebooks(); track notebook.id) {
-          <mat-list-item class="notebooks-page__item">
-            @if (editingId() === notebook.id) {
-              <input
-                class="notebooks-page__edit-input"
-                type="text"
-                [attr.aria-label]="'Rename ' + notebook.title"
-                [value]="editingTitle()"
-                (input)="onEditTitleInput($event)"
-              />
-              <button mat-button type="button" (click)="saveRename(notebook.id)">Save</button>
-              <button mat-button type="button" (click)="cancelRename()">Cancel</button>
-            } @else {
-              <span class="notebooks-page__title">{{ notebook.title }}</span>
-              <button mat-button type="button" [routerLink]="['/notebooks', notebook.id]">
-                Open
-              </button>
-              <button
-                mat-button
-                type="button"
-                [attr.aria-label]="'Rename ' + notebook.title"
-                (click)="startRename(notebook)"
-              >
-                Rename
-              </button>
-              <button
-                mat-button
-                type="button"
-                [attr.aria-label]="'Delete ' + notebook.title"
-                (click)="delete(notebook.id)"
-              >
-                Delete
-              </button>
-            }
-          </mat-list-item>
-        }
-      </mat-list>
+<div class="notebooks-page">
+  <header class="notebooks-page__header">
+    <h1 class="notebooks-page__heading">Notebooks</h1>
+    @if (!isEmpty()) {
+      <ng-container *ngTemplateOutlet="createButton" />
     }
-  </mat-card-content>
-</mat-card>
+  </header>
+
+  @if (store.loading()) {
+    <mat-progress-spinner mode="indeterminate" diameter="32" />
+  } @else if (store.error(); as error) {
+    <p class="notebooks-page__error">{{ error }}</p>
+  } @else if (store.notebooks().length === 0) {
+    <div class="notebooks-page__empty">
+      <p>No Notebooks yet.</p>
+      <ng-container *ngTemplateOutlet="createButton" />
+    </div>
+  } @else {
+    <ul class="notebooks-page__grid" aria-label="Notebooks">
+      @for (notebook of store.notebooks(); track notebook.id) {
+        <li class="notebooks-page__card">
+          <!-- While renaming, the card body stops being a link: a text box inside
+               an <a> would navigate on every click into it (NBK-56). -->
+          @if (renamingId() === notebook.id) {
+            <div class="notebooks-page__card-link">
+              <mat-icon class="notebooks-page__card-icon" svgIcon="notebook" />
+              <app-editable-title
+                class="notebooks-page__card-title-edit"
+                size="small"
+                editLabel="Notebook title"
+                [title]="notebook.title"
+                (titleChange)="rename(notebook.id, $event)"
+                (editClosed)="closeRename(notebook.id, $event.refocus)"
+              />
+              <span class="notebooks-page__card-created">
+                Created {{ notebook.createdAt | date: 'mediumDate' }}
+              </span>
+            </div>
+          } @else {
+            <a
+              #cardLink
+              class="notebooks-page__card-link"
+              [attr.data-notebook-id]="notebook.id"
+              [routerLink]="['/notebooks', notebook.id]"
+            >
+              <mat-icon class="notebooks-page__card-icon" svgIcon="notebook" />
+              <span class="notebooks-page__card-title">{{ notebook.title }}</span>
+              <span class="notebooks-page__card-created">
+                Created {{ notebook.createdAt | date: 'mediumDate' }}
+              </span>
+            </a>
+          }
+          <!-- A sibling of the link, not inside it, so opening the menu never
+               opens the Notebook. -->
+          <button
+            mat-icon-button
+            type="button"
+            class="notebooks-page__card-menu"
+            [attr.aria-label]="'Actions for ' + notebook.title"
+            [matMenuTriggerFor]="cardMenu"
+          >
+            <mat-icon svgIcon="more-horizontal" />
+          </button>
+          <mat-menu #cardMenu="matMenu">
+            <button
+              mat-menu-item
+              type="button"
+              [attr.aria-label]="'Rename ' + notebook.title"
+              (click)="renamingId.set(notebook.id)"
+            >
+              <mat-icon svgIcon="rename" />
+              <span>Rename</span>
+            </button>
+            <button
+              mat-menu-item
+              type="button"
+              [attr.aria-label]="'Delete ' + notebook.title"
+              (click)="delete(notebook.id)"
+            >
+              <mat-icon svgIcon="delete" />
+              <span>Delete</span>
+            </button>
+          </mat-menu>
+        </li>
+      }
+    </ul>
+  }
+</div>
+
+<ng-template #createButton>
+  <button mat-flat-button type="button" [disabled]="creating()" (click)="create()">
+    Create Notebook
+  </button>
+</ng-template>

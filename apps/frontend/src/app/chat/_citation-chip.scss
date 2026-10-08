@@ -1,0 +1,28 @@
+// A Citation marker as a chip (spec 04 "Citation chips", NBK-52): 18 px,
+// rounded, accent tint with accent text, the marker number alone. Shared by
+// the chips in the prose and the ones in the Citation groups so the two read
+// as the same thing.
+@mixin chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  box-sizing: border-box;
+  border-radius: var(--app-corner-round);
+  background: var(--mat-sys-primary-container);
+  color: var(--mat-sys-primary);
+  font-size: var(--mat-sys-label-small-size);
+  font-weight: var(--mat-sys-label-small-weight);
+  // 1, not the role's 16 px: the chip's height is fixed at 18 px and the
+  // number is centred in it by flex.
+  line-height: 1;
+  text-decoration: none;
+  vertical-align: text-top;
+  font-variant-numeric: tabular-nums;
+
+  &:hover {
+    background: var(--app-selected-fill);
+  }
+}
