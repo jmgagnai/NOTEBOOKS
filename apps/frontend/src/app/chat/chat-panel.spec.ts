@@ -5,6 +5,8 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/ang
 import { Subject } from 'rxjs';
 import { ThreadNavigator } from './thread-navigator';
 import { ThreadView } from './thread-view';
+import { AuthService } from '../api/services/auth.service';
+import { AuthStore } from '../auth/auth.store';
 import { ChatService } from '../api/services/chat.service';
 import { AppEvent, AppEventsService } from '../events/app-events.service';
 import { provideAppIcons } from '../shared/fluent-icons';
@@ -17,6 +19,16 @@ const CHUNK_ID = '44444444-4444-4444-4444-444444444444';
 function participant(email: string) {
   return { id: `user-${email}`, email };
 }
+
+/**
+ * Who is signed in while the panel renders (NBK-70): the asker a pending
+ * question is attributed to. Not one of the recorded authors below, so a
+ * test can tell the preview's attribution from a recorded message's.
+ */
+const SIGNED_IN = {
+  ...participant('carol.white@example.com'),
+  createdAt: '2025-12-01T00:00:00.000Z',
+};
 
 function thread(overrides: Partial<Record<string, unknown>> = {}) {
   return {
@@ -92,16 +104,23 @@ const listOf = (text: string) => screen.getByText(text).closest('ol')!;
 
 /**
  * A `sendChatMessage` whose ask stays in flight until `settle` is called
- * with the recorded exchange, so a test can look at the panel mid-answer.
+ * with the recorded exchange (or `fail` with an error), so a test can look
+ * at the panel mid-answer.
  */
 function heldSend() {
   let settle!: (exchange: unknown) => void;
+  let fail!: (error: unknown) => void;
   const sendChatMessage = vi.fn().mockReturnValue(
-    new Promise((resolve) => {
+    new Promise((resolve, reject) => {
       settle = resolve;
+      fail = reject;
     }),
   );
-  return { sendChatMessage, settle: (exchange: unknown) => settle(exchange) };
+  return {
+    sendChatMessage,
+    settle: (exchange: unknown) => settle(exchange),
+    fail: (error: unknown) => fail(error),
+  };
 }
 
 // A streamed answer's App Events (NBK-11), as the notebook topic carries
@@ -192,7 +211,7 @@ describe('Chat panel (ThreadNavigator + ThreadView)', () => {
   });
 
   async function renderPanel(chatService: Partial<ChatService>) {
-    return render(ChatPanelHost, {
+    const rendered = await render(ChatPanelHost, {
       inputs: { notebookId: NOTEBOOK_ID },
       // An answer's Markdown renderer is a deferred block loaded on idle
       // (NBK-52); Testing Library would otherwise hold every deferred block
@@ -206,9 +225,16 @@ describe('Chat panel (ThreadNavigator + ThreadView)', () => {
         provideRouter([]),
         provideAppIcons(),
         { provide: ChatService, useValue: chatService },
+        {
+          provide: AuthService,
+          useValue: { getCurrentUser: vi.fn().mockResolvedValue(SIGNED_IN) },
+        },
         appEvents.provider,
       ],
     });
+    // Signed in the way the auth guard signs the app in, before any ask.
+    await TestBed.inject(AuthStore).checkSession();
+    return rendered;
   }
 
   /**
@@ -936,14 +962,17 @@ describe('Chat panel (ThreadNavigator + ThreadView)', () => {
 
     // Story 23: the 503 when the LLM is unavailable is the case to design
     // for — it is not the user's fault, and it must not take the draft.
-    it('shows a failed ask as an error row above the box, dismissible, with the draft kept', async () => {
-      await draftAQuestion({
-        sendChatMessage: vi
-          .fn()
-          .mockRejectedValue({ error: { message: 'The language model is unavailable.' } }) as never,
-      });
+    // NBK-70: the draft moves out of the box on send, into the Thread as
+    // the pending question, and back in when the ask fails.
+    it('shows a failed ask as an error row above the box, dismissible, with the draft back in the box', async () => {
+      const { sendChatMessage, fail } = heldSend();
+      await draftAQuestion({ sendChatMessage: sendChatMessage as never });
 
       fireEvent.keyDown(questionBox(), { key: 'Enter' });
+      await screen.findByRole('status', { name: 'Answering' });
+      expect(questionBox().value).toBe('');
+
+      fail({ error: { message: 'The language model is unavailable.' } });
 
       const row = await screen.findByRole('alert');
       expect(within(row).getByText('The language model is unavailable.')).toBeTruthy();
@@ -1066,6 +1095,9 @@ describe('Chat panel (ThreadNavigator + ThreadView)', () => {
 
       settle(q3Exchange());
 
+      // The pending question (NBK-70) carries the same text until the
+      // recorded one replaces it.
+      await waitFor(() => expect(screen.queryByTestId('chat-pending-question')).toBeNull());
       const question = (
         await screen.findByText('What was revenue in Q3?', { selector: 'p' })
       ).closest('li');
@@ -1094,6 +1126,147 @@ describe('Chat panel (ThreadNavigator + ThreadView)', () => {
 
       expect(scrollIntoView).toHaveBeenCalledTimes(1);
       expect(scrollTo).not.toHaveBeenCalled();
+    });
+  });
+
+  // NBK-70 (spec NBK-69): the question shows the moment it is sent, as a
+  // pending question — the asker's bubble, muted, with "Sending…" — and the
+  // box empties. The recorded question replaces it; a failed ask takes it
+  // back out and returns the text to the box.
+  describe('NBK-70: pending question', () => {
+    const ASK = 'What was revenue in Q3?';
+
+    /** The recorded exchange the held ask resolves with. */
+    const exchange = () => ({
+      question: message({ id: 'q1', content: ASK }),
+      answer: message({ id: 'a1', role: 'assistant', content: 'Revenue in Q3 was 12.4M.' }),
+    });
+
+    /**
+     * Opens thread-1, empty, and sends `ASK` with the ask held open, handing
+     * back the held send.
+     */
+    async function sendHeld(overrides: Partial<Record<keyof ChatService, unknown>> = {}) {
+      const held = heldSend();
+      await openRevenueQuestions([], { sendChatMessage: held.sendChatMessage, ...overrides });
+      await waitFor(() => expect(questionBox().disabled).toBe(false));
+      fireEvent.input(questionBox(), { target: { value: ASK } });
+      fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+      return held;
+    }
+
+    /** The pending question's row, while there is one. */
+    const pendingRow = () => screen.queryByTestId('chat-pending-question');
+
+    it('shows the question at once, marked as sending and attributed to the signed-in user, and empties the box', async () => {
+      await sendHeld();
+
+      const row = await screen.findByTestId('chat-pending-question');
+      expect(within(row).getByText(ASK)).toBeTruthy();
+      expect(within(row).getByText('Sending…')).toBeTruthy();
+      expect(within(row).getByTestId('chat-message-author').textContent?.trim()).toBe(
+        'carol.white',
+      );
+      expect(within(row).getByTestId('chat-user-avatar').textContent?.trim()).toBe('CW');
+      expect(await tooltipOf(within(row).getByTestId('chat-user-avatar'))).toBe(
+        'carol.white@example.com',
+      );
+      // In the message list, in reading order.
+      expect(row.closest('ol')).toBeTruthy();
+      expect(questionBox().value).toBe('');
+      expect(screen.getByRole('status', { name: 'Answering' })).toBeTruthy();
+    });
+
+    it('shows the streamed answer beneath the pending question', async () => {
+      await sendHeld();
+
+      appEvents.events.next(chunk(0, 'Revenue in Q3 was 12.4M.'));
+
+      const answer = await screen.findByTestId('chat-streaming-answer');
+      expect(
+        pendingRow()!.compareDocumentPosition(answer) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    });
+
+    it('is replaced by the recorded question, leaving one copy and no "Sending…"', async () => {
+      const { settle } = await sendHeld();
+      await screen.findByTestId('chat-pending-question');
+
+      settle(exchange());
+
+      expect(await screen.findByText('Revenue in Q3 was 12.4M.')).toBeTruthy();
+      expect(screen.getAllByText(ASK)).toHaveLength(1);
+      expect(pendingRow()).toBeNull();
+      expect(screen.queryByText('Sending…')).toBeNull();
+    });
+
+    it('goes when the ask fails, handing the text back to the box beside the error row', async () => {
+      const { fail } = await sendHeld();
+      await screen.findByTestId('chat-pending-question');
+
+      fail({ error: { message: 'The language model is unavailable.' } });
+
+      const alert = await screen.findByRole('alert');
+      expect(within(alert).getByText('The language model is unavailable.')).toBeTruthy();
+      expect(pendingRow()).toBeNull();
+      expect(screen.queryByText('Sending…')).toBeNull();
+      expect(questionBox().disabled).toBe(false);
+      expect(questionBox().value).toBe(ASK);
+    });
+
+    it('replaces the empty state at once', async () => {
+      await sendHeld();
+
+      await screen.findByTestId('chat-pending-question');
+      expect(screen.queryByText('Ask anything about the Documents in this Notebook')).toBeNull();
+      expect(
+        screen.queryByRole('button', { name: 'Summarize the Documents in this Notebook' }),
+      ).toBeNull();
+    });
+
+    it('shows a starter prompt as a pending question', async () => {
+      const { sendChatMessage } = heldSend();
+      await openRevenueQuestions([], { sendChatMessage });
+      await screen.findByText('Ask anything about the Documents in this Notebook');
+
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Summarize the Documents in this Notebook' }),
+      );
+
+      const row = await screen.findByTestId('chat-pending-question');
+      expect(within(row).getByText('Summarize the Documents in this Notebook')).toBeTruthy();
+      expect(within(row).getByText('Sending…')).toBeTruthy();
+    });
+
+    // Story 11: the preview belongs to the Thread it was asked in.
+    it('stays with its Chat Thread across a switch', async () => {
+      const { settle } = await sendHeld({
+        listChatThreads: vi.fn().mockResolvedValue([
+          thread(),
+          thread({
+            id: 'thread-2',
+            title: 'Supply chain',
+            createdAt: '2025-12-15T00:00:00.000Z',
+          }),
+        ]),
+      });
+      await screen.findByTestId('chat-pending-question');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Open Supply chain' }));
+      await screen.findByRole('heading', { name: 'Supply chain' });
+      await waitFor(() => expect(pendingRow()).toBeNull());
+      expect(screen.queryByText(ASK)).toBeNull();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Open Revenue questions' }));
+      await screen.findByRole('heading', { name: 'Revenue questions' });
+      const row = await screen.findByTestId('chat-pending-question');
+      expect(within(row).getByText(ASK)).toBeTruthy();
+
+      settle(exchange());
+
+      expect(await screen.findByText('Revenue in Q3 was 12.4M.')).toBeTruthy();
+      expect(screen.getAllByText(ASK)).toHaveLength(1);
+      expect(pendingRow()).toBeNull();
     });
   });
 
@@ -1282,8 +1455,9 @@ describe('Chat panel (ThreadNavigator + ThreadView)', () => {
     });
 
     // Story 21 with a Thread already open: no second Thread, and the
-    // composer's answering state covers the prompts too.
-    it('asks the prompt in the open empty Thread, closing the prompts while answering', async () => {
+    // prompts give way to the question they asked (NBK-70), so none can be
+    // asked into an answer still being written.
+    it('asks the prompt in the open empty Thread, which gives way to it while answering', async () => {
       let settle!: (exchange: unknown) => void;
       const sendChatMessage = vi.fn().mockReturnValue(
         new Promise((resolve) => {
@@ -1309,8 +1483,10 @@ describe('Chat panel (ThreadNavigator + ThreadView)', () => {
         threadId: 'thread-1',
         body: { content: PROMPTS[1] },
       });
-      for (const name of PROMPTS) expect(prompt(name).disabled).toBe(true);
-      fireEvent.click(prompt(PROMPTS[2]));
+      expect(
+        within(screen.getByTestId('chat-pending-question')).getByText(PROMPTS[1]),
+      ).toBeTruthy();
+      for (const name of PROMPTS) expect(screen.queryByRole('button', { name })).toBeNull();
       expect(sendChatMessage).toHaveBeenCalledTimes(1);
 
       settle({

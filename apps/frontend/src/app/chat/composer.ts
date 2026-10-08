@@ -48,8 +48,9 @@ export class Composer {
   protected readonly store = inject(ChatStore);
 
   /**
-   * The question being typed. Survives a failed send so asking again works,
-   * and is dropped when another Thread is opened: it was asked of this one.
+   * The question being typed. Moves out of the box on send (NBK-70) and
+   * back in if the ask fails, so asking again works; dropped when another
+   * Thread is opened: it was asked of this one.
    */
   protected readonly draft = linkedSignal<string | null, string>({
     source: () => this.store.activeThreadId(),
@@ -105,12 +106,23 @@ export class Composer {
    * whether the exchange landed. Public so a caller outside the box — the
    * empty state's starter prompts (spec 04) — sends through the same path
    * the keyboard does.
+   *
+   * The text leaves the box as it is sent, since it now shows in the Thread
+   * as the pending question (NBK-70), and comes back if the ask fails: a
+   * failed ask records nothing, so asking again is the retry (spec 04, "a
+   * failed ask keeps the draft"). A starter prompt lands in the box the
+   * same way, ready to be asked again.
    */
   async ask(content: string): Promise<boolean> {
     const threadId = this.store.activeThreadId();
     const question = content.trim();
     if (!threadId || !question || this.store.sending()) return false;
-    return this.store.sendMessage(this.notebookId(), threadId, question);
+    this.setDraft('');
+    const landed = await this.store.sendMessage(this.notebookId(), threadId, question);
+    // Not into another Thread's box, if one was opened meanwhile: the
+    // question was asked of this one.
+    if (!landed && this.store.activeThreadId() === threadId) this.setDraft(content);
+    return landed;
   }
 
   /**
@@ -126,12 +138,13 @@ export class Composer {
   }
 
   protected async send(): Promise<void> {
-    // Cleared only on success: a failed ask records nothing on the server,
-    // so re-sending is the retry and the text has to still be here.
-    if (await this.ask(this.draft())) {
-      this.draft.set('');
-      this.fit();
-    }
+    await this.ask(this.draft());
+  }
+
+  private setDraft(text: string): void {
+    this.draft.set(text);
+    // The textarea's value follows the next render; its height must too.
+    afterNextRender(() => this.fit(), { injector: this.injector });
   }
 
   /**

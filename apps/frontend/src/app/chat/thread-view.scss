@@ -64,6 +64,19 @@
     min-width: 0;
   }
 
+  // A question sent but not yet recorded (NBK-70): the same bubble, muted,
+  // so it reads as the user's own and as not there yet.
+  &__message--pending {
+    opacity: 0.6;
+  }
+
+  &__sending {
+    display: block;
+    margin-top: 0.25rem;
+    font: var(--mat-sys-body-small);
+    color: var(--mat-sys-on-surface-variant);
+  }
+
   // The question's bubble: a subtle surface with the spec's 12 px corners,
   // capped at three quarters of the row so it reads as speech, not a block.
   &__bubble {
