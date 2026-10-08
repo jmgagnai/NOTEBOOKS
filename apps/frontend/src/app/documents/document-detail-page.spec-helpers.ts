@@ -1,13 +1,13 @@
 import { DeferBlockBehavior, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap } from '@angular/router';
-import { render } from '@testing-library/angular';
+import { render, screen } from '@testing-library/angular';
 import { DocumentDetailPage } from './document-detail-page';
 import { AuthService } from '../api/services/auth.service';
 import { ChatService } from '../api/services/chat.service';
 import { DocumentsService } from '../api/services/documents.service';
 import { NotebooksService } from '../api/services/notebooks.service';
 import { AuthStore } from '../auth/auth.store';
-import { SIGNED_IN, appEventsStub } from '../chat/chat-panel.spec-helpers';
+import { SIGNED_IN, appEventsStub, thread } from '../chat/chat-panel.spec-helpers';
 import { provideAppIcons } from '../shared/fluent-icons';
 
 // Shared by the Document page's area specs (CODING_STANDARDS.md, "Test
@@ -101,3 +101,18 @@ export async function renderPage(
   await TestBed.inject(AuthStore).checkSession();
   return { ...rendered, appEvents };
 }
+
+/** The chat pane beside the Document (spec 08). */
+export const chatPane = () => screen.getByRole('region', { name: 'Chat' });
+
+/** Two Chat Threads of the Notebook, the newer one opened by default (NBK-43). */
+export const OLDER_THREAD = thread({
+  id: 'thread-old',
+  title: 'Older questions',
+  createdAt: '2026-01-01T00:00:00Z',
+});
+export const NEWER_THREAD = thread({
+  id: 'thread-new',
+  title: 'Newer questions',
+  createdAt: '2026-02-01T00:00:00Z',
+});

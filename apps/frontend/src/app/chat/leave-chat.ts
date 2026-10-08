@@ -20,6 +20,9 @@ export function injectLeaveChat(notebookId: string): () => void {
   const router = inject(Router);
   const chat = inject(ChatStore);
   return () => {
+    // `/notebooks/:notebookId/…`, the shape of NOTEBOOK_PAGE_PATH and the
+    // paths under it in app.routes.ts — spelled out here because importing
+    // the routes from a page's helper would make an import cycle.
     const next = router.currentNavigation()?.finalUrl;
     const segments = next?.root.children[PRIMARY_OUTLET]?.segments ?? [];
     const staysInNotebook = segments[0]?.path === 'notebooks' && segments[1]?.path === notebookId;

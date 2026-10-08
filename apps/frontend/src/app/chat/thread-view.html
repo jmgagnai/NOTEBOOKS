@@ -1,4 +1,8 @@
-<div class="thread-view" [class.thread-view--landing]="!activeThread() && !compact()">
+<div
+  class="thread-view"
+  [class.thread-view--landing]="!activeThread() && !compact()"
+  [class.thread-view--empty-pane]="!activeThread() && compact()"
+>
   @if (activeThread(); as thread) {
     <div class="thread-view__head">
       <!--

@@ -7,7 +7,14 @@ import {
   sendButton,
   thread,
 } from '../chat/chat-panel.spec-helpers';
-import { NOTEBOOK_ID, SUMMARIZED_DETAIL, renderPage } from './document-detail-page.spec-helpers';
+import {
+  NEWER_THREAD,
+  NOTEBOOK_ID,
+  OLDER_THREAD,
+  SUMMARIZED_DETAIL,
+  chatPane,
+  renderPage,
+} from './document-detail-page.spec-helpers';
 
 /**
  * Spec 08 (NBK-86): a chat pane beside the Document, so a reader can ask
@@ -16,17 +23,11 @@ import { NOTEBOOK_ID, SUMMARIZED_DETAIL, renderPage } from './document-detail-pa
  */
 describe('DocumentDetailPage — chat beside the Document', () => {
   const documents = () => ({ getDocument: vi.fn().mockResolvedValue(SUMMARIZED_DETAIL) });
-  const chatPane = () => screen.getByRole('region', { name: 'Chat' });
 
   it("opens the Notebook's newest Chat Thread beside the Document", async () => {
     const listChatMessages = vi.fn().mockResolvedValue([message({ threadId: 'thread-new' })]);
     await renderPage(documents(), undefined, {
-      listChatThreads: vi
-        .fn()
-        .mockResolvedValue([
-          thread({ id: 'thread-old', title: 'Older questions', createdAt: '2026-01-01T00:00:00Z' }),
-          thread({ id: 'thread-new', title: 'Newer questions', createdAt: '2026-02-01T00:00:00Z' }),
-        ]),
+      listChatThreads: vi.fn().mockResolvedValue([OLDER_THREAD, NEWER_THREAD]),
       listChatMessages,
     } as never);
 
@@ -103,6 +104,34 @@ describe('DocumentDetailPage — chat beside the Document', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Show chat' }));
     expect(await within(chatPane()).findByText('Revenue questions')).toBeTruthy();
+  });
+
+  // Spec 08 story 38: questions are answered from the whole Notebook, so
+  // the Document being read need not be ready.
+  it('answers in the chat pane while the Document is still converting', async () => {
+    const sendChatMessage = vi.fn().mockResolvedValue(q3Exchange());
+    await renderPage(
+      {
+        getDocument: vi.fn().mockResolvedValue({
+          ...SUMMARIZED_DETAIL,
+          status: 'converting',
+          executiveSummary: null,
+          metadata: null,
+        }),
+      },
+      undefined,
+      {
+        listChatThreads: vi.fn().mockResolvedValue([thread()]),
+        listChatMessages: vi.fn().mockResolvedValue([]),
+        sendChatMessage,
+      } as never,
+    );
+    await within(chatPane()).findByText('Revenue questions');
+
+    fireEvent.input(questionBox(), { target: { value: ASK } });
+    fireEvent.click(sendButton());
+
+    expect(await within(chatPane()).findByText('Revenue in Q3 was 12.4M.')).toBeTruthy();
   });
 
   describe('on a window narrower than 900 px', () => {
