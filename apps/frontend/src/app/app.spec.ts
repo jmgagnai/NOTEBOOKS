@@ -4,6 +4,7 @@ import { routes } from './app.routes';
 import { AuthService } from './api/services/auth.service';
 import { NotebooksService } from './api/services/notebooks.service';
 import { provideAppIcons } from './shared/fluent-icons';
+import { APP_NAME } from './shared/app-name';
 
 // App-level seam-3 test (NBK-3): renders the real shell through the real
 // app routes and auth guard, mocking only the generated ng-openapi-gen
@@ -38,7 +39,7 @@ describe('App', () => {
   it('shows the authenticated shell and Notebooks page when a session exists', async () => {
     await renderSignedIn('ada@example.com');
 
-    expect(screen.getByText('RAG Notebook')).toBeTruthy();
+    expect(screen.getByText(APP_NAME)).toBeTruthy();
     expect(avatarFor('ada@example.com')).toBeTruthy();
   });
 

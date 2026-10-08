@@ -4,6 +4,7 @@ import { Router } from '@angular/router';
 import { fireEvent, render, screen } from '@testing-library/angular';
 import { RegisterPage } from './register-page';
 import { AuthService } from '../api/services/auth.service';
+import { APP_NAME } from '../shared/app-name';
 
 @Component({ selector: 'app-dummy-login', standalone: true, template: 'Login shell' })
 class DummyLoginPage {}
@@ -37,7 +38,7 @@ describe('RegisterPage', () => {
   it('shows the app name above a "Create account" form that links to signing in', async () => {
     await renderRegister(vi.fn());
 
-    expect(screen.getByText('RAG Notebook')).toBeTruthy();
+    expect(screen.getByText(APP_NAME)).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Create account' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Create account' })).toBeTruthy();
     expect(screen.getByText('Already have an account?')).toBeTruthy();

@@ -10,6 +10,7 @@ import { DocumentsService } from '../api/services/documents.service';
 import { DocumentTransferService } from '../documents/document-transfer.service';
 import { AppEvent, AppEventsService } from '../events/app-events.service';
 import { provideAppIcons } from '../shared/fluent-icons';
+import { APP_NAME } from '../shared/app-name';
 
 const NOTEBOOK_ID = '11111111-1111-1111-1111-111111111111';
 
@@ -2067,7 +2068,7 @@ describe('NotebookDetailPage', () => {
     });
 
     it('puts the Notebook title in the browser tab while open, and restores it on leaving', async () => {
-      document.title = 'RAG Notebook';
+      document.title = APP_NAME;
       const listNotebooks = vi.fn().mockResolvedValue([RESEARCH]);
       const listDocuments = vi.fn().mockResolvedValue([]);
       const { navigate } = await render(RouterShell, {
@@ -2083,11 +2084,11 @@ describe('NotebookDetailPage', () => {
       });
 
       await navigate(`/notebooks/${NOTEBOOK_ID}`);
-      await waitFor(() => expect(document.title).toBe('Research – RAG Notebook'));
+      await waitFor(() => expect(document.title).toBe(`Research – ${APP_NAME}`));
 
       await navigate('/elsewhere');
       await screen.findByText('Somewhere else');
-      expect(document.title).toBe('RAG Notebook');
+      expect(document.title).toBe(APP_NAME);
     });
   });
 
