@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 /**
  * Fails when a component stylesheet hard-codes what docs/frontend-theme.md
- * says comes from a token: a colour, a corner radius, or a type size.
+ * says comes from a token: a colour, a corner radius, or a type size — or
+ * sets an `--mdc-*` token, which Material no longer reads. The rule itself is
+ * in check-theme-rules.mjs.
  *
  * Why a script and not review: every review of the Copilot UI series
  * (NBK-27..NBK-62) found the same slips by hand — a `#ddd` border, a `9px`
@@ -15,26 +17,10 @@
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { problem } from './check-theme-rules.mjs';
 
 const root = new URL('..', import.meta.url).pathname;
 const APP = join(root, 'apps/frontend/src/app');
-
-const KEYWORD = /^(0|inherit|initial|unset|revert|none)$/;
-
-/** The reason a declaration's value breaks the theme rule, or null. */
-function problem(property, value) {
-  if (/#[0-9a-f]{3,8}\b/i.test(value) || /\b(rgba?|hsla?)\(/i.test(value)) {
-    return 'a colour literal (use a --mat-sys-* or --app-* colour token)';
-  }
-  if (value.includes('var(') || KEYWORD.test(value)) return null;
-  if (/radius$/.test(property) && /\d/.test(value)) {
-    return 'a literal corner radius (use a --mat-sys-corner-* or --app-corner-* token)';
-  }
-  if (property === 'font-size' && /\d/.test(value) && !/^[\d.]+(em|%)$/.test(value)) {
-    return 'a literal type size (use a --mat-sys-* type-role token, or a relative em/% size)';
-  }
-  return null;
-}
 
 function* filesUnder(dir) {
   for (const name of readdirSync(dir)) {
@@ -79,11 +65,13 @@ for (const { path, css, offset } of stylesheets()) {
 }
 
 if (violations.length === 0) {
-  console.log('check-theme: ok — no colour, radius or type-size literals in component styles.');
+  console.log(
+    'check-theme: ok — no colour, radius or type-size literals, nor --mdc-* tokens, in component styles.',
+  );
   process.exit(0);
 }
 
-console.error(`check-theme: ${violations.length} hard-coded value(s) in component styles.\n`);
+console.error(`check-theme: ${violations.length} problem(s) in component styles.\n`);
 for (const v of violations) console.error(`  ${v.where}\n    ${v.line}\n    is ${v.why}\n`);
 console.error(
   'Tokens and type roles are listed in docs/frontend-theme.md. A deliberate exception\n' +
