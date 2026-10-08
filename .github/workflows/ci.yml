@@ -20,6 +20,11 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm run check
+      # The production build enforces angular.json's budgets (initial bundle,
+      # per-component stylesheet) as errors. Nothing else runs it, and during
+      # the Copilot UI series a stylesheet and the bundle crept toward their
+      # limits unnoticed until a build was run by hand.
+      - run: pnpm run frontend:build
 
   test:
     # Needs a Docker daemon: every backend test file starts its own Postgres

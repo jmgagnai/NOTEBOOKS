@@ -34,7 +34,7 @@
   &__title-icon {
     width: 16px;
     height: 16px;
-    font-size: 16px;
+    font-size: 16px; // theme-exempt: sizes the icon box to the 16 px text beside it, not a type role
     color: var(--mat-sys-on-surface-variant);
   }
 

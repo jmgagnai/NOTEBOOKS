@@ -5,6 +5,8 @@ Material (ADR-0008, spec `docs/design/copilot-ui/01-fluent-theme-and-app-shell.m
 Everything visual is a token defined once in `apps/frontend/src/styles.scss`;
 component stylesheets reference tokens and never hard-code a colour, a radius
 or a type size. This page is the map a later spec reaches for.
+`pnpm run check:theme` enforces this for colours, corner radii and type sizes;
+a deliberate exception carries a `theme-exempt: <why>` comment on its line.
 
 ## How the theme is built
 
