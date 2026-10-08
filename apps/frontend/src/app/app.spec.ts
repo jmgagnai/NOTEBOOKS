@@ -43,6 +43,16 @@ describe('App', () => {
     expect(avatarFor('ada@example.com')).toBeTruthy();
   });
 
+  // NBK-59: the mark carries the name for assistive tech, so the visible
+  // name beside it must stay out of the link's name or it is read twice.
+  it('links the cat mark and name, announced once, to the Notebooks home', async () => {
+    await renderSignedIn('ada@example.com');
+
+    const home = screen.getByRole('link', { name: 'Copycat Notebooks' });
+    expect(home.getAttribute('href')).toBe('/');
+    expect(screen.getByRole('img', { name: 'Copycat Notebooks' }).closest('a')).toBe(home);
+  });
+
   // NBK-30: the identity in the bar is the avatar alone; the e-mail is only
   // reachable through its menu.
   it('keeps the e-mail out of the title bar until the avatar menu opens', async () => {
