@@ -55,9 +55,8 @@ async function reportDatabase(pool: Pool, url: string): Promise<void> {
 
 async function main(): Promise<void> {
   // Built before anything opens a connection: it validates its env settings
-  // (DOCLING_TABLE_MODE, NBK-72) and throws on a bad one, and a throw after
-  // the pool and the LISTEN connection exist would log and then leave the
-  // process hanging on them instead of exiting.
+  // (DOCLING_TABLE_MODE, NBK-72) and throws on a bad one, so a bad setting
+  // fails before the database is touched.
   const convertToMarkdown = createDoclingConverter();
   const pool = createPool(DATABASE_URL);
   await reportDatabase(pool, DATABASE_URL);
@@ -158,7 +157,10 @@ async function main(): Promise<void> {
   process.once('SIGTERM', () => void shutdown());
 }
 
+// Exit, not just `process.exitCode = 1`: a failure after the LISTEN
+// connection and pg-boss are up leaves their handles holding the event loop
+// open, and the process would log the error and then hang (NBK-73).
 main().catch((err) => {
   console.error(err);
-  process.exitCode = 1;
+  process.exit(1);
 });
