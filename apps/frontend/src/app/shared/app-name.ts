@@ -1,7 +1,7 @@
 /**
- * The app's name as the title bar and the browser tab show it. One constant
- * so a rename is one edit — except `index.html`'s `<title>`, a literal
- * because static HTML cannot read it; spec 06 brings the title handling that
- * keeps the two in step.
+ * The product name wherever a user sees it (spec 06). One constant so a
+ * rename is one edit — except `index.html`'s `<title>` and
+ * `public/manifest.webmanifest`, literals because static files cannot read
+ * it. Trademark rule (spec 06): "Microsoft" and "Copilot" never go in here.
  */
-export const APP_NAME = 'RAG Notebook';
+export const APP_NAME = 'Copycat Notebooks';

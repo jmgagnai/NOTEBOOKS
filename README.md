@@ -1,6 +1,6 @@
-# RAG Notebook
+# Copycat Notebooks
 
-A multi-user application for uploading documents into **Notebooks** and chatting
+A Microsoft Copilot Notebooks clone: a multi-user application for uploading documents into **Notebooks** and chatting
 with an LLM grounded in those documents. Every answer carries **Citations** that
 open the exact Document Version and chunk it came from.
 
