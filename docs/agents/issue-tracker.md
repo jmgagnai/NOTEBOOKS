@@ -69,7 +69,11 @@ cover.
   labels with `get` first when others must be kept.
 - **Transition status**: `GET .../issue/<key>/transitions` to find the transition id for
   the target status, then `POST .../issue/<key>/transitions` with `{"transition":{"id":"<id>"}}`.
-- **Close/Done**: transition to the `Done` status via the same mechanism.
+- **Close/Done**: transition to the `Done` status via the same mechanism, once
+  the issue's last commit is on `master` (`git fetch origin && git merge-base
+  --is-ancestor <commit> origin/master`), not when a merge is reported:
+  NBK-92 was closed on "#33 is merged" while #33 was still open, and had to
+  be reopened.
 
 ## Workflow states
 

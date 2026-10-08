@@ -30,6 +30,13 @@ the script at it: `pnpm --filter frontend start -- --port 4300`, then
 `SCREENSHOT_APP=http://localhost:4300`. The backend accepts any origin, so
 the user's backend on 3000 serves both.
 
+**To compare against an older commit**, give it a worktree of its own
+(`git worktree add <dir> <commit>`, `pnpm install` there) and serve it as
+above. Checking the commit out in the main working copy instead swaps the
+code under the user's running servers: both hot-reload what is checked out,
+and on 2026-10-08 the backend reloaded onto old code and refused connections
+until master was checked out again.
+
 ## 2. Shoot
 
 ```bash
