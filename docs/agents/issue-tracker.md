@@ -111,6 +111,26 @@ node scripts/jira.mjs link NBK-17 blocked-by NBK-16      # the task graph's edge
 The helper refuses `--parent` on a non-Epic up front, before anything is
 created. Use `--parent` only when the parent really is an Epic.
 
+## Ticket PRs land on the spec's feature branch
+
+A spec's tickets merge into its `feat/NBK-<spec>-…` branch, which merges into
+`master` once all of them are in (NBK-77, NBK-84). A ticket blocked by one
+whose PR is still open branches from that ticket and opens its PR against it:
+a stack.
+
+The repo deletes a PR's branch on merge, and GitHub then retargets the PRs
+stacked on it to the merged PR's base, so a stack merged bottom-up lands on
+the feature branch. With that setting off, spec 08's #28–#30 merged into the
+ticket branches below them and the feature branch got only the first ticket
+(#31 had to carry the rest). After a stack is merged, check that every
+ticket's last commit reached the feature branch before opening its PR into
+`master`:
+
+```bash
+git fetch --prune origin
+git merge-base --is-ancestor <commit> origin/feat/NBK-<spec>-…
+```
+
 ## When a skill says "fetch the relevant ticket"
 
 `GET` the issue by key, expanding `comment` and `labels`.
