@@ -1,0 +1,58 @@
+// Spec 04 "Empty state": centred in the Thread card, the sparkle over one
+// sentence and the prompts as a column of full-width secondary buttons.
+:host {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.thread-empty-state {
+  margin: auto;
+  max-width: 420px;
+  width: 100%;
+  padding: 16px 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+
+  &__sentence {
+    margin: 0;
+    font: var(--mat-sys-title-small);
+    color: var(--mat-sys-on-surface);
+  }
+
+  &__prompts {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  &__prompt {
+    width: 100%;
+    min-height: var(--app-control-height);
+    padding: 6px 12px;
+    font: var(--mat-sys-body-medium);
+    text-align: left;
+    color: var(--mat-sys-on-surface);
+    background: var(--mat-sys-surface);
+    border: 1px solid var(--mat-sys-outline-variant);
+    border-radius: var(--mat-sys-corner-extra-small);
+    cursor: pointer;
+
+    &:hover:not(:disabled) {
+      background: var(--mat-sys-surface-container);
+    }
+
+    &:disabled {
+      color: var(--app-text-disabled);
+      cursor: default;
+    }
+  }
+}

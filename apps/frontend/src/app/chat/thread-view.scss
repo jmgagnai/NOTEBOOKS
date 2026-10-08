@@ -1,5 +1,3 @@
-@use './controls';
-
 // The open Chat Thread of a Notebook (NBK-10, split out of the chat panel in
 // NBK-34). The card it sits in is the page's (NBK-35); this fills it as a
 // column whose message list is the scrolling part and whose composer is the
@@ -16,12 +14,6 @@
   flex-direction: column;
   flex: 1 1 auto;
   min-height: 0;
-
-  &__empty {
-    @include controls.empty;
-    flex: 1 1 auto;
-    padding: 8px 12px;
-  }
 
   &__head {
     flex: none;
