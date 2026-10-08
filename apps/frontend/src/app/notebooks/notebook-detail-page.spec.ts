@@ -1995,7 +1995,9 @@ describe('NotebookDetailPage', () => {
       const input = screen.getByLabelText('Upload Documents') as HTMLInputElement;
       const open = vi.spyOn(input, 'click');
 
-      fireEvent.click(screen.getByRole('button', { name: 'Add Documents' }));
+      // The header's button comes first; the empty Notebook's own (NBK-49)
+      // is in the Documents panel and goes away once the batch starts.
+      fireEvent.click(screen.getAllByRole('button', { name: 'Add Documents' })[0]);
       expect(open).toHaveBeenCalledTimes(1);
 
       pick([fileNamed('a.txt')]);
@@ -2110,5 +2112,76 @@ describe('NotebookDetailPage', () => {
       expect(await screen.findByText('1 uploaded, 0 skipped, 0 failed')).toBeTruthy();
       expect(uploadDocument).toHaveBeenCalledWith(NOTEBOOK_ID, report);
     });
+  });
+});
+
+describe('NBK-49: empty state', () => {
+  /** The empty state's own "Add Documents", inside the Documents panel. */
+  function emptyStateAddDocuments() {
+    return within(screen.getByRole('complementary', { name: 'Documents' })).getByRole('button', {
+      name: 'Add Documents',
+    }) as HTMLButtonElement;
+  }
+
+  /** The page header's "Add Documents", outside the Documents panel. */
+  function headerAddDocuments() {
+    const panel = screen.getByRole('complementary', { name: 'Documents' });
+    return screen
+      .getAllByRole('button', { name: 'Add Documents' })
+      .find((button) => !panel.contains(button)) as HTMLButtonElement;
+  }
+
+  it('an empty Notebook invites the first upload where the list would be', async () => {
+    await renderWithUpload(vi.fn());
+    const panel = screen.getByRole('complementary', { name: 'Documents' });
+
+    expect(within(panel).getByText('No Documents yet.')).toBeTruthy();
+    expect(within(panel).getByText(/Add Documents to start asking questions\./)).toBeTruthy();
+    expect(emptyStateAddDocuments()).toBeTruthy();
+    expect(screen.getAllByRole('button', { name: 'Add Documents' })).toHaveLength(2);
+  });
+
+  it("the empty state's Add Documents opens the same picker, which starts a batch", async () => {
+    const request = deferred<Record<string, unknown>>();
+    const uploadDocument = vi.fn().mockReturnValue(request.promise);
+    await renderWithUpload(uploadDocument);
+    const input = screen.getByLabelText('Upload Documents') as HTMLInputElement;
+    const open = vi.spyOn(input, 'click');
+
+    fireEvent.click(emptyStateAddDocuments());
+    expect(open).toHaveBeenCalledTimes(1);
+
+    pick([fileNamed('a.txt')]);
+    expect(await screen.findByRole('list', { name: 'Upload progress' })).toBeTruthy();
+    expect(sentNames(uploadDocument)).toEqual(['a.txt']);
+  });
+
+  it('goes away while a batch runs, and stays away once a Document exists', async () => {
+    const request = deferred<Record<string, unknown>>();
+    await renderWithUpload(vi.fn().mockReturnValue(request.promise));
+
+    pick([fileNamed('a.txt')]);
+    await screen.findByRole('list', { name: 'Upload progress' });
+    expect(screen.queryByText('No Documents yet.')).toBeNull();
+    expect(screen.getAllByRole('button', { name: 'Add Documents' })).toHaveLength(1);
+
+    request.resolve(documentFor('a.txt'));
+    await screen.findByText('1 uploaded, 0 skipped, 0 failed');
+    expect(screen.queryByText('No Documents yet.')).toBeNull();
+    expect(screen.getAllByRole('button', { name: 'Add Documents' })).toHaveLength(1);
+  });
+
+  it('is not shown for a Notebook that has Documents', async () => {
+    await renderWithUpload(vi.fn(), [documentFor('a.txt')]);
+
+    expect(screen.queryByText('No Documents yet.')).toBeNull();
+    expect(screen.getAllByRole('button', { name: 'Add Documents' })).toHaveLength(1);
+  });
+
+  it("the header's Add Documents carries the add icon", async () => {
+    await renderWithUpload(vi.fn());
+
+    const icon = headerAddDocuments().querySelector('mat-icon');
+    expect(icon?.getAttribute('data-mat-icon-name')).toBe('add');
   });
 });
