@@ -75,8 +75,9 @@ export const FULL_MARKDOWN = [
 ].join('\n');
 
 /**
- * A chat client for a Notebook with no Chat Threads: what the Notebook page
- * sees when a test is not about chat.
+ * A chat client for a Notebook with no Chat Threads, for the routed Notebook
+ * page when a test is not about chat. The Document page itself asks nothing
+ * of it, but keeps the root Chat store for the way back (NBK-103).
  */
 export function noChat(): Partial<ChatService> {
   return { listChatThreads: vi.fn().mockResolvedValue([]) as never };
@@ -90,17 +91,14 @@ export function noChat(): Partial<ChatService> {
 export async function renderPage(
   documentsService: Partial<DocumentsService>,
   route: ReturnType<typeof activatedRoute> = activatedRoute(),
-  chatService: Partial<ChatService> = noChat(),
 ) {
   const appEvents = appEventsStub();
   const rendered = await render(DocumentDetailPage, {
-    // An answer's Markdown renderer is a deferred block (NBK-52).
-    deferBlockBehavior: DeferBlockBehavior.Playthrough,
     providers: [
       provideAppIcons(),
       route,
       { provide: DocumentsService, useValue: documentsService },
-      { provide: ChatService, useValue: chatService },
+      { provide: ChatService, useValue: noChat() },
       { provide: NotebooksService, useValue: { listNotebooks: vi.fn().mockResolvedValue([]) } },
       { provide: AuthService, useValue: { getCurrentUser: vi.fn().mockResolvedValue(SIGNED_IN) } },
       appEvents.provider,

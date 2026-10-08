@@ -18,6 +18,7 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { DocumentsStore } from './documents.store';
 import { injectLeaveChat } from '../chat/leave-chat';
+import { isOpenedFromSearch } from './opened-from-search';
 import { StatusBadge } from '../shared/status-badge';
 import { MarkdownView } from './markdown-view';
 import { showPageTitle } from '../shared/page-title';
@@ -92,13 +93,11 @@ export class DocumentDetailPage implements OnInit, OnDestroy {
   private readonly leaveChat = injectLeaveChat(this.notebookId);
 
   /**
-   * Whether a search result opened this page (NBK-103), read while the
-   * router is still activating it — the only moment the navigation's state
-   * is at hand. Its back arrow then returns to those results; any other
-   * arrival, a pasted link included, goes back to the Notebook.
+   * Whether a search result opened this page (NBK-103): its back arrow then
+   * returns to those results. Any other arrival — a pasted link, a reload —
+   * goes back to the Notebook.
    */
-  protected readonly openedFromSearch =
-    inject(Router).currentNavigation()?.extras.state?.['openedFromSearch'] === true;
+  protected readonly openedFromSearch = isOpenedFromSearch(inject(Router));
 
   /**
    * The route as signals, not a snapshot: a link to this same route — a
@@ -143,9 +142,10 @@ export class DocumentDetailPage implements OnInit, OnDestroy {
   protected readonly expanded = signal(false);
 
   /**
-   * Follows the route: on arrival, and on every link to it after that. Keyed on the Document and the whole query — Version,
-   * Chunk, range — so any other Citation is followed even when it shares the
-   * Version or the start of its range.
+   * Follows the route: on arrival, and on every link to it after that.
+   * Keyed on the Document and the whole query — Version, Chunk, range — so
+   * any other Citation is followed even when it shares the Version or the
+   * start of its range.
    */
   private readonly followRoute = effect(() => {
     const documentId = this.documentId();

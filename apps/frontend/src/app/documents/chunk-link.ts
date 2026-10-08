@@ -8,13 +8,6 @@ export interface ChunkPin {
 }
 
 /**
- * The navigation state a search result opens the Document page with
- * (NBK-103), so its back arrow returns to those results rather than to the
- * Notebook.
- */
-export const OPENED_FROM_SEARCH = { openedFromSearch: true } as const;
-
-/**
  * The query that opens the Document page at a Chunk (NBK-12): the pinned
  * Version, the Chunk, and its range, which the page scrolls to and marks.
  * Shared by Citation links and search results (NBK-96).
