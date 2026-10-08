@@ -31,6 +31,7 @@ to Atlassian Document Format, which the v3 API requires. Reach for it first:
 
 ```bash
 node scripts/jira.mjs get NBK-1 --comments
+node scripts/jira.mjs search "status != Done" --links  # JQL, scoped to NBK
 node scripts/jira.mjs comment NBK-1 body.md          # - reads stdin
 node scripts/jira.mjs create --summary "..." --body ticket.md \
   --type Task --parent NBK-1 --label ready-for-agent
@@ -56,7 +57,7 @@ cover.
   type it doesn't emit, and keep the document's structure rather than collapsing it
   into one paragraph — a spec or ticket is mostly headings, lists and checkboxes.
 - **Read an issue**: `GET $JIRA_BASE_URL/rest/api/3/issue/<key>?fields=summary,description,status,labels,comment`
-- **List/search issues**: `GET $JIRA_BASE_URL/rest/api/3/search?jql=project=NBK AND ...` (JQL), URL-encoded.
+- **List/search issues**: `node scripts/jira.mjs search "<JQL>"` (one line per issue; `--links` adds open blockers). Raw: `POST $JIRA_BASE_URL/rest/api/3/search/jql` with `{"jql": "...", "fields": [...]}`; the older `GET .../search?jql=` endpoint is retired.
 - **Comment on an issue**: `POST $JIRA_BASE_URL/rest/api/3/issue/<key>/comment` with ADF body.
 - **Apply / remove labels**: `PUT $JIRA_BASE_URL/rest/api/3/issue/<key>` with
   `{"fields":{"labels":["..."]}}` (full replace — fetch current labels first and merge).
@@ -131,7 +132,7 @@ so this is approximated:
   gets it right; the first run of `/to-tickets` on NBK-27 got it backwards
   and had to re-link.
   A ticket is unblocked when every issue linked as a blocker is in status `Done`.
-- **Frontier query**: `GET /rest/api/3/search?jql=project=NBK AND labels="wayfinder-*" AND status!=Done`,
+- **Frontier query**: `node scripts/jira.mjs search 'labels in (wayfinder-research, wayfinder-prototype, wayfinder-grilling, wayfinder-task) AND status != Done' --links`,
   then for each result fetch `issuelinks` and drop any with an open (`status != Done`)
   blocker, or an existing `assignee`; first by creation order wins.
 - **Claim**: `PUT .../issue/<key>/assignee` with your account id, the session's first write.

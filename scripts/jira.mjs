@@ -12,6 +12,7 @@
  * JIRA_PROJECT_KEY). It is gitignored; the token is never printed.
  *
  *   node scripts/jira.mjs get NBK-1 [--comments] [--json]   # Markdown by default
+ *   node scripts/jira.mjs search "status != Done" [--links] [--json]
  *   node scripts/jira.mjs comment NBK-1 body.md         # - reads stdin
  *   node scripts/jira.mjs create --summary "..." --body body.md \
  *        [--type Task] [--parent NBK-1] [--label ready-for-agent]
@@ -341,6 +342,53 @@ const commands = {
     console.log(lines.join('\n'));
   },
 
+  /**
+   * One line per matching issue: key, status, labels, summary. JQL without a
+   * `project` clause is scoped to this repo's project, so the everyday query
+   * is just the condition. `--links` adds each issue's open blockers, which is
+   * what a frontier check needs; `--json` prints the raw issues.
+   */
+  async search([jql, ...opts]) {
+    if (!jql) throw new Error('expected a JQL condition, e.g. "status != Done"');
+    const scoped = /\bproject\b/i.test(jql)
+      ? jql
+      : `project = ${env.JIRA_PROJECT_KEY} AND (${jql.replace(/\s+ORDER BY[\s\S]*$/i, '')})` +
+        (jql.match(/\s+ORDER BY[\s\S]*$/i)?.[0] ?? ' ORDER BY key ASC');
+    const issues = [];
+    let nextPageToken;
+    do {
+      const page = await api('POST', '/rest/api/3/search/jql', {
+        jql: scoped,
+        fields: ['summary', 'status', 'labels', 'issuelinks'],
+        maxResults: 100,
+        ...(nextPageToken ? { nextPageToken } : {}),
+      });
+      issues.push(...(page.issues ?? []));
+      nextPageToken = page.nextPageToken;
+    } while (nextPageToken);
+
+    if (opts.includes('--json')) {
+      console.log(JSON.stringify(issues, null, 2));
+      return;
+    }
+    if (issues.length === 0) {
+      console.log(`No issues match: ${scoped}`);
+      return;
+    }
+    for (const { key, fields: f } of issues) {
+      let line = `${key} | ${f.status.name} | ${f.labels.join(', ') || '-'} | ${f.summary}`;
+      if (opts.includes('--links')) {
+        // "is blocked by" sits on the inward side of a Blocks link.
+        const blockers = (f.issuelinks ?? [])
+          .filter((l) => l.type.name === 'Blocks' && l.inwardIssue)
+          .filter((l) => l.inwardIssue.fields?.status?.name !== 'Done')
+          .map((l) => l.inwardIssue.key);
+        line += ` | blocked by: ${blockers.join(', ') || 'none open'}`;
+      }
+      console.log(line);
+    }
+  },
+
   async comment([key, body]) {
     const result = await api('POST', `/rest/api/3/issue/${key}/comment`, { body: readBody(body) });
     console.log(`${key}: commented (${result.id})`);
@@ -419,6 +467,8 @@ const commands = {
 const USAGE = `Usage: node scripts/jira.mjs <command>
 
   get NBK-1 [--comments] [--json]       (Markdown by default)
+  search "status != Done" [--links] [--json]
+                                        (JQL; scoped to the project unless it names one)
   comment NBK-1 body.md                 (- reads stdin)
   create --summary "..." [--body body.md] [--type Task] [--parent NBK-1] [--label ready-for-agent]
   transition NBK-5 Done
