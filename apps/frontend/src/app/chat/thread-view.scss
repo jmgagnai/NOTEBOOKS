@@ -17,18 +17,6 @@
   flex: 1 1 auto;
   min-height: 0;
 
-  &__field {
-    @include controls.field;
-  }
-
-  &__field-label {
-    @include controls.field-label;
-  }
-
-  &__rename {
-    @include controls.field-row;
-  }
-
   &__empty {
     @include controls.empty;
     flex: 1 1 auto;
@@ -39,12 +27,19 @@
     flex: none;
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: 0.125rem;
     padding: 8px 12px 0;
+  }
 
-    h3 {
-      margin: 0 0 0.5rem;
-    }
+  // The heading only carries the semantics; the editable title sets the type.
+  &__title {
+    margin: 0;
+    font: inherit;
+  }
+
+  &__started-by {
+    font: var(--mat-sys-body-small);
+    color: var(--mat-sys-on-surface-variant);
   }
 
   &__messages {
