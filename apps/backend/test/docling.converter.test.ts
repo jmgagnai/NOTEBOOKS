@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { chmod, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -72,11 +72,8 @@ async function fakeDocker(
   await writeFile(outputFile, output, 'utf8');
   await writeFile(log, '', 'utf8');
 
-  const script = join(directory, 'docker');
-  await writeFile(
-    script,
-    `#!/bin/sh
-printf '%s\\n' "$@" >> '${log}'
+  const script = await scriptedDocker(
+    `printf '%s\\n' "$@" >> '${log}'
 printf -- '---\\n' >> '${log}'
 out=''
 prev=''
@@ -88,11 +85,8 @@ last=''
 for a in "$@"; do last="$a"; done
 stem=$(basename "$last")
 stem="\${stem%.*}"
-cp '${outputFile}' "$out/$stem.md"
-`,
-    'utf8',
+cp '${outputFile}' "$out/$stem.md"`,
   );
-  await chmod(script, 0o755);
 
   return {
     docker: script,

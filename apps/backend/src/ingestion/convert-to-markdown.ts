@@ -89,7 +89,7 @@ async function transitionTo(
   pool: Pool,
   version: IngestionVersion,
   status: DocumentStatus,
-  fields: { markdown?: string } & Partial<AttemptFailure> = {},
+  fields: { markdown?: string } & Partial<Omit<AttemptFailure, 'status'>> = {},
 ): Promise<void> {
   await inTransaction(pool, async (client) => {
     await client.query(
@@ -191,12 +191,12 @@ export async function runConvertToMarkdownJob(
       });
     }
   } catch (err) {
-    await transitionTo(
-      pool,
-      version,
-      willRetry ? 'queued' : 'failed',
-      attemptFailed(err, { willRetry, failedAt: 'converting' }),
-    );
+    const failed = attemptFailed(err, {
+      willRetry,
+      retryStatus: 'queued',
+      failedAt: 'converting',
+    });
+    await transitionTo(pool, version, failed.status, failed);
     throw err;
   } finally {
     await rm(workDir, { recursive: true, force: true });

@@ -73,7 +73,7 @@ interface VersionRow {
   section_summaries: CachedSectionSummaries | null;
 }
 
-interface TransitionFields extends Partial<AttemptFailure> {
+interface TransitionFields extends Partial<Omit<AttemptFailure, 'status'>> {
   metadata?: DocumentMetadata;
   artifacts?: GeneratedArtifacts;
   /**
@@ -275,12 +275,12 @@ export async function runSummarizeDocumentJob(
     // produced nothing. Recorded as an error and thrown so it retries — a
     // re-enqueued stage 1 can still fill this in.
     const missing = new Error('Stage 2 found no Converted Markdown on this Document Version.');
-    await transitionTo(
-      pool,
-      version,
-      willRetry ? 'converted' : 'failed',
-      attemptFailed(missing, { willRetry, failedAt: 'summarizing' }),
-    );
+    const failed = attemptFailed(missing, {
+      willRetry,
+      retryStatus: 'converted',
+      failedAt: 'summarizing',
+    });
+    await transitionTo(pool, version, failed.status, failed);
     throw missing;
   }
 
@@ -323,12 +323,12 @@ export async function runSummarizeDocumentJob(
       });
     }
   } catch (err) {
-    await transitionTo(
-      pool,
-      version,
-      willRetry ? 'converted' : 'failed',
-      attemptFailed(classifyProviderFailure(err), { willRetry, failedAt: 'summarizing' }),
-    );
+    const failed = attemptFailed(classifyProviderFailure(err), {
+      willRetry,
+      retryStatus: 'converted',
+      failedAt: 'summarizing',
+    });
+    await transitionTo(pool, version, failed.status, failed);
     throw err;
   }
 }

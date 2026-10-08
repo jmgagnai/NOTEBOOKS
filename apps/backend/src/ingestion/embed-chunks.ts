@@ -70,7 +70,7 @@ async function transitionTo(
   pool: Pool,
   version: IngestionVersion,
   status: DocumentStatus,
-  fields: Partial<AttemptFailure> = {},
+  fields: Partial<Omit<AttemptFailure, 'status'>> = {},
 ): Promise<void> {
   await inTransaction(pool, async (client) => {
     await client.query(
@@ -164,12 +164,12 @@ export async function runEmbedChunksJob(
     // produced nothing. Recorded and thrown so it retries — a re-enqueued
     // earlier stage can still fill this in.
     const missing = new Error('Stage 3 found no Converted Markdown on this Document Version.');
-    await transitionTo(
-      pool,
-      version,
-      willRetry ? 'summarized' : 'failed',
-      attemptFailed(missing, { willRetry, failedAt: 'indexing' }),
-    );
+    const failed = attemptFailed(missing, {
+      willRetry,
+      retryStatus: 'summarized',
+      failedAt: 'indexing',
+    });
+    await transitionTo(pool, version, failed.status, failed);
     throw missing;
   }
 
@@ -201,12 +201,12 @@ export async function runEmbedChunksJob(
     await replaceChunks(pool, version.versionId, chunks, vectors);
     await transitionTo(pool, version, 'ready');
   } catch (err) {
-    await transitionTo(
-      pool,
-      version,
-      willRetry ? 'summarized' : 'failed',
-      attemptFailed(classifyProviderFailure(err), { willRetry, failedAt: 'indexing' }),
-    );
+    const failed = attemptFailed(classifyProviderFailure(err), {
+      willRetry,
+      retryStatus: 'summarized',
+      failedAt: 'indexing',
+    });
+    await transitionTo(pool, version, failed.status, failed);
     throw err;
   }
 }

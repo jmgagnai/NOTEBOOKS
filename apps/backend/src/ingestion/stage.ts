@@ -38,9 +38,11 @@ import type {
  *   so a retry finds exactly the state it expects. That is three different
  *   answers to the same question, each one correct only for its own Stage,
  *   and getting one wrong is silent: the pipeline stalls or re-runs an
- *   expensive earlier Stage. It stays spelled out at each call site, where a
- *   reader of that handler can see it, rather than being passed as a
- *   parameter to something shared.
+ *   expensive earlier Stage. Each Stage names its consumed status at its own
+ *   call site, where a reader of that handler can see it; only the
+ *   retry-or-`failed` choice between that status and `failed` is shared
+ *   (`attemptFailed`), since it is the same `willRetry` that also decides
+ *   whether a reason is recorded, and two readings of it could disagree.
  * - **Each Stage's `UPDATE`**, which writes that Stage's own output columns
  *   and stamps its own completion timestamp (`converted_at`,
  *   `summarized_at`, `embedded_at`). Sharing it would mean passing SQL
@@ -148,10 +150,12 @@ export class IngestionFailure extends Error {
 }
 
 /**
- * What a Stage writes when an attempt throws: the full error for operators,
- * and the failure reason for users.
+ * What a Stage writes when an attempt throws: the status to move the Version
+ * to, the full error for operators, and the failure reason for users.
  */
 export interface AttemptFailure {
+  /** The Stage's consumed status while a retry is pending, `failed` once none is. */
+  status: DocumentStatus;
   error: string;
   /** Null while a retry is pending: only the final transition to `failed` carries a reason. */
   failure: DocumentFailure | null;
@@ -159,20 +163,27 @@ export interface AttemptFailure {
 
 /**
  * Turns what a Stage caught into what it records, given whether pg_boss will
- * retry and the status the Stage was working in.
+ * retry, the Stage's consumed status (where a retry has to find the Version)
+ * and the step it was working in.
  *
  * The one place a thrown error becomes a failure reason, shared by all three
  * Stages so a new classification is a new `IngestionFailure` at its source and
- * nothing here. Each Stage writes the result in its own `UPDATE`, setting the
- * reason columns on every transition, so moving to any status but `failed`
- * clears them (migration 0012 refuses a reason on any other status).
+ * nothing here. It also picks the status, from the same `willRetry`, so the
+ * status and the reason cannot disagree — a reason on a Version that is not
+ * `failed` is exactly what migration 0012 refuses. Each Stage writes the
+ * result in its own `UPDATE`, setting the reason columns on every transition,
+ * so moving to any status but `failed` clears them.
  */
 export function attemptFailed(
   err: unknown,
-  { willRetry, failedAt }: { willRetry: boolean; failedAt: FailedAt },
+  {
+    willRetry,
+    retryStatus,
+    failedAt,
+  }: { willRetry: boolean; retryStatus: DocumentStatus; failedAt: FailedAt },
 ): AttemptFailure {
   const error = err instanceof Error ? err.message : String(err);
-  if (willRetry) return { error, failure: null };
+  if (willRetry) return { status: retryStatus, error, failure: null };
   const reason = err instanceof IngestionFailure ? err.reason : 'unexpected';
-  return { error, failure: { reason, failedAt } };
+  return { status: 'failed', error, failure: { reason, failedAt } };
 }
