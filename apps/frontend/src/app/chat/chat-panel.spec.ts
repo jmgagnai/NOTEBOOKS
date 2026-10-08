@@ -292,7 +292,7 @@ describe('Chat panel (ThreadNavigator + ThreadView)', () => {
     });
 
     fireEvent.click(await screen.findByRole('button', { name: 'Open Revenue questions' }));
-    await screen.findByText('No messages yet.');
+    await screen.findByText('Ask anything about the Documents in this Notebook');
 
     fireEvent.input(screen.getByLabelText('Ask a question'), {
       target: { value: 'What was revenue in Q3?' },
@@ -561,7 +561,7 @@ describe('Chat panel (ThreadNavigator + ThreadView)', () => {
       });
 
       fireEvent.click(await screen.findByRole('button', { name: 'Open Revenue questions' }));
-      await screen.findByText('No messages yet.');
+      await screen.findByText('Ask anything about the Documents in this Notebook');
       fireEvent.input(screen.getByLabelText('Ask a question'), {
         target: { value: 'What was revenue in Q3?' },
       });
@@ -664,7 +664,7 @@ describe('Chat panel (ThreadNavigator + ThreadView)', () => {
         listChatMessages: listChatMessages as never,
       });
       fireEvent.click(await screen.findByRole('button', { name: 'Open Revenue questions' }));
-      await screen.findByText('No messages yet.');
+      await screen.findByText('Ask anything about the Documents in this Notebook');
 
       // The first chunk this client sees is the third one of the answer.
       appEvents.events.next(chunk(2, 'and the trend is upward.'));
@@ -830,7 +830,7 @@ describe('Chat panel (ThreadNavigator + ThreadView)', () => {
       await screen.findByRole('heading', { name: 'Supply chain' });
       fireEvent.click(row('Supply chain'));
 
-      await screen.findByText('No messages yet.');
+      await screen.findByText('Ask anything about the Documents in this Notebook');
       expect(listChatMessages).toHaveBeenCalledTimes(1);
     });
   });
@@ -949,6 +949,116 @@ describe('Chat panel (ThreadNavigator + ThreadView)', () => {
 
       await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
       expect(questionBox().value).toBe(ASK);
+    });
+  });
+
+  // NBK-54 (spec 04 "Empty state", stories 20–21): with nothing to read, the
+  // Thread card offers three static starter prompts instead of a blank pane;
+  // activating one asks it, starting a Chat Thread first when none is open.
+  describe('NBK-54: empty state', () => {
+    const SUMMARIZE = 'Summarize the Documents in this Notebook';
+    const PROMPTS = [
+      SUMMARIZE,
+      'What are the key points across these Documents?',
+      'What questions do these Documents answer?',
+    ];
+    const INVITATION = 'Ask anything about the Documents in this Notebook';
+
+    const prompt = (name: string) => screen.getByRole('button', { name }) as HTMLButtonElement;
+
+    it('offers the three starter prompts when no Thread is open', async () => {
+      await renderPanel({ listChatThreads: vi.fn().mockResolvedValue([]) as never });
+
+      expect(await screen.findByText(INVITATION)).toBeTruthy();
+      for (const name of PROMPTS) {
+        // Keyboard operable: native, enabled buttons in the tab order, so
+        // Tab reaches each one and Enter or Space activates it.
+        expect(prompt(name).tagName).toBe('BUTTON');
+        expect(prompt(name).disabled).toBe(false);
+        expect(prompt(name).tabIndex).toBe(0);
+      }
+      expect(screen.queryByText('Open a Chat Thread, or start one, to ask a question.')).toBeNull();
+    });
+
+    it('gives way to the conversation once the open Thread has messages', async () => {
+      await renderPanel({
+        listChatThreads: vi.fn().mockResolvedValue([thread()]) as never,
+        listChatMessages: vi.fn().mockResolvedValue([message()]) as never,
+      });
+
+      expect(await screen.findByText('What was revenue in Q3?')).toBeTruthy();
+      expect(screen.queryByText(INVITATION)).toBeNull();
+      expect(screen.queryByRole('button', { name: SUMMARIZE })).toBeNull();
+    });
+
+    it('starts a Chat Thread when none is open and asks the prompt in it', async () => {
+      const createChatThread = vi.fn().mockResolvedValue(thread({ title: 'New Chat Thread' }));
+      const sendChatMessage = vi.fn().mockResolvedValue({
+        question: message({ id: 'q1', role: 'user', content: SUMMARIZE }),
+        answer: message({ id: 'a1', role: 'assistant', content: 'The Documents cover FY26.' }),
+      });
+      await renderPanel({
+        listChatThreads: vi.fn().mockResolvedValue([]) as never,
+        createChatThread: createChatThread as never,
+        sendChatMessage: sendChatMessage as never,
+      });
+
+      await screen.findByText(INVITATION);
+      fireEvent.click(prompt(SUMMARIZE));
+
+      expect(await screen.findByText('The Documents cover FY26.')).toBeTruthy();
+      expect(createChatThread).toHaveBeenCalledWith({
+        notebookId: NOTEBOOK_ID,
+        body: { title: 'New Chat Thread' },
+      });
+      expect(sendChatMessage).toHaveBeenCalledWith({
+        notebookId: NOTEBOOK_ID,
+        threadId: 'thread-1',
+        body: { content: SUMMARIZE },
+      });
+      expect(screen.getByRole('heading', { name: 'New Chat Thread' })).toBeTruthy();
+      expect(screen.queryByText(INVITATION)).toBeNull();
+    });
+
+    // Story 21 with a Thread already open: no second Thread, and the
+    // composer's answering state covers the prompts too.
+    it('asks the prompt in the open empty Thread, closing the prompts while answering', async () => {
+      let settle!: (exchange: unknown) => void;
+      const sendChatMessage = vi.fn().mockReturnValue(
+        new Promise((resolve) => {
+          settle = resolve;
+        }),
+      );
+      const createChatThread = vi.fn();
+      await renderPanel({
+        listChatThreads: vi.fn().mockResolvedValue([thread()]) as never,
+        listChatMessages: vi.fn().mockResolvedValue([]) as never,
+        createChatThread: createChatThread as never,
+        sendChatMessage: sendChatMessage as never,
+      });
+
+      await screen.findByRole('heading', { name: 'Revenue questions' });
+      await screen.findByText(INVITATION);
+      fireEvent.click(prompt(PROMPTS[1]));
+
+      expect(await screen.findByRole('status', { name: 'Answering' })).toBeTruthy();
+      expect(createChatThread).not.toHaveBeenCalled();
+      expect(sendChatMessage).toHaveBeenCalledWith({
+        notebookId: NOTEBOOK_ID,
+        threadId: 'thread-1',
+        body: { content: PROMPTS[1] },
+      });
+      for (const name of PROMPTS) expect(prompt(name).disabled).toBe(true);
+      fireEvent.click(prompt(PROMPTS[2]));
+      expect(sendChatMessage).toHaveBeenCalledTimes(1);
+
+      settle({
+        question: message({ id: 'q1', role: 'user', content: PROMPTS[1] }),
+        answer: message({ id: 'a1', role: 'assistant', content: 'Lead times fell.' }),
+      });
+
+      expect(await screen.findByText('Lead times fell.')).toBeTruthy();
+      expect(screen.queryByText(INVITATION)).toBeNull();
     });
   });
 });

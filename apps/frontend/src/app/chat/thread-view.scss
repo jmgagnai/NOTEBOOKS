@@ -29,12 +29,6 @@
     @include controls.field-row;
   }
 
-  &__empty {
-    @include controls.empty;
-    flex: 1 1 auto;
-    padding: 8px 12px;
-  }
-
   &__head {
     flex: none;
     display: flex;

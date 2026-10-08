@@ -1,4 +1,12 @@
-import { Component, computed, inject, input, linkedSignal, untracked } from '@angular/core';
+import {
+  Component,
+  computed,
+  inject,
+  input,
+  linkedSignal,
+  untracked,
+  viewChild,
+} from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
@@ -7,6 +15,8 @@ import { Citation, ChatMessage, ChatStore, ChatThread } from './chat.store';
 import { Avatar } from '../shared/avatar';
 import { SparkleAvatar } from '../shared/sparkle-avatar';
 import { Composer } from './composer';
+import { ThreadEmptyState } from './thread-empty-state';
+import { NEW_THREAD_TITLE } from './thread-navigator';
 
 /** One rendered block of a streamed answer: a chunk, split on its markers. */
 interface AnswerBlock {
@@ -71,6 +81,7 @@ const MARKER = /\[(\d{1,3})\]/g;
     RouterLink,
     Avatar,
     SparkleAvatar,
+    ThreadEmptyState,
   ],
   templateUrl: './thread-view.html',
   styleUrl: './thread-view.scss',
@@ -79,6 +90,8 @@ export class ThreadView {
   readonly notebookId = input.required<string>();
 
   protected readonly store = inject(ChatStore);
+
+  private readonly composer = viewChild.required(Composer);
 
   protected readonly activeThread = computed<ChatThread | null>(
     () => this.store.threads().find((t) => t.id === this.store.activeThreadId()) ?? null,
@@ -209,5 +222,19 @@ export class ThreadView {
     const title = this.renameTitle().trim();
     if (!thread || !title || title === thread.title) return;
     void this.store.renameThread(this.notebookId(), thread.id, title);
+  }
+
+  /**
+   * Asks a starter prompt (NBK-54), starting a Chat Thread first when none
+   * is open — titled as the navigator's "New Chat Thread" button titles one,
+   * so a Thread is the same thing however it was started. `createThread`
+   * makes the new Thread the open one, which is what the composer asks into;
+   * if it failed, nothing is open and the store's error is already showing.
+   */
+  protected async askStarter(prompt: string): Promise<void> {
+    if (this.store.activeThreadId() === null) {
+      await this.store.createThread(this.notebookId(), NEW_THREAD_TITLE);
+    }
+    await this.composer().ask(prompt);
   }
 }

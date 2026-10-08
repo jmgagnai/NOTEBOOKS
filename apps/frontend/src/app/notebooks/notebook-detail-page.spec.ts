@@ -1757,7 +1757,7 @@ describe('NotebookDetailPage', () => {
 
       expect(within(navigator).getByRole('button', { name: 'New Chat Thread' })).toBeTruthy();
       expect(
-        within(chat).getByText('Open a Chat Thread, or start one, to ask a question.'),
+        within(chat).getByText('Ask anything about the Documents in this Notebook'),
       ).toBeTruthy();
       expect(within(documents).getByText('No Documents yet.')).toBeTruthy();
     });
