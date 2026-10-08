@@ -19,6 +19,9 @@ either, while running the backend is not:
 
 No test makes a real OpenRouter call.
 
+To see a UI change rendered — signed in, as screenshots — see
+`docs/run-for-screenshots.md`.
+
 Hit something the environment fought you on — a gated Docker image, a
 Testcontainers flake, a silent `ng build` failure? See
 `docs/environment-gotchas.md` before debugging it.
