@@ -1,7 +1,13 @@
+import { DeferBlockBehavior, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap } from '@angular/router';
 import { render } from '@testing-library/angular';
 import { DocumentDetailPage } from './document-detail-page';
+import { AuthService } from '../api/services/auth.service';
+import { ChatService } from '../api/services/chat.service';
 import { DocumentsService } from '../api/services/documents.service';
+import { NotebooksService } from '../api/services/notebooks.service';
+import { AuthStore } from '../auth/auth.store';
+import { SIGNED_IN, appEventsStub } from '../chat/chat-panel.spec-helpers';
 import { provideAppIcons } from '../shared/fluent-icons';
 
 // Shared by the Document page's area specs (CODING_STANDARDS.md, "Test
@@ -60,18 +66,38 @@ export const FULL_MARKDOWN = [
 ].join('\n');
 
 /**
- * Renders the real page and its root store, with only the generated client
- * (`DocumentsService`) stubbed: the seam every Document page spec tests at.
+ * A chat client for a Notebook with no Chat Threads: what the chat pane
+ * (spec 08, NBK-86) sees when a test is not about it.
  */
-export function renderPage(
+export function noChat(): Partial<ChatService> {
+  return { listChatThreads: vi.fn().mockResolvedValue([]) as never };
+}
+
+/**
+ * Renders the real page and its root stores, chat pane included, with only
+ * the generated clients and the App Event stream stubbed: the seam every
+ * Document page spec tests at. Signed in the way the auth guard signs the
+ * app in, so the chat pane can ask.
+ */
+export async function renderPage(
   documentsService: Partial<DocumentsService>,
   route: ReturnType<typeof activatedRoute> = activatedRoute(),
+  chatService: Partial<ChatService> = noChat(),
 ) {
-  return render(DocumentDetailPage, {
+  const appEvents = appEventsStub();
+  const rendered = await render(DocumentDetailPage, {
+    // An answer's Markdown renderer is a deferred block (NBK-52).
+    deferBlockBehavior: DeferBlockBehavior.Playthrough,
     providers: [
       provideAppIcons(),
       route,
       { provide: DocumentsService, useValue: documentsService },
+      { provide: ChatService, useValue: chatService },
+      { provide: NotebooksService, useValue: { listNotebooks: vi.fn().mockResolvedValue([]) } },
+      { provide: AuthService, useValue: { getCurrentUser: vi.fn().mockResolvedValue(SIGNED_IN) } },
+      appEvents.provider,
     ],
   });
+  await TestBed.inject(AuthStore).checkSession();
+  return { ...rendered, appEvents };
 }

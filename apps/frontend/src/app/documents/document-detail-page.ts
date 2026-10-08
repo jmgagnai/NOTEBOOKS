@@ -5,10 +5,14 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { DocumentsStore } from './documents.store';
+import { ChatStore } from '../chat/chat.store';
+import { injectLeaveChat } from '../chat/leave-chat';
+import { ThreadView } from '../chat/thread-view';
 import { StatusBadge } from '../shared/status-badge';
 import { MarkdownView } from './markdown-view';
 import { showPageTitle } from '../shared/page-title';
 import { failureSentence } from './failure-reason';
+import { isNarrowWindow } from '../shared/narrow-window';
 
 /**
  * One Document, opened (NBK-7).
@@ -57,6 +61,7 @@ import { failureSentence } from './failure-reason';
     MarkdownView,
     RouterLink,
     StatusBadge,
+    ThreadView,
   ],
   templateUrl: './document-detail-page.html',
   styleUrl: './document-detail-page.scss',
@@ -66,7 +71,24 @@ export class DocumentDetailPage implements OnInit, OnDestroy {
 
   protected readonly store = inject(DocumentsStore);
 
+  private readonly chatStore = inject(ChatStore);
+
+  /**
+   * Whether the chat pane is showing (spec 08). Component state, like the
+   * Documents pane's hidden state: a reload shows it again — unless the
+   * window is narrow, where the page is for reading first and the pane is a
+   * click away. Hiding drops the pane's view only; the open Chat Thread is
+   * the Chat store's, so it is still open when the pane comes back.
+   */
+  protected readonly chatShown = signal(!isNarrowWindow());
+
+  protected readonly chatToggleLabel = computed(() =>
+    this.chatShown() ? 'Hide chat' : 'Show chat',
+  );
+
   protected readonly notebookId = this.route.snapshot.paramMap.get('notebookId')!;
+
+  private readonly leaveChat = injectLeaveChat(this.notebookId);
   protected readonly documentId = this.route.snapshot.paramMap.get('documentId')!;
 
   // NBK-61: the tab names the open Document, so several are distinguishable.
@@ -182,6 +204,11 @@ export class DocumentDetailPage implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     void this.load();
+    // The chat pane (spec 08): the Notebook's Chat Threads and the live
+    // stream their answers arrive on, as the Notebook page loads them —
+    // `loadThreads` opens the newest when none is open (NBK-43).
+    void this.chatStore.loadThreads(this.notebookId);
+    this.chatStore.watchNotebook(this.notebookId);
   }
 
   private async load(): Promise<void> {
@@ -207,6 +234,11 @@ export class DocumentDetailPage implements OnInit, OnDestroy {
     // Document — and especially its up-to-200-page content — has to be
     // dropped explicitly rather than held until the next one replaces it.
     this.store.clearOpenDocument();
+    this.leaveChat();
+  }
+
+  protected toggleChat(): void {
+    this.chatShown.update((shown) => !shown);
   }
 
   protected toggleFullContent(): void {

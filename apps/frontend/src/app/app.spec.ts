@@ -243,6 +243,18 @@ describe('App', () => {
       expect(open.getAttribute('aria-current')).toBe('true');
     });
 
+    // Spec 08 (NBK-86): the Document page splits its width between the
+    // chat pane and the Document, so the sidebar gives up its own.
+    it('starts as the rail on the Document page, and expands from there', async () => {
+      await renderSignedIn('ada@example.com', {
+        url: `/notebooks/${NOTEBOOK_ID}/documents/22222222-2222-2222-2222-222222222222`,
+      });
+
+      expect(collapseToggle().getAttribute('aria-expanded')).toBe('false');
+      fireEvent.click(collapseToggle());
+      expect(collapseToggle().getAttribute('aria-expanded')).toBe('true');
+    });
+
     describe('on a narrow window', () => {
       let width: number;
       beforeEach(() => {

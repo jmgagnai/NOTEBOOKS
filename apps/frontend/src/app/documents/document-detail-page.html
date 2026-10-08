@@ -1,57 +1,80 @@
 <div class="document-detail-page">
   <!--
+    The chat pane (spec 08): the Notebook page's own Thread view, beside the
+    Document, so a reader can ask about what they are reading without
+    leaving it. Questions are asked against the whole Notebook.
+  -->
+  @if (chatShown()) {
+    <section class="document-detail-page__chat" aria-label="Chat">
+      <app-thread-view [notebookId]="notebookId" [compact]="true" />
+    </section>
+  }
+
+  <div class="document-detail-page__document">
+    <!--
     The Document pane's header row (spec 08, after Copilot's page view): the
     file it holds, kept in sight once the headline has scrolled away, and ✕
     back to the Notebook in place of the old "← Back to the Notebook" link.
   -->
-  <div class="document-detail-page__header" data-testid="document-pane-header">
-    <span class="document-detail-page__header-filename">{{ store.openDocument()?.filename }}</span>
-    <a
-      mat-icon-button
-      class="document-detail-page__close"
-      [routerLink]="['/notebooks', notebookId]"
-      aria-label="Back to the Notebook"
-      matTooltip="Back to the Notebook"
-    >
-      <mat-icon svgIcon="dismiss" />
-    </a>
-  </div>
+    <div class="document-detail-page__header" data-testid="document-pane-header">
+      <button
+        mat-icon-button
+        type="button"
+        [attr.aria-label]="chatToggleLabel()"
+        [matTooltip]="chatToggleLabel()"
+        (click)="toggleChat()"
+      >
+        <mat-icon [svgIcon]="chatShown() ? 'panel-left-contract' : 'panel-left-expand'" />
+      </button>
+      <span class="document-detail-page__header-filename">{{
+        store.openDocument()?.filename
+      }}</span>
+      <a
+        mat-icon-button
+        class="document-detail-page__close"
+        [routerLink]="['/notebooks', notebookId]"
+        aria-label="Back to the Notebook"
+        matTooltip="Back to the Notebook"
+      >
+        <mat-icon svgIcon="dismiss" />
+      </a>
+    </div>
 
-  <article class="document-detail-page__article">
-    @if (store.openDocumentLoading()) {
-      <mat-progress-spinner mode="indeterminate" diameter="32" />
-    } @else if (store.error(); as error) {
-      <p class="document-detail-page__error">{{ error }}</p>
-    } @else if (store.openDocument(); as document) {
-      @if (extractedTitle(); as title) {
-        <h1 class="document-detail-page__title">{{ title }}</h1>
-        <p class="document-detail-page__filename" data-testid="document-filename">
-          {{ document.filename }}
-        </p>
-      } @else {
-        <h1 class="document-detail-page__title">{{ document.filename }}</h1>
-      }
-      <!--
+    <article class="document-detail-page__article">
+      @if (store.openDocumentLoading()) {
+        <mat-progress-spinner mode="indeterminate" diameter="32" />
+      } @else if (store.error(); as error) {
+        <p class="document-detail-page__error">{{ error }}</p>
+      } @else if (store.openDocument(); as document) {
+        @if (extractedTitle(); as title) {
+          <h1 class="document-detail-page__title">{{ title }}</h1>
+          <p class="document-detail-page__filename" data-testid="document-filename">
+            {{ document.filename }}
+          </p>
+        } @else {
+          <h1 class="document-detail-page__title">{{ document.filename }}</h1>
+        }
+        <!--
         The byline (spec 08) closes on the version number and status of the
         Version this page is about — which is the pinned one when a Citation
         was followed, not the Document's latest. Everything below describes
         the same Version, so a reader never has to work out which half of the
         page they are reading.
       -->
-      <p class="document-detail-page__byline" data-testid="byline">
-        <span>{{ byline() }}</span>
-        <app-status-badge [status]="document.status" />
-      </p>
-      @if (failureSentence(); as sentence) {
-        <!--
+        <p class="document-detail-page__byline" data-testid="byline">
+          <span>{{ byline() }}</span>
+          <app-status-badge [status]="document.status" />
+        </p>
+        @if (failureSentence(); as sentence) {
+          <!--
           NBK-68: the reason's sentence from the closed set (ADR-0009), never
           the raw error — it says what went wrong and what to do next.
         -->
-        <p class="document-detail-page__failure" data-testid="failure-reason">{{ sentence }}</p>
-      }
+          <p class="document-detail-page__failure" data-testid="failure-reason">{{ sentence }}</p>
+        }
 
-      @if (viewingSupersededVersion()) {
-        <!--
+        @if (viewingSupersededVersion()) {
+          <!--
           Arrived from a Citation pointing at an older Version. Per
           GLOSSARY.md that is exactly what a Citation is for — "even after
           newer Versions exist" — so this places the reader in the Document's
@@ -59,79 +82,80 @@
           and below is coherently this Version, and both numbers are named so
           "how far behind am I" is answerable without leaving the page.
         -->
-        <p class="document-detail-page__cited-notice" data-testid="cited-version-notice">
-          You are reading v{{ document.version.versionNumber }} of this Document, the Version the
-          Citation you followed was grounded in. It is no longer the latest — v{{
-            document.latestVersionNumber
-          }}
-          is.
-        </p>
-      }
+          <p class="document-detail-page__cited-notice" data-testid="cited-version-notice">
+            You are reading v{{ document.version.versionNumber }} of this Document, the Version the
+            Citation you followed was grounded in. It is no longer the latest — v{{
+              document.latestVersionNumber
+            }}
+            is.
+          </p>
+        }
 
-      @if (details().length > 0) {
-        <details class="document-detail-page__details">
-          <summary>Details</summary>
-          <dl>
-            @for (entry of details(); track entry.label) {
-              <dt>{{ entry.label }}</dt>
-              <dd>{{ entry.value }}</dd>
-            }
-          </dl>
-        </details>
-      }
+        @if (details().length > 0) {
+          <details class="document-detail-page__details">
+            <summary>Details</summary>
+            <dl>
+              @for (entry of details(); track entry.label) {
+                <dt>{{ entry.label }}</dt>
+                <dd>{{ entry.value }}</dd>
+              }
+            </dl>
+          </details>
+        }
 
-      <!--
+        <!--
         The Executive Summary comes first, per GLOSSARY.md — it is the 1-2
         page artifact "shown first when a user opens a document".
       -->
-      <section class="document-detail-page__summary">
-        <h2>Executive Summary</h2>
-        @if (document.executiveSummary) {
-          <app-markdown-view [markdown]="document.executiveSummary" />
-        } @else {
-          <p class="document-detail-page__pending">
-            The Executive Summary is still being generated for this Document.
-          </p>
-        }
-      </section>
+        <section class="document-detail-page__summary">
+          <h2>Executive Summary</h2>
+          @if (document.executiveSummary) {
+            <app-markdown-view [markdown]="document.executiveSummary" />
+          } @else {
+            <p class="document-detail-page__pending">
+              The Executive Summary is still being generated for this Document.
+            </p>
+          }
+        </section>
 
-      <!--
+        <!--
         Expanding to the full Converted Markdown is a deliberate action: that
         content may run past 200 pages, so it is neither fetched nor rendered
         until it is asked for.
       -->
-      <section class="document-detail-page__content">
-        <!--
+        <section class="document-detail-page__content">
+          <!--
           The Subtle variant rather than a Material text button (spec 08):
           going on to the full Document should read as reading on.
         -->
-        <button type="button" class="app-button" (click)="toggleFullContent()">
-          {{ expanded() ? 'Hide the full Document' : 'Read the full Document' }}
-        </button>
+          <button type="button" class="app-button" (click)="toggleFullContent()">
+            {{ expanded() ? 'Hide the full Document' : 'Read the full Document' }}
+          </button>
 
-        @if (expanded()) {
-          @if (store.openContentLoading()) {
-            <mat-progress-spinner mode="indeterminate" diameter="32" />
-          } @else if (store.openContent()?.markdown; as markdown) {
-            <!--
+          @if (expanded()) {
+            @if (store.openContentLoading()) {
+              <mat-progress-spinner mode="indeterminate" diameter="32" />
+            } @else if (store.openContent()?.markdown; as markdown) {
+              <!--
               `highlightFrom`/`highlightTo` are the cited chunk's character
               range, which the view resolves to the block it falls in and
               scrolls to — "scrolled to that chunk's location" (NBK-12). Null
               when the page was not opened from a Citation, which renders the
               document exactly as before.
             -->
-            <app-markdown-view
-              [markdown]="markdown"
-              [highlightFrom]="citedFrom"
-              [highlightTo]="citedTo"
-            />
-          } @else {
-            <p class="document-detail-page__pending">
-              This Document has not been converted to Markdown yet.
-            </p>
+              <app-markdown-view
+                [markdown]="markdown"
+                [highlightFrom]="citedFrom"
+                [highlightTo]="citedTo"
+              />
+            } @else {
+              <p class="document-detail-page__pending">
+                This Document has not been converted to Markdown yet.
+              </p>
+            }
           }
-        }
-      </section>
-    }
-  </article>
+        </section>
+      }
+    </article>
+  </div>
 </div>

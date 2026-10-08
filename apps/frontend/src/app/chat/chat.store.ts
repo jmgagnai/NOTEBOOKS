@@ -564,6 +564,13 @@ export const ChatStore = signalStore(
         });
       },
 
+      /**
+       * Closes the live stream but keeps the open Chat Thread: for a page
+       * handing the Notebook over to another of its pages (spec 08), which
+       * watches again on arrival.
+       */
+      stopWatching,
+
       /** Drops the open Chat Thread, so navigating away doesn't leak it. */
       reset(): void {
         stopWatching();

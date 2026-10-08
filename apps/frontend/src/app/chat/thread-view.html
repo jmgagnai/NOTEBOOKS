@@ -1,16 +1,18 @@
-<div class="thread-view" [class.thread-view--landing]="!activeThread()">
+<div class="thread-view" [class.thread-view--landing]="!activeThread() && !compact()">
   @if (activeThread(); as thread) {
     <div class="thread-view__head">
       <!--
         Spec 07 story 37 (NBK-81): back to the Notebook landing. It closes
-        the Thread on this client only; the Thread stays in the list.
+        the Thread on this client only; the Thread stays in the list. In the
+        Document page's chat pane (spec 08) there is no landing to go back
+        to, so it says what it does there: close the Thread.
       -->
       <button
         mat-icon-button
         type="button"
         class="thread-view__back"
-        aria-label="Back to Notebook"
-        matTooltip="Back to Notebook"
+        [attr.aria-label]="backLabel()"
+        [matTooltip]="backLabel()"
         (click)="store.closeThread()"
       >
         <mat-icon svgIcon="arrow-left" />
@@ -155,7 +157,7 @@
         }
       </ol>
     }
-  } @else {
+  } @else if (!compact()) {
     <!--
       The Notebook landing (NBK-81, spec 07 stories 31–32, 36): nothing but
       the Notebook and the question box under it, from which a question
