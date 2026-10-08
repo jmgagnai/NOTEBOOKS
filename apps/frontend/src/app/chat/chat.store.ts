@@ -393,6 +393,33 @@ export const ChatStore = signalStore(
       openThread,
 
       /**
+       * Deletes a Chat Thread (NBK-95) — its author's call alone, which the
+       * server enforces; the navigator only offers it to the author. Gone
+       * from the list once the server agrees, and closed if it was the open
+       * one, as the back arrow closes a Thread. There is no Undo (an
+       * Administrator can restore it through the API). A refusal leaves the
+       * Thread where it was and says why in the error row.
+       */
+      async deleteThread(notebookId: string, threadId: string): Promise<void> {
+        patchState(store, { error: null });
+        try {
+          await chatService.deleteChatThread({ notebookId, threadId });
+        } catch (err) {
+          patchState(store, { error: errorMessage(err, 'Failed to delete the Chat Thread.') });
+          return;
+        }
+        patchState(store, { threads: store.threads().filter((t) => t.id !== threadId) });
+        if (store.activeThreadId() === threadId) {
+          patchState(store, {
+            activeThreadId: null,
+            messages: [],
+            messagesLoading: false,
+            streamingAnswer: null,
+          });
+        }
+      },
+
+      /**
        * Closes the open Chat Thread (NBK-81, spec 07 "Middle pane"): the
        * Thread view's back arrow returns to the Notebook landing. Only the
        * client lets go — the Thread stays in the list and nothing is sent to
