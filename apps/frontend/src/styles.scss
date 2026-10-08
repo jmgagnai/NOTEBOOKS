@@ -163,6 +163,15 @@ html {
   --app-text-disabled: #bdbdbd;
   --app-title-bar-height: 48px;
   --app-control-height: 32px;
+  // The Copilot sparkle gradient. Spec 01 allows it in exactly one place —
+  // the assistant's avatar in chat (NBK-44) — so it is a token here rather
+  // than a colour a second component could quietly copy.
+  --app-copilot-gradient: linear-gradient(135deg, #0f6cbd 0%, #7a5af8 60%, #e3008c 100%);
+  // The open row of a navigator (spec 04 "Navigator", NBK-43): one step
+  // deeper than the accent tint, because a 2 px brand outline sits on it
+  // and `primary-container` beside that outline reads as unfilled.
+  --app-selected-fill: #d6e8f9;
+  --app-selected-fill-hover: #c7def6;
 }
 
 html,

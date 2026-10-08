@@ -6,6 +6,7 @@ import { ThreadNavigator } from './thread-navigator';
 import { ThreadView } from './thread-view';
 import { ChatService } from '../api/services/chat.service';
 import { AppEvent, AppEventsService } from '../events/app-events.service';
+import { provideAppIcons } from '../shared/fluent-icons';
 
 const NOTEBOOK_ID = '11111111-1111-1111-1111-111111111111';
 const DOCUMENT_ID = '22222222-2222-2222-2222-222222222222';
@@ -59,6 +60,22 @@ function citation(overrides: Partial<Record<string, unknown>> = {}) {
     charEnd: 167,
     ...overrides,
   };
+}
+
+/** The initials avatar beside the message whose author line is the n-th one. */
+function avatarOf(messageIndex: number): HTMLElement {
+  const row = screen.getAllByTestId('chat-message-author')[messageIndex].closest('li')!;
+  return within(row).getByTestId('chat-user-avatar');
+}
+
+/**
+ * What a tooltip says, read the way assistive technology reads it: Material
+ * registers the message as the element's `aria-describedby` target, so the
+ * text is reachable without simulating a hover and waiting out its delay.
+ */
+async function tooltipOf(element: HTMLElement): Promise<string | undefined> {
+  await waitFor(() => expect(element.getAttribute('aria-describedby')).toBeTruthy());
+  return document.getElementById(element.getAttribute('aria-describedby')!)?.textContent?.trim();
 }
 
 /**
@@ -129,6 +146,7 @@ describe('Chat panel (ThreadNavigator + ThreadView)', () => {
       // client, never Angular's own services).
       providers: [
         provideRouter([]),
+        provideAppIcons(),
         { provide: ChatService, useValue: chatService },
         appEvents.provider,
       ],
@@ -145,34 +163,45 @@ describe('Chat panel (ThreadNavigator + ThreadView)', () => {
   // Per GLOSSARY.md a Thread is "visible to every user who opens the
   // Notebook" — so the list must show other people's Threads, and say whose
   // they are.
-  it('lists every Thread with its author, whoever started it', async () => {
+  it('lists every Thread with its author and start date, whoever started it', async () => {
     const listChatThreads = vi.fn().mockResolvedValue([
       thread({
         id: 'thread-1',
         title: 'Alice asks about revenue',
         author: participant('alice@example.com'),
+        createdAt: '2026-03-15T12:00:00.000Z',
       }),
       thread({
         id: 'thread-2',
         title: 'Bob asks about risk',
         author: participant('bob@example.com'),
+        createdAt: '2026-02-03T12:00:00.000Z',
       }),
     ]);
 
-    await renderPanel({ listChatThreads: listChatThreads as never });
+    await renderPanel({
+      listChatThreads: listChatThreads as never,
+      listChatMessages: vi.fn().mockResolvedValue([]) as never,
+    });
 
-    expect(await screen.findByText('Alice asks about revenue')).toBeTruthy();
-    expect(screen.getByText('Bob asks about risk')).toBeTruthy();
+    const alice = await screen.findByRole('button', { name: 'Open Alice asks about revenue' });
+    const bob = screen.getByRole('button', { name: 'Open Bob asks about risk' });
+    expect(within(alice).getByText('Alice asks about revenue')).toBeTruthy();
+    expect(within(bob).getByText('Bob asks about risk')).toBeTruthy();
     // Attribution, so a reader picking up someone else's line of questioning
-    // knows whose it was.
-    expect(screen.getByText('Started by alice@example.com')).toBeTruthy();
-    expect(screen.getByText('Started by bob@example.com')).toBeTruthy();
+    // knows whose it was — and when (spec 04 "Navigator": e-mail and a short
+    // start date under the title).
+    expect(within(alice).getByText('alice@example.com · Mar 15')).toBeTruthy();
+    expect(within(bob).getByText('bob@example.com · Feb 3')).toBeTruthy();
     expect(listChatThreads).toHaveBeenCalledWith({ notebookId: NOTEBOOK_ID });
   });
 
-  it('starts a new Chat Thread and adds it to the list', async () => {
+  // NBK-43: starting a Thread is one click on the navigator's "New Chat
+  // Thread" button; the title is the fixed placeholder "New Chat Thread"
+  // (the create request requires a non-empty title) and renaming comes after.
+  it('starts a new Chat Thread from the header button and opens it', async () => {
     const listChatThreads = vi.fn().mockResolvedValue([]);
-    const createChatThread = vi.fn().mockResolvedValue(thread({ title: 'Supply chain' }));
+    const createChatThread = vi.fn().mockResolvedValue(thread({ title: 'New Chat Thread' }));
     const listChatMessages = vi.fn().mockResolvedValue([]);
 
     await renderPanel({
@@ -182,20 +211,19 @@ describe('Chat panel (ThreadNavigator + ThreadView)', () => {
     });
 
     await screen.findByText('No Chat Threads yet.');
+    expect(screen.queryByLabelText('New Chat Thread title')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Start Chat Thread' })).toBeNull();
 
-    fireEvent.input(screen.getByLabelText('New Chat Thread title'), {
-      target: { value: 'Supply chain' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Start Chat Thread' }));
+    fireEvent.click(screen.getByRole('button', { name: 'New Chat Thread' }));
 
     expect(createChatThread).toHaveBeenCalledWith({
       notebookId: NOTEBOOK_ID,
-      body: { title: 'Supply chain' },
+      body: { title: 'New Chat Thread' },
     });
     // It joins the list, and opens — the point of starting one is to ask in
     // it. (The title shows in both places, hence the role-scoped queries.)
-    expect(await screen.findByRole('button', { name: 'Open Supply chain' })).toBeTruthy();
-    expect(screen.getByRole('heading', { name: 'Supply chain' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Open New Chat Thread' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'New Chat Thread' })).toBeTruthy();
   });
 
   // NBK-10: "shows the conversation with per-message author attribution"
@@ -240,13 +268,13 @@ describe('Chat panel (ThreadNavigator + ThreadView)', () => {
     });
 
     // A shared Thread several people contributed to has to say who asked
-    // what — that is the whole point of recording it (ADR-0001).
+    // what — that is the whole point of recording it (ADR-0001). Spec 04
+    // (NBK-44) shows the e-mail's local part on the line and keeps the full
+    // e-mail on the avatar, so attribution stays exact without repeating
+    // "@example.com" on every message.
     const askers = screen.getAllByTestId('chat-message-author').map((el) => el.textContent?.trim());
-    expect(askers).toEqual([
-      'alice@example.com',
-      'Assistant, for alice@example.com',
-      'bob@example.com',
-    ]);
+    expect(askers).toEqual(['alice', 'Assistant', 'bob']);
+    expect(await tooltipOf(avatarOf(askers.indexOf('bob')))).toBe('bob@example.com');
   });
 
   it('sends a question and appends both it and the answer to the Chat Thread', async () => {
@@ -658,6 +686,152 @@ describe('Chat panel (ThreadNavigator + ThreadView)', () => {
       await waitFor(() => {
         expect(screen.queryByText('An answer in some other Thread.')).toBeNull();
       });
+    });
+  });
+
+  // Spec 04 "Message rendering": questions read as speech, answers as the
+  // page's prose. The tests check the parts a reader relies on to tell the
+  // two apart and to know who asked — never the colours or alignment.
+  describe('NBK-44: message rendering', () => {
+    async function openExchange() {
+      await renderPanel({
+        listChatThreads: vi.fn().mockResolvedValue([thread()]) as never,
+        listChatMessages: vi.fn().mockResolvedValue([
+          message({
+            id: 'q1',
+            role: 'user',
+            content: 'What was revenue in Q3?',
+            askedBy: participant('jane.doe@example.com'),
+          }),
+          message({
+            id: 'a1',
+            role: 'assistant',
+            content: 'Revenue in Q3 was 12.4M.',
+            askedBy: participant('jane.doe@example.com'),
+          }),
+        ]) as never,
+      });
+      fireEvent.click(await screen.findByRole('button', { name: 'Open Revenue questions' }));
+      await screen.findByText('Revenue in Q3 was 12.4M.');
+    }
+
+    function rowOf(text: string): HTMLElement {
+      return screen.getByText(text).closest('li')!;
+    }
+
+    it("shows a question beside the asker's initials avatar and an answer beside the sparkle avatar", async () => {
+      await openExchange();
+
+      const question = rowOf('What was revenue in Q3?');
+      expect(within(question).getByTestId('chat-user-avatar').textContent?.trim()).toBe('JD');
+      expect(within(question).queryByTestId('chat-assistant-avatar')).toBeNull();
+
+      const answer = rowOf('Revenue in Q3 was 12.4M.');
+      expect(within(answer).getByTestId('chat-assistant-avatar')).toBeTruthy();
+      expect(within(answer).queryByTestId('chat-user-avatar')).toBeNull();
+      expect(within(answer).getByTestId('chat-message-author').textContent?.trim()).toBe(
+        'Assistant',
+      );
+    });
+
+    // The e-mail is still there for whoever needs it exactly — on the avatar
+    // — but a shared Thread must not read as a column of addresses.
+    it('keeps the full e-mail off every message line, in the avatar tooltip only', async () => {
+      await openExchange();
+
+      const list = rowOf('What was revenue in Q3?').parentElement!;
+      expect(within(list).queryByText(/@example\.com/)).toBeNull();
+      expect(await tooltipOf(avatarOf(0))).toBe('jane.doe@example.com');
+    });
+  });
+
+  // NBK-43 (spec 04 "Navigator", "Default Thread"): the Chat Threads
+  // navigator is a list read at a glance — the open Thread is marked, and a
+  // Notebook that has Threads lands the user in the most recent one.
+  describe('NBK-43: navigator', () => {
+    /** The navigator row that opens the Thread with this title. */
+    function row(title: string) {
+      return screen.getByRole('button', { name: `Open ${title}` });
+    }
+
+    const OLDER = thread({
+      id: 'thread-1',
+      title: 'Revenue questions',
+      createdAt: '2026-01-01T12:00:00.000Z',
+    });
+    const NEWER = thread({
+      id: 'thread-2',
+      title: 'Supply chain',
+      author: participant('bob@example.com'),
+      createdAt: '2026-03-15T12:00:00.000Z',
+    });
+
+    // User story 22: "opening a Notebook that has Chat Threads, I want the
+    // most recently started one opened by default, so that I land in
+    // context." Listed older-first here to prove it is the start date that
+    // decides, not the list position.
+    it('opens the most recently created Thread by default', async () => {
+      const listChatMessages = vi.fn().mockResolvedValue([]);
+      await renderPanel({
+        listChatThreads: vi.fn().mockResolvedValue([OLDER, NEWER]) as never,
+        listChatMessages: listChatMessages as never,
+      });
+
+      expect(await screen.findByRole('heading', { name: 'Supply chain' })).toBeTruthy();
+      expect(listChatMessages).toHaveBeenCalledWith({
+        notebookId: NOTEBOOK_ID,
+        threadId: 'thread-2',
+      });
+      expect(listChatMessages).toHaveBeenCalledTimes(1);
+    });
+
+    it('opens no Thread when the Notebook has none', async () => {
+      const listChatMessages = vi.fn().mockResolvedValue([]);
+      await renderPanel({
+        listChatThreads: vi.fn().mockResolvedValue([]) as never,
+        listChatMessages: listChatMessages as never,
+      });
+
+      await screen.findByText('No Chat Threads yet.');
+      expect(listChatMessages).not.toHaveBeenCalled();
+      expect(screen.queryByRole('button', { name: /^Open / })).toBeNull();
+    });
+
+    // User story 17: the open Thread is marked unmistakably. The mark the
+    // tests can see is the selected state; the tint, bar and bold title hang
+    // off the same class.
+    it('marks the open Thread as current, and moves the mark when another is opened', async () => {
+      await renderPanel({
+        listChatThreads: vi.fn().mockResolvedValue([OLDER, NEWER]) as never,
+        listChatMessages: vi.fn().mockResolvedValue([]) as never,
+      });
+
+      await screen.findByRole('heading', { name: 'Supply chain' });
+      expect(row('Supply chain').getAttribute('aria-current')).toBe('true');
+      expect(row('Revenue questions').getAttribute('aria-current')).toBeNull();
+
+      fireEvent.click(row('Revenue questions'));
+
+      expect(await screen.findByRole('heading', { name: 'Revenue questions' })).toBeTruthy();
+      expect(row('Revenue questions').getAttribute('aria-current')).toBe('true');
+      expect(row('Supply chain').getAttribute('aria-current')).toBeNull();
+    });
+
+    // Activating the row of the Thread already open is not a reload: the
+    // messages on screen are the Thread's, and re-fetching them would blank
+    // the list for a moment (and drop a streaming answer) for nothing.
+    it('does not re-open the Thread that is already open', async () => {
+      const listChatMessages = vi.fn().mockResolvedValue([]);
+      await renderPanel({
+        listChatThreads: vi.fn().mockResolvedValue([OLDER, NEWER]) as never,
+        listChatMessages: listChatMessages as never,
+      });
+
+      await screen.findByRole('heading', { name: 'Supply chain' });
+      fireEvent.click(row('Supply chain'));
+
+      await screen.findByText('No messages yet.');
+      expect(listChatMessages).toHaveBeenCalledTimes(1);
     });
   });
 });

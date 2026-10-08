@@ -1,8 +1,11 @@
 import { Component, computed, inject, input, linkedSignal, untracked } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { MatTooltipModule } from '@angular/material/tooltip';
 import { RouterLink } from '@angular/router';
 import { Citation, ChatMessage, ChatStore, ChatThread } from './chat.store';
+import { Avatar } from '../shared/avatar';
+import { SparkleAvatar } from '../shared/sparkle-avatar';
 
 /** One rendered block of a streamed answer: a chunk, split on its markers. */
 interface AnswerBlock {
@@ -59,7 +62,14 @@ const MARKER = /\[(\d{1,3})\]/g;
 @Component({
   selector: 'app-thread-view',
   standalone: true,
-  imports: [MatButtonModule, MatProgressSpinnerModule, RouterLink],
+  imports: [
+    MatButtonModule,
+    MatProgressSpinnerModule,
+    MatTooltipModule,
+    RouterLink,
+    Avatar,
+    SparkleAvatar,
+  ],
   templateUrl: './thread-view.html',
   styleUrl: './thread-view.scss',
 })
@@ -115,11 +125,15 @@ export class ThreadView {
     }));
   });
 
-  /** Who to credit a message to. An answer is attributed to the asker it replies to. */
+  /**
+   * The visible attribution (NBK-44): the asker's short name — the e-mail's
+   * local part — or "Assistant". The full e-mail is the avatar's tooltip
+   * instead, so a shared Thread stays attributed without "@example.com" on
+   * every line; an answer no longer names its asker, since the question it
+   * follows already does.
+   */
   protected author(message: ChatMessage): string {
-    return message.role === 'assistant'
-      ? `Assistant, for ${message.askedBy.email}`
-      : message.askedBy.email;
+    return message.role === 'assistant' ? 'Assistant' : message.askedBy.email.split('@')[0];
   }
 
   /**
