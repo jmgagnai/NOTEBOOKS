@@ -1233,6 +1233,38 @@ describe('Chat panel (ThreadNavigator + ThreadView)', () => {
       expect(screen.queryByText(INVITATION)).toBeNull();
     });
 
+    // A second click while the first create is still pending would start a
+    // second, empty Thread: both ways of starting one wait for it.
+    it('starts one Chat Thread however often its controls are clicked while it is created', async () => {
+      let created!: (thread: unknown) => void;
+      const createChatThread = vi.fn().mockReturnValue(
+        new Promise((resolve) => {
+          created = resolve;
+        }),
+      );
+      await renderPanel({
+        listChatThreads: vi.fn().mockResolvedValue([]) as never,
+        createChatThread: createChatThread as never,
+        sendChatMessage: vi.fn().mockReturnValue(new Promise(() => {})) as never,
+      });
+      await screen.findByText(INVITATION);
+      const newThread = () =>
+        screen.getByRole('button', { name: 'New Chat Thread' }) as HTMLButtonElement;
+
+      fireEvent.click(newThread());
+      await waitFor(() => expect(newThread().disabled).toBe(true));
+      for (const name of PROMPTS) expect(prompt(name).disabled).toBe(true);
+      fireEvent.click(newThread());
+      fireEvent.click(prompt(SUMMARIZE));
+      expect(createChatThread).toHaveBeenCalledTimes(1);
+
+      // Titled otherwise only so its header's rename button is not a second
+      // "New Chat Thread" button for the query above.
+      created(thread({ title: 'Q3 questions' }));
+      await waitFor(() => expect(newThread().disabled).toBe(false));
+      expect(createChatThread).toHaveBeenCalledTimes(1);
+    });
+
     // Story 21 with a Thread already open: no second Thread, and the
     // composer's answering state covers the prompts too.
     it('asks the prompt in the open empty Thread, closing the prompts while answering', async () => {

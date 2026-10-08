@@ -17,6 +17,7 @@
       class="thread-navigator__new-thread"
       aria-label="New Chat Thread"
       matTooltip="New Chat Thread"
+      [disabled]="store.creatingThread()"
       (click)="newThread()"
     >
       <mat-icon svgIcon="add" />

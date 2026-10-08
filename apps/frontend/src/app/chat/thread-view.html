@@ -23,7 +23,10 @@
     @if (store.messagesLoading()) {
       <mat-progress-spinner mode="indeterminate" diameter="32" />
     } @else if (store.messages().length === 0 && streamingBlocks().length === 0) {
-      <app-thread-empty-state [disabled]="store.sending()" (ask)="askStarter($event)" />
+      <app-thread-empty-state
+        [disabled]="store.sending() || store.creatingThread()"
+        (ask)="askStarter($event)"
+      />
     } @else {
       <ol #messageList class="thread-view__messages">
         @for (message of store.messages(); track message.id) {
@@ -140,7 +143,10 @@
     }
   } @else {
     <!-- NBK-54: with no Thread open a starter prompt starts one, so the prompts show here too. -->
-    <app-thread-empty-state [disabled]="store.sending()" (ask)="askStarter($event)" />
+    <app-thread-empty-state
+      [disabled]="store.sending() || store.creatingThread()"
+      (ask)="askStarter($event)"
+    />
   }
 
   <!-- Pinned under the messages whatever is open (NBK-45): it also carries the error row. -->

@@ -34,6 +34,8 @@ export const STARTER_PROMPTS = [
             <!--
               Closed while an answer is being written, like the composer:
               a second ask cannot go into a Thread still answering the first.
+              Also while a Thread is being started, so a second click does
+              not start a second one.
             -->
             <button
               type="button"

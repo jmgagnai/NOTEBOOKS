@@ -113,6 +113,11 @@ interface ChatState {
   messagesLoading: boolean;
   /** True while a question is in flight. The recorded exchange ends it. */
   sending: boolean;
+  /**
+   * True while a Chat Thread is being created. Every control that starts
+   * one waits on it, so a double click starts one Thread, not two.
+   */
+  creatingThread: boolean;
   /** The answer currently streaming into the open Thread, if any (NBK-11). */
   streamingAnswer: StreamingAnswer | null;
   error: string | null;
@@ -125,6 +130,7 @@ const initialState: ChatState = {
   messages: [],
   messagesLoading: false,
   sending: false,
+  creatingThread: false,
   streamingAnswer: null,
   error: null,
 };
@@ -257,7 +263,8 @@ export const ChatStore = signalStore(
       },
 
       async createThread(notebookId: string, title: string): Promise<void> {
-        patchState(store, { error: null });
+        if (store.creatingThread()) return;
+        patchState(store, { error: null, creatingThread: true });
         try {
           const thread = (await chatService.createChatThread({
             notebookId,
@@ -273,6 +280,8 @@ export const ChatStore = signalStore(
           });
         } catch (err) {
           patchState(store, { error: errorMessage(err, 'Failed to start a Chat Thread.') });
+        } finally {
+          patchState(store, { creatingThread: false });
         }
       },
 
