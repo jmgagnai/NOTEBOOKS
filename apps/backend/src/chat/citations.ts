@@ -1,4 +1,5 @@
 import type { Pool } from 'pg';
+import { locateChunkRanges } from '../documents/chunk-ranges.js';
 import type { RetrievedChunk } from './retrieval.js';
 
 /**
@@ -118,82 +119,20 @@ export function resolveCitationMarkers(
   };
 }
 
-interface ChunkTextRow {
-  id: string;
-  chunk_index: number;
-  text: string;
-}
-
 /**
- * Fills in each Citation's character range in its Document Version's
- * Converted Markdown.
- *
- * It can be done by searching at all because of GLOSSARY.md's guarantee that
- * a Chunk's text is "a verbatim, contiguous slice of the Converted Markdown
- * — never a rewritten or summarized form of it".
- *
- * The search walks a Version's chunks in `chunk_index` order with a cursor
- * that only ever moves forward, which is what makes it exact rather than
- * approximate: a document that repeats a block of text verbatim (a boilerplate
- * disclaimer under two headings, a table header repeated per page) would send
- * a naive "first occurrence of this text" search to the wrong copy, while a
- * forward scan in document order lands on the copy the chunk actually is.
- * The cursor advances by one character rather than by the chunk's length
- * because consecutive chunks overlap (150 characters, NBK-8), so chunk n+1
- * starts *before* chunk n ends.
- *
- * Only the Versions actually cited are read, and each one's Markdown only
- * once. The cost is therefore one pass over the cited Versions' content —
- * paid once, when the answer is recorded, because the result is persisted on
- * the Citation row and never recomputed on the read path.
- *
- * A chunk whose text cannot be found (a Version with no Converted Markdown,
- * or text that line-ending normalisation has moved away from the source) is
- * left with a null range: following that Citation still opens its exact
- * Version, just not scrolled.
+ * Fills in each Citation's character range in its Version's Converted
+ * Markdown (`locateChunkRanges`). A Chunk that cannot be found keeps a null
+ * range: following that Citation still opens its exact Version, just not
+ * scrolled.
  */
 export async function locateCitations(
   pool: Pool,
   citations: ResolvedCitation[],
 ): Promise<ResolvedCitation[]> {
-  const versionIds = [...new Set(citations.map((c) => c.chunk.documentVersionId))];
-  if (versionIds.length === 0) return citations;
-
-  const { rows: versionRows } = await pool.query<{ id: string; markdown: string | null }>(
-    'SELECT id, markdown FROM document_versions WHERE id = ANY($1::uuid[])',
-    [versionIds],
+  const ranges = await locateChunkRanges(
+    pool,
+    citations.map((c) => c.chunk.documentVersionId),
   );
-  const markdownByVersion = new Map(versionRows.map((row) => [row.id, row.markdown]));
-
-  const { rows: chunkRows } = await pool.query<ChunkTextRow & { document_version_id: string }>(
-    `SELECT id, document_version_id, chunk_index, text
-     FROM chunks
-     WHERE document_version_id = ANY($1::uuid[])
-     ORDER BY document_version_id, chunk_index`,
-    [versionIds],
-  );
-
-  const chunksByVersion = new Map<string, ChunkTextRow[]>();
-  for (const row of chunkRows) {
-    const list = chunksByVersion.get(row.document_version_id) ?? [];
-    list.push(row);
-    chunksByVersion.set(row.document_version_id, list);
-  }
-
-  const ranges = new Map<string, { charStart: number; charEnd: number }>();
-  for (const [versionId, chunks] of chunksByVersion) {
-    const markdown = markdownByVersion.get(versionId);
-    if (!markdown) continue;
-
-    let cursor = 0;
-    for (const chunk of chunks) {
-      const at = markdown.indexOf(chunk.text, cursor);
-      if (at === -1) continue;
-      ranges.set(chunk.id, { charStart: at, charEnd: at + chunk.text.length });
-      cursor = at + 1;
-    }
-  }
-
   return citations.map((citation) => {
     const range = ranges.get(citation.chunk.chunkId);
     return range ? { ...citation, ...range } : citation;

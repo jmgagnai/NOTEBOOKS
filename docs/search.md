@@ -56,6 +56,21 @@ The response is `documentSchema` plus a `score`, deliberately: a search
 result and a document card show the same thing, so the frontend renders one
 type in both places and the Abstract is already on it.
 
+### The best Chunk travels with the result (NBK-96)
+
+Each result also carries `match`: its best Chunk's Version id, Chunk id, and
+character range in that Version's Converted Markdown. That's the same pin a
+Citation carries (NBK-12). The Search page links a result the way a Citation
+links (`?version=&chunk=&from=&to=`), so opening it shows the full content
+scrolled to that passage and highlighted. A Chunk whose text can't be found
+in the Markdown gets a null range and opens unscrolled.
+
+The range is found the way a Citation's is (`src/documents/chunk-ranges.ts`,
+a forward scan over the Version's Chunks), but per query rather than once:
+each search reads its results' Converted Markdown. That is at most `limit`
+Versions, bounded and only on a search the user ran. If it shows up in the
+latency, the range could be stored on the Chunk at ingestion instead.
+
 ### Why cosine distance (`<=>`) and not inner product (`<#>`)
 
 Qwen3-Embedding-4B returns L2-normalised vectors — ‖v‖ = 1.0000, measured
