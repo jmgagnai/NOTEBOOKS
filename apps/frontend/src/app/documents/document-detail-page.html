@@ -1,24 +1,46 @@
-<mat-card class="document-detail-page">
-  <mat-card-content>
-    <a class="document-detail-page__back" [routerLink]="['/notebooks', notebookId]"
-      >&larr; Back to the Notebook</a
+<div class="document-detail-page">
+  <!--
+    The Document pane's header row (spec 08, after Copilot's page view): the
+    file it holds, kept in sight once the headline has scrolled away, and ✕
+    back to the Notebook in place of the old "← Back to the Notebook" link.
+  -->
+  <div class="document-detail-page__header" data-testid="document-pane-header">
+    <span class="document-detail-page__header-filename">{{ store.openDocument()?.filename }}</span>
+    <a
+      mat-icon-button
+      class="document-detail-page__close"
+      [routerLink]="['/notebooks', notebookId]"
+      aria-label="Back to the Notebook"
+      matTooltip="Back to the Notebook"
     >
+      <mat-icon svgIcon="dismiss" />
+    </a>
+  </div>
 
+  <article class="document-detail-page__article">
     @if (store.openDocumentLoading()) {
       <mat-progress-spinner mode="indeterminate" diameter="32" />
     } @else if (store.error(); as error) {
       <p class="document-detail-page__error">{{ error }}</p>
     } @else if (store.openDocument(); as document) {
-      <h1 class="document-detail-page__filename">{{ document.filename }}</h1>
+      @if (extractedTitle(); as title) {
+        <h1 class="document-detail-page__title">{{ title }}</h1>
+        <p class="document-detail-page__filename" data-testid="document-filename">
+          {{ document.filename }}
+        </p>
+      } @else {
+        <h1 class="document-detail-page__title">{{ document.filename }}</h1>
+      }
       <!--
-        The status and the version number of the Version this page is about —
-        which is the pinned one when a Citation was followed, not the
-        Document's latest. Everything below describes the same Version, so a
-        reader never has to work out which half of the page they are reading.
+        The byline (spec 08) closes on the version number and status of the
+        Version this page is about — which is the pinned one when a Citation
+        was followed, not the Document's latest. Everything below describes
+        the same Version, so a reader never has to work out which half of the
+        page they are reading.
       -->
-      <p class="document-detail-page__meta-line">
+      <p class="document-detail-page__byline" data-testid="byline">
+        <span>{{ byline() }}</span>
         <app-status-badge [status]="document.status" />
-        <span>v{{ document.version.versionNumber }}</span>
       </p>
       @if (failureSentence(); as sentence) {
         <!--
@@ -26,15 +48,6 @@
           the raw error — it says what went wrong and what to do next.
         -->
         <p class="document-detail-page__failure" data-testid="failure-reason">{{ sentence }}</p>
-      }
-
-      @if (metadataEntries().length > 0) {
-        <dl class="document-detail-page__metadata">
-          @for (entry of metadataEntries(); track entry.label) {
-            <dt>{{ entry.label }}</dt>
-            <dd>{{ entry.value }}</dd>
-          }
-        </dl>
       }
 
       @if (viewingSupersededVersion()) {
@@ -53,6 +66,18 @@
           }}
           is.
         </p>
+      }
+
+      @if (details().length > 0) {
+        <details class="document-detail-page__details">
+          <summary>Details</summary>
+          <dl>
+            @for (entry of details(); track entry.label) {
+              <dt>{{ entry.label }}</dt>
+              <dd>{{ entry.value }}</dd>
+            }
+          </dl>
+        </details>
       }
 
       <!--
@@ -76,8 +101,12 @@
         until it is asked for.
       -->
       <section class="document-detail-page__content">
-        <button mat-button type="button" (click)="toggleFullContent()">
-          {{ expanded() ? 'Hide full content' : 'Show full content' }}
+        <!--
+          The Subtle variant rather than a Material text button (spec 08):
+          going on to the full Document should read as reading on.
+        -->
+        <button type="button" class="app-button" (click)="toggleFullContent()">
+          {{ expanded() ? 'Hide the full Document' : 'Read the full Document' }}
         </button>
 
         @if (expanded()) {
@@ -104,5 +133,5 @@
         }
       </section>
     }
-  </mat-card-content>
-</mat-card>
+  </article>
+</div>

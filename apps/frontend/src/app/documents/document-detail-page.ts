@@ -1,8 +1,9 @@
 import { Component, computed, inject, OnDestroy, OnInit, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
-import { MatCardModule } from '@angular/material/card';
+import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { MatTooltipModule } from '@angular/material/tooltip';
 import { DocumentsStore } from './documents.store';
 import { StatusBadge } from '../shared/status-badge';
 import { MarkdownView } from './markdown-view';
@@ -50,8 +51,9 @@ import { failureSentence } from './failure-reason';
   standalone: true,
   imports: [
     MatButtonModule,
-    MatCardModule,
+    MatIconModule,
     MatProgressSpinnerModule,
+    MatTooltipModule,
     MarkdownView,
     RouterLink,
     StatusBadge,
@@ -90,7 +92,7 @@ export class DocumentDetailPage implements OnInit, OnDestroy {
    * store.
    *
    * Starts expanded when a Citation was followed: that reader asked for a
-   * specific Chunk, and making them click "Show full content" to reach it
+   * specific Chunk, and making them click "Read the full Document" to reach it
    * would be asking them to find it themselves.
    */
   protected readonly expanded = signal(this.citedVersionId !== null);
@@ -125,19 +127,57 @@ export class DocumentDetailPage implements OnInit, OnDestroy {
     return this.citedVersionId ?? this.store.openDocument()?.version.id ?? null;
   }
 
-  protected readonly metadataEntries = computed(() => {
-    const metadata = this.store.openDocument()?.metadata;
-    if (!metadata) return [];
-    // Empty values are dropped rather than rendered as blanks: per NBK-7 the
-    // extractor says null for anything the document doesn't state, and a row
-    // reading "Authors: —" tells a reader nothing.
-    return Object.entries(metadata)
-      .filter(([, value]) => value !== null && value !== undefined && value !== '')
-      .filter(([, value]) => !(Array.isArray(value) && value.length === 0))
-      .map(([key, value]) => ({
-        label: key.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, (c) => c.toUpperCase()),
-        value: Array.isArray(value) ? value.join(', ') : String(value),
-      }));
+  // The metadata keys read below (`title`, `authors`, `publishedOn`,
+  // `documentType`, `language`, `subject`, `keywords`) mirror
+  // `documentMetadataSchema` in apps/backend/src/ingestion/generated-artifacts.ts,
+  // their source of truth: the generated client types metadata as an open
+  // record, so a renamed key there would silently blank it here.
+
+  /**
+   * The title extracted at Ingestion (NBK-7), or null when the Document did
+   * not state one or is not summarised yet. Spec 08: it is the page's
+   * headline when present, since a filename makes a poor one; the filename
+   * then follows as a small line so the reader can still tell which upload
+   * this is.
+   */
+  protected readonly extractedTitle = computed(() => {
+    const title = this.store.openDocument()?.metadata?.['title'];
+    return typeof title === 'string' && title.trim() !== '' ? title : null;
+  });
+
+  /**
+   * The byline under the headline (spec 08): authors, publication date,
+   * document type and the Version on screen, joined like an article's — in
+   * place of the labelled metadata grid this page used to show. Anything the
+   * Document does not state is left out rather than shown blank: per NBK-7
+   * the extractor says null for it, and "— · — · v1" tells a reader nothing.
+   */
+  protected readonly byline = computed(() => {
+    const document = this.store.openDocument();
+    if (!document) return '';
+    const metadata = document.metadata ?? {};
+    return [
+      text(metadata['authors']),
+      text(metadata['publishedOn']),
+      text(metadata['documentType']),
+      `v${document.version.versionNumber}`,
+    ]
+      .filter((part) => part !== null)
+      .join(' · ');
+  });
+
+  /**
+   * What the byline leaves out, behind a closed "Details": still there for
+   * the reader who wants it, without making the top of the page a form.
+   * Empty when the Document states none of it, which hides "Details".
+   */
+  protected readonly details = computed(() => {
+    const metadata = this.store.openDocument()?.metadata ?? {};
+    return [
+      { label: 'Language', value: text(metadata['language']) },
+      { label: 'Subject', value: text(metadata['subject']) },
+      { label: 'Keywords', value: text(metadata['keywords']) },
+    ].filter((entry): entry is { label: string; value: string } => entry.value !== null);
   });
 
   ngOnInit(): void {
@@ -181,6 +221,17 @@ export class DocumentDetailPage implements OnInit, OnDestroy {
     // re-expanding doesn't re-download it.
     void this.store.loadDocumentContent(this.notebookId, this.documentId, versionId);
   }
+}
+
+/**
+ * An extracted metadata value as display text, or null when it is absent or
+ * empty — lists comma-joined, so authors and keywords read as a phrase.
+ */
+function text(value: unknown): string | null {
+  const joined = Array.isArray(value) ? value.join(', ') : value;
+  if (joined === null || joined === undefined) return null;
+  const trimmed = String(joined).trim();
+  return trimmed === '' ? null : trimmed;
 }
 
 /** A query parameter as a number, or null when absent or not a number. */
