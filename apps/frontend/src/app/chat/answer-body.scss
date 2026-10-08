@@ -1,0 +1,34 @@
+@use './citation-chip';
+
+:host {
+  display: block;
+}
+
+.answer-body__plain {
+  margin: 0;
+  // The source as written: until the renderer loads, its blank-line
+  // paragraph breaks are the only structure a reader gets.
+  white-space: pre-wrap;
+}
+
+// The rendered prose sits in a chat column, not a Document page: no extra
+// space above the first block or below the last.
+.answer-body__markdown ::ng-deep .markdown-view {
+  line-height: 1.5;
+
+  > .markdown-view__block:first-child > :first-child {
+    margin-top: 0;
+  }
+
+  > .markdown-view__block:last-child > :last-child {
+    margin-bottom: 0;
+  }
+}
+
+// `::ng-deep` because the rendered markers come from `[innerHTML]`, which
+// emulated encapsulation does not reach.
+.answer-body__marker,
+:host ::ng-deep .answer-body__marker {
+  @include citation-chip.chip;
+  margin: 0 1px;
+}

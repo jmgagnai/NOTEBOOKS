@@ -1,0 +1,56 @@
+@use './citation-chip';
+
+:host {
+  display: block;
+}
+
+.citation-groups {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: var(--mat-sys-body-small-size);
+
+  &__group {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-width: 0;
+  }
+
+  &__icon {
+    flex: none;
+    width: 16px;
+    height: 16px;
+    color: var(--mat-sys-on-surface-variant);
+  }
+
+  // A long filename gives way before the chips do: the chips are the links.
+  &__filename {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  // Shown on every row, not only superseded Versions, so "v1" beside a
+  // Document now on v3 reads as information rather than as a bug.
+  &__version {
+    flex: none;
+    color: var(--mat-sys-on-surface-variant);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__chips {
+    flex: none;
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 2px;
+  }
+
+  &__chip {
+    @include citation-chip.chip;
+  }
+}

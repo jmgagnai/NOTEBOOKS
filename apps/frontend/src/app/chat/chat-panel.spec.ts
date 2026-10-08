@@ -1,5 +1,6 @@
 import { Component, input } from '@angular/core';
-import { provideRouter } from '@angular/router';
+import { DeferBlockBehavior, TestBed } from '@angular/core/testing';
+import { provideRouter, Router } from '@angular/router';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/angular';
 import { Subject } from 'rxjs';
 import { ThreadNavigator } from './thread-navigator';
@@ -140,6 +141,10 @@ describe('Chat panel (ThreadNavigator + ThreadView)', () => {
   async function renderPanel(chatService: Partial<ChatService>) {
     return render(ChatPanelHost, {
       inputs: { notebookId: NOTEBOOK_ID },
+      // An answer's Markdown renderer is a deferred block loaded on idle
+      // (NBK-52); Testing Library would otherwise hold every deferred block
+      // at its placeholder, which is not what a reader ever ends up seeing.
+      deferBlockBehavior: DeferBlockBehavior.Playthrough,
       // A real router, not a mocked one: a Citation's whole job is to link
       // somewhere, so the link has to be built by the thing that will
       // actually navigate (NBK-1's seam-3 rule — mock the generated HTTP
@@ -368,32 +373,32 @@ describe('Chat panel (ThreadNavigator + ThreadView)', () => {
     expect(input.value).toBe('What was revenue in Q3?');
   });
 
+  /** Where a Citation link points, taken apart so param order can't matter. */
+  function target(link: Element): { pathname: string; params: Record<string, string> } {
+    const url = new URL(link.getAttribute('href')!, 'http://localhost');
+    return {
+      pathname: url.pathname,
+      params: Object.fromEntries(url.searchParams.entries()),
+    };
+  }
+
+  async function openThreadWithAnswer(messages: unknown[]) {
+    const listChatThreads = vi.fn().mockResolvedValue([thread()]);
+    const listChatMessages = vi.fn().mockResolvedValue(messages);
+    const rendered = await renderPanel({
+      listChatThreads: listChatThreads as never,
+      listChatMessages: listChatMessages as never,
+    });
+    fireEvent.click(await screen.findByRole('button', { name: 'Open Revenue questions' }));
+    return rendered;
+  }
+
   // NBK-12: "clicking a Citation in the Angular UI opens that exact Document
   // Version, scrolled to that chunk's location". What this panel is
   // responsible for is the *link*: it has to carry the pinned Version and
   // chunk, not the Document alone, or following it lands on whatever is
   // latest — the exact failure GLOSSARY.md's Citation definition rules out.
   describe('Citations', () => {
-    /** Where a Citation link points, taken apart so param order can't matter. */
-    function target(link: Element): { pathname: string; params: Record<string, string> } {
-      const url = new URL(link.getAttribute('href')!, 'http://localhost');
-      return {
-        pathname: url.pathname,
-        params: Object.fromEntries(url.searchParams.entries()),
-      };
-    }
-
-    async function openThreadWithAnswer(messages: unknown[]) {
-      const listChatThreads = vi.fn().mockResolvedValue([thread()]);
-      const listChatMessages = vi.fn().mockResolvedValue(messages);
-      const rendered = await renderPanel({
-        listChatThreads: listChatThreads as never,
-        listChatMessages: listChatMessages as never,
-      });
-      fireEvent.click(await screen.findByRole('button', { name: 'Open Revenue questions' }));
-      return rendered;
-    }
-
     it("links each of an answer's Citations to the exact Document Version and chunk it cites", async () => {
       await openThreadWithAnswer([
         message({
@@ -456,7 +461,8 @@ describe('Chat panel (ThreadNavigator + ThreadView)', () => {
       // The marker a reader sees mid-sentence is itself the way into the
       // source, so it is a link to the same pinned location.
       const marker = await screen.findByRole('link', { name: 'Citation 1' });
-      expect(marker.textContent).toContain('[1]');
+      // A chip showing the number alone (spec 04 "Citation chips", NBK-52).
+      expect(marker.textContent?.trim()).toBe('1');
       expect(target(marker)).toEqual({
         pathname: `/notebooks/${NOTEBOOK_ID}/documents/${DOCUMENT_ID}`,
         params: { version: VERSION_ID, chunk: CHUNK_ID, from: '120', to: '167' },
@@ -579,8 +585,9 @@ describe('Chat panel (ThreadNavigator + ThreadView)', () => {
 
       appEvents.events.next(chunk(0, '## Revenue'));
 
-      // Readable already, with the answer still being generated.
-      expect(await screen.findByText('## Revenue')).toBeTruthy();
+      // Readable already, with the answer still being generated — and
+      // through the same Markdown path as a recorded answer (NBK-52).
+      expect(await screen.findByRole('heading', { name: 'Revenue' })).toBeTruthy();
       // And only as far as the model has got: the second paragraph has not
       // been sent yet, so it is not on screen.
       expect(screen.queryByText('Revenue reached 12.4M in Q3.')).toBeNull();
@@ -589,7 +596,7 @@ describe('Chat panel (ThreadNavigator + ThreadView)', () => {
       expect(await screen.findByText('Revenue reached 12.4M in Q3.')).toBeTruthy();
       // The first chunk is still there: chunks accumulate into one answer
       // rather than replacing each other.
-      expect(screen.getByText('## Revenue')).toBeTruthy();
+      expect(screen.getByRole('heading', { name: 'Revenue' })).toBeTruthy();
 
       // The ask resolves with the recorded exchange — which is the truth
       // (GLOSSARY.md: a client re-reads the truth over the normal API), so
@@ -636,7 +643,7 @@ describe('Chat panel (ThreadNavigator + ThreadView)', () => {
       await askWithoutAnswering();
 
       appEvents.events.next(chunk(0, '## Revenue'));
-      expect(await screen.findByText('## Revenue')).toBeTruthy();
+      expect(await screen.findByRole('heading', { name: 'Revenue' })).toBeTruthy();
 
       appEvents.events.next(failed());
 
@@ -949,6 +956,126 @@ describe('Chat panel (ThreadNavigator + ThreadView)', () => {
 
       await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
       expect(questionBox().value).toBe(ASK);
+    });
+  });
+  // Spec 04 "Markdown with Citations": an answer is Markdown, and its
+  // markers are swapped for links before parsing so they survive inside
+  // headings, list items and table cells. The renderer arrives in a deferred
+  // chunk, so every assertion waits on the rendered element itself.
+  describe('NBK-52: Markdown answers', () => {
+    const TABLE_ANSWER = [
+      '## Lead times',
+      '',
+      '| Quarter | Weeks |',
+      '| --- | --- |',
+      '| Q3 | 14 [1] |',
+    ].join('\n');
+
+    it('renders an answer as Markdown, with a marker in a table cell still a Citation link', async () => {
+      await openThreadWithAnswer([
+        message({ id: 'a1', role: 'assistant', content: TABLE_ANSWER, citations: [citation()] }),
+      ]);
+
+      expect(await screen.findByRole('heading', { name: 'Lead times' })).toBeTruthy();
+      const cell = await screen.findByRole('cell', { name: /14/ });
+      const marker = within(cell).getByRole('link', { name: 'Citation 1' });
+      expect(target(marker)).toEqual({
+        pathname: `/notebooks/${NOTEBOOK_ID}/documents/${DOCUMENT_ID}`,
+        params: { version: VERSION_ID, chunk: CHUNK_ID, from: '120', to: '167' },
+      });
+    });
+    // The rendered marker is a plain `<a href>` from `[innerHTML]`, not a
+    // `routerLink`: left to the browser, following it would reload the app.
+    it('follows a chip in the rendered Markdown through the router', async () => {
+      await openThreadWithAnswer([
+        message({ id: 'a1', role: 'assistant', content: TABLE_ANSWER, citations: [citation()] }),
+      ]);
+      const router = TestBed.inject(Router);
+      router.resetConfig([{ path: '**', children: [] }]);
+
+      const cell = await screen.findByRole('cell', { name: /14/ });
+      const marker = await within(cell).findByRole('link', { name: 'Citation 1' });
+
+      // Not prevented would mean the browser goes on to load the href itself.
+      expect(fireEvent.click(marker)).toBe(false);
+      await waitFor(() => expect(router.url).toBe(marker.getAttribute('href')));
+      expect(target(marker).params).toEqual({
+        version: VERSION_ID,
+        chunk: CHUNK_ID,
+        from: '120',
+        to: '167',
+      });
+    });
+
+    // Story 12: four Citations into one Document are one line, not four.
+    const BRIDGE_VERSION = '88888888-8888-8888-8888-888888888888';
+    const bridge = (marker: number, overrides: Partial<Record<string, unknown>> = {}) =>
+      citation({
+        id: `bridge-${marker}`,
+        marker,
+        documentVersionId: BRIDGE_VERSION,
+        chunkId: `chunk-${marker}`,
+        filename: 'leblanc_the_bridge.pdf',
+        headingPath: [],
+        ...overrides,
+      });
+
+    /** The rows under an answer: one per Document Version it cites. */
+    const citationGroups = () =>
+      within(screen.getByRole('list', { name: 'Citations' })).getAllByRole('listitem');
+
+    it('groups the Citations into one Document Version on one row, chips ascending', async () => {
+      await openThreadWithAnswer([
+        message({
+          id: 'a1',
+          role: 'assistant',
+          content: 'The bridge opened in 1890 [10][1], was widened [12] and repaired [8].',
+          // Deliberately out of order: the row sorts them, not the backend.
+          citations: [bridge(10), bridge(1), bridge(12), bridge(8)],
+        }),
+      ]);
+
+      await screen.findByRole('list', { name: 'Citations' });
+      const [row, ...others] = citationGroups();
+      expect(others).toEqual([]);
+      expect(within(row).getByText('leblanc_the_bridge.pdf')).toBeTruthy();
+      expect(within(row).getByText('v1')).toBeTruthy();
+
+      const chips = screen.getAllByTestId('chat-citation');
+      expect(chips).toHaveLength(4);
+      expect(chips.every((chip) => row.contains(chip))).toBe(true);
+      expect(chips.map((chip) => chip.textContent?.trim())).toEqual(['1', '8', '10', '12']);
+      // Each chip still opens its own Chunk.
+      expect(target(chips[2]).params).toMatchObject({
+        version: BRIDGE_VERSION,
+        chunk: 'chunk-10',
+      });
+    });
+
+    // Story 13: a Citation into a superseded Version is its own row, so the
+    // reader sees the answer was grounded in the older text.
+    it('gives each cited Version of a Document its own row, named by its number', async () => {
+      await openThreadWithAnswer([
+        message({
+          id: 'a1',
+          role: 'assistant',
+          content: 'It opened in 1890 [1] and was widened in 1932 [2].',
+          citations: [
+            bridge(1),
+            bridge(2, {
+              documentVersionId: '99999999-9999-9999-9999-999999999999',
+              versionNumber: 3,
+            }),
+          ],
+        }),
+      ]);
+
+      await screen.findByRole('list', { name: 'Citations' });
+      const rows = citationGroups();
+      expect(rows).toHaveLength(2);
+      expect(within(rows[0]).getByText('v1')).toBeTruthy();
+      expect(within(rows[1]).getByText('v3')).toBeTruthy();
+      expect(within(rows[1]).getByTestId('chat-citation').textContent?.trim()).toBe('2');
     });
   });
 });
