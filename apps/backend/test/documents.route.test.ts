@@ -850,24 +850,16 @@ describe('Document routes', () => {
     });
   });
 
-  /**
-   * A Version-scoped read of a Document (NBK-12's half of NBK-7).
-   *
-   * This is what following a Citation needs and what `GET
-   * .../documents/:documentId` structurally cannot give: per GLOSSARY.md a
-   * Citation "opens that exact Version at that location, even after newer
-   * Versions exist", and the Document detail is always the *latest* Version's
-   * artifacts. Reading the pinned Version's Converted Markdown while showing
-   * the latest Version's Executive Summary, metadata and version number
-   * presents two Versions as one document — so the pinned Version needs a
-   * read path of its own, carrying its own artifacts.
-   */
   describe('NBK-64: failure reason', () => {
     // What a converter really leaves in `ingestion_error`: diagnostics and a
     // setup hint, written for developers. None of it may reach a browser.
     const DIAGNOSTIC = 'Traceback zx81-internal-diagnostic: see docs/ingestion-docling.md';
 
-    async function failedDocument(email: string) {
+    /**
+     * A freshly uploaded Document, still `queued`: each case writes the
+     * failure it needs onto the Version itself, so no converter has to run.
+     */
+    async function uploadedDocument(email: string) {
       const session = await loginAsNewUser(email);
       const notebookId = await createNotebook(session, 'Failures');
       const upload = await uploadFile(session, notebookId, 'scan.pdf', 'pictures of text');
@@ -893,7 +885,7 @@ describe('Document routes', () => {
     }
 
     it('reports no failure for a Document that has not failed', async () => {
-      const { session, notebookId, documentId } = await failedDocument('nbk64-ok@example.com');
+      const { session, notebookId, documentId } = await uploadedDocument('nbk64-ok@example.com');
 
       const { list, detail } = await readBoth(session, notebookId, documentId);
 
@@ -904,7 +896,7 @@ describe('Document routes', () => {
     });
 
     it('reports the reason and where it failed, and never the stored error text', async () => {
-      const { session, notebookId, documentId, versionId } = await failedDocument(
+      const { session, notebookId, documentId, versionId } = await uploadedDocument(
         'nbk64-failed@example.com',
       );
       await pool.query(
@@ -925,7 +917,7 @@ describe('Document routes', () => {
     });
 
     it("reports a failure recorded before reasons existed as 'unexpected', with no stage", async () => {
-      const { session, notebookId, documentId, versionId } = await failedDocument(
+      const { session, notebookId, documentId, versionId } = await uploadedDocument(
         'nbk64-legacy@example.com',
       );
       // The row as pre-NBK-64 code left it, then migration 0012's backfill
@@ -953,6 +945,18 @@ describe('Document routes', () => {
     });
   });
 
+  /**
+   * A Version-scoped read of a Document (NBK-12's half of NBK-7).
+   *
+   * This is what following a Citation needs and what `GET
+   * .../documents/:documentId` structurally cannot give: per GLOSSARY.md a
+   * Citation "opens that exact Version at that location, even after newer
+   * Versions exist", and the Document detail is always the *latest* Version's
+   * artifacts. Reading the pinned Version's Converted Markdown while showing
+   * the latest Version's Executive Summary, metadata and version number
+   * presents two Versions as one document — so the pinned Version needs a
+   * read path of its own, carrying its own artifacts.
+   */
   describe('GET .../documents/:documentId/versions/:versionId', () => {
     /** Writes stage 2's output onto one Version, as the job would. */
     async function seedVersion(

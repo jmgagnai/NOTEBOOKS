@@ -220,6 +220,9 @@ function fromVersionDetail(detail: DocumentVersionDetail): OpenDocument {
     version: detail.version,
     isLatestVersion: detail.isLatestVersion,
     latestVersionNumber: detail.latestVersionNumber,
+    // The Version-scoped read carries no failure reason, deliberately: it is
+    // what following a Citation opens, and a Citation only ever points into a
+    // `ready` Version, which has no failure to show.
     failure: null,
   };
 }
