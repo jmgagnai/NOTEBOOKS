@@ -72,12 +72,16 @@ export interface Document {
 
 /**
  * The payload of a `document-version-status-changed` app event (NBK-6).
- * Mirrors what `apps/backend/src/ingestion/convert-to-markdown.ts` publishes.
+ * Mirrors what `versionStatusChanged` in `apps/backend/src/ingestion/stage.ts`
+ * publishes. `failure` is there only on a final failure (NBK-67); its absence
+ * means the Version has no reason to show, so it is null here rather than
+ * optional and applying an event always replaces the row's reason.
  */
 interface DocumentVersionStatusChanged {
   documentId: string;
   versionId: string;
   status: DocumentStatus;
+  failure: DocumentFailure | null;
 }
 
 const DOCUMENT_VERSION_STATUS_CHANGED = 'document-version-status-changed';
@@ -85,7 +89,9 @@ const DOCUMENT_VERSION_STATUS_CHANGED = 'document-version-status-changed';
 /** Narrows a generic app event to a Document Version status change, or null. */
 function asStatusChange(event: AppEvent): DocumentVersionStatusChanged | null {
   if (event.type !== DOCUMENT_VERSION_STATUS_CHANGED) return null;
-  const { documentId, versionId, status } = event.data as Partial<DocumentVersionStatusChanged>;
+  const { documentId, versionId, status, failure } = event.data as Partial<
+    Record<keyof DocumentVersionStatusChanged, unknown>
+  >;
   if (
     typeof documentId !== 'string' ||
     typeof versionId !== 'string' ||
@@ -93,7 +99,18 @@ function asStatusChange(event: AppEvent): DocumentVersionStatusChanged | null {
   ) {
     return null;
   }
-  return { documentId, versionId, status: status as DocumentStatus };
+  return {
+    documentId,
+    versionId,
+    status: status as DocumentStatus,
+    // Only a failed status can have a reason, matching what the Documents API
+    // returns; anything malformed falls back to the generic sentence rather
+    // than dropping the event's status change.
+    failure:
+      status === 'failed' && typeof failure === 'object' && failure !== null
+        ? (failure as DocumentFailure)
+        : null,
+  };
 }
 
 // A Document opened on its own (NBK-7): the Document plus its latest
@@ -878,7 +895,9 @@ export const DocumentsStore = signalStore(
               documents: store
                 .documents()
                 .map((document) =>
-                  document === target ? { ...document, status: change.status } : document,
+                  document === target
+                    ? { ...document, status: change.status, failure: change.failure }
+                    : document,
                 ),
             });
 

@@ -221,7 +221,7 @@ async function transitionTo(
         fields.failure?.failedAt ?? null,
       ],
     );
-    await publishAppEvent(client, versionStatusChanged(version, status, fields.error));
+    await publishAppEvent(client, versionStatusChanged(version, status, fields.failure));
   });
 }
 

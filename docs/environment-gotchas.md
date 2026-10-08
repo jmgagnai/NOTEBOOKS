@@ -43,7 +43,8 @@ A related symptom, now fixed, hid that one for a while: a stage's failure
 message carrying a whole Python traceback was too big for the app-event bus,
 the refusal rolled back the transaction recording the failure, and the
 Version sat at "converting" with no error anywhere but the pg_boss job table.
-Events now carry a headline; the full text is on `ingestion_error`.
+Events now carry no error text at all, only the failure reason (NBK-67); the
+full text is on `ingestion_error`.
 
 ## Local Docling conversion is not an option on macOS x86_64
 
