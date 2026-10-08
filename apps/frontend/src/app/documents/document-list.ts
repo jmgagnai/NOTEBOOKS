@@ -71,6 +71,9 @@ export function isInProgress(status: DocumentStatus): boolean {
  */
 export const FAILURE_REASON = 'Ingestion failed for the latest Version of this Document.';
 
+/** What the Abstract popover says until stage 2 has written the Abstract (spec 03). */
+export const NO_ABSTRACT = 'Abstract not generated yet.';
+
 /**
  * The Documents panel's list (NBK-42, spec 03): one 40 px row per Document
  * — type icon, filename on one line, a quiet secondary line (the ingestion
@@ -109,6 +112,7 @@ export class DocumentList {
   protected readonly inProgress = isInProgress;
   protected readonly stage = statusLabel;
   protected readonly failureReason = FAILURE_REASON;
+  protected readonly noAbstract = NO_ABSTRACT;
 
   /** The row holding the list's one Tab stop: the last one focused, else the first. */
   protected readonly activeIndex = signal(0);
