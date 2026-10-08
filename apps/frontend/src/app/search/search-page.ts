@@ -6,16 +6,16 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { documentKind } from '../documents/document-list';
-import { passageParams } from '../documents/passage-link';
+import { chunkLinkParams } from '../documents/chunk-link';
 import { NotebooksStore } from '../notebooks/notebooks.store';
-import { SearchResult, SearchStore } from './search.store';
+import { SearchStore } from './search.store';
 import { showPageTitle } from '../shared/page-title';
 
 /**
  * Searching one Notebook's Documents (NBK-9), in Copilot's look since NBK-96
  * (`docs/design/copilot-ui/reference/search-page.png`): a header row with ✕
  * back to the Notebook, a pill box searched on Enter, and flat result rows
- * that open the Document at its best-matching passage.
+ * that open the Document at its best-matching Chunk.
  *
  * The query lives in the URL (`?q=`), so a reload, a shared link and Back
  * from a Document all show the same results. Each query is one paid
@@ -87,7 +87,18 @@ export class SearchPage implements OnDestroy {
     this.draft.set((event.target as HTMLInputElement).value);
   }
 
-  /** Enter: the query goes in the URL, which searches; the same query again searches again. */
+  /**
+   * Enter searches — but not the Enter that confirms an input method's
+   * composition (Japanese, Chinese, Korean…), which is still typing, and
+   * would otherwise spend a paid query on half a word (NBK-96 review).
+   */
+  protected onEnter(event: KeyboardEvent): void {
+    event.preventDefault();
+    if (event.isComposing) return;
+    this.submit();
+  }
+
+  /** Searches the box's query: into the URL, which searches; the same query again searches again. */
   protected submit(): void {
     const q = this.draft().trim();
     if (q === this.urlQuery()) {
@@ -99,10 +110,8 @@ export class SearchPage implements OnDestroy {
 
   protected readonly kind = documentKind;
 
-  /** A result opens the Document at its best-matching passage, as a Citation does. */
-  protected passage(result: SearchResult): Record<string, string | number> {
-    return passageParams(result.match);
-  }
+  /** A result opens the Document at its best-matching Chunk, as a Citation does. */
+  protected readonly chunkLink = chunkLinkParams;
 
   private leavingForOneOfItsResults(): boolean {
     const next = this.router.currentNavigation()?.finalUrl;

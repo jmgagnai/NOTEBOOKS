@@ -14,8 +14,9 @@ interface ChunkTextRow {
 }
 
 /**
- * Fills in each Citation's character range in its Document Version's
- * Converted Markdown.
+ * Finds where each Chunk of the given Document Versions sits in its
+ * Version's Converted Markdown — the range a Citation (NBK-12) and a search
+ * result's best Chunk (NBK-96) open the Document page at.
  *
  * It can be done by searching at all because of GLOSSARY.md's guarantee that
  * a Chunk's text is "a verbatim, contiguous slice of the Converted Markdown

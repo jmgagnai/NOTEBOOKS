@@ -243,7 +243,7 @@ describe('Search routes', () => {
     expect(results[1].score).toBeCloseTo(0, 5);
   });
 
-  // NBK-96: a result opens at its best-matching passage, so the response names
+  // NBK-96: a result opens at its best-matching Chunk, so the response names
   // that Chunk and its range in the Version's Converted Markdown — the same
   // pin a Citation carries.
   it("names each Document's best-matching Chunk and where it sits in the Converted Markdown", async () => {

@@ -29,7 +29,7 @@
         placeholder="Search this Notebook's Documents"
         [value]="draft()"
         (input)="onDraftInput($event)"
-        (keydown.enter)="$event.preventDefault(); submit()"
+        (keydown.enter)="onEnter($any($event))"
       />
     </form>
 
@@ -47,7 +47,7 @@
     } @else {
       <!--
         One flat row per Document, the whole row a link to it at its best
-        passage (NBK-96). Headed by its extracted title, as the Document page
+        Chunk (NBK-96). Headed by its extracted title, as the Document page
         is, and led by its Abstract — per GLOSSARY.md the artifact "used in
         search results".
       -->
@@ -57,7 +57,7 @@
             <a
               class="search-page__result"
               [routerLink]="['/notebooks', notebookId, 'documents', result.id]"
-              [queryParams]="passage(result)"
+              [queryParams]="chunkLink(result.match)"
             >
               <mat-icon class="search-page__result-icon" [svgIcon]="kind(result).icon" />
               <span class="search-page__result-body">

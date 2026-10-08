@@ -61,8 +61,8 @@ type in both places and the Abstract is already on it.
 Each result also carries `match`: its best Chunk's Version id, Chunk id, and
 character range in that Version's Converted Markdown. That's the same pin a
 Citation carries (NBK-12). The Search page links a result the way a Citation
-links (`?version=&chunk=&from=&to=`), so opening it shows the full content
-scrolled to that passage and highlighted. A Chunk whose text can't be found
+links (`?version=&chunk=&from=&to=`), so opening it shows the Converted Markdown
+scrolled to that Chunk and highlighted. A Chunk whose text can't be found
 in the Markdown gets a null range and opens unscrolled.
 
 The range is found the way a Citation's is (`src/documents/chunk-ranges.ts`,

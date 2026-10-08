@@ -105,7 +105,7 @@ export async function searchNotebook(
     DocumentRow & { score: string; match_chunk_id: string; title: string | null }
   >(SEARCH_NOTEBOOK_SQL, [notebookId, toVectorLiteral(queryEmbedding), limit]);
   // Each result's best Chunk located in its Version's Converted Markdown, so
-  // the result opens at that passage (NBK-96). Read per query: one pass over
+  // the result opens at that Chunk (NBK-96). Read per query: one pass over
   // the results' Versions (see `docs/search.md`).
   const ranges = await locateChunkRanges(
     pool,

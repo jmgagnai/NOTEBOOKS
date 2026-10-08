@@ -182,7 +182,7 @@ describe('SearchPage', () => {
       expect(within(second).getByText('Abstract not generated yet.')).toBeTruthy();
     });
 
-    it('links each result to its best-matching passage, the way a Citation does', async () => {
+    it('links each result to its best-matching Chunk, the way a Citation does', async () => {
       await renderSearch(vi.fn().mockResolvedValue([result()]));
       await searchFor('mars');
 
@@ -197,7 +197,7 @@ describe('SearchPage', () => {
       });
     });
 
-    it('leaves the range out of the link when the passage could not be located', async () => {
+    it('leaves the range out of the link when the Chunk could not be located', async () => {
       await renderSearch(
         vi.fn().mockResolvedValue([
           result({
@@ -236,6 +236,78 @@ describe('SearchPage', () => {
       expect(
         await screen.findByText('Search is unavailable: no embedding model is configured.'),
       ).toBeTruthy();
+    });
+  });
+
+  describe('against stale answers (review)', () => {
+    it("shows the latest query's results when an earlier search answers after it", async () => {
+      let answerFirst!: (results: unknown) => void;
+      const searchNotebook = vi
+        .fn()
+        .mockImplementationOnce(() => new Promise((resolve) => (answerFirst = resolve)))
+        .mockResolvedValue([result({ id: 'doc-2', title: 'Phobos and Deimos' })]);
+      await renderSearch(searchNotebook);
+
+      await searchFor('mars');
+      await waitFor(() => expect(searchNotebook).toHaveBeenCalledTimes(1));
+      await searchFor('moons');
+      await screen.findByRole('link', { name: /Phobos and Deimos/ });
+      answerFirst([result()]);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      expect(screen.getByRole('link', { name: /Phobos and Deimos/ })).toBeTruthy();
+      expect(screen.queryByRole('link', { name: /The Red Planet/ })).toBeNull();
+    });
+
+    it('does not search on Enter while an input method is composing', async () => {
+      const searchNotebook = vi.fn().mockResolvedValue([]);
+      await renderSearch(searchNotebook);
+      const input = await box();
+      fireEvent.input(input, { target: { value: 'にほ' } });
+
+      fireEvent.keyDown(input, { key: 'Enter', isComposing: true });
+      // A search starts after the router has moved to `?q=`: give it time.
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      expect(searchNotebook).not.toHaveBeenCalled();
+      expect(TestBed.inject(Router).url).toBe(SEARCH_URL);
+    });
+
+    it('shows a spinner while searching', async () => {
+      await renderSearch(vi.fn().mockReturnValue(new Promise(() => {})));
+
+      await searchFor('mars');
+
+      expect(await screen.findByRole('progressbar')).toBeTruthy();
+    });
+
+    it('shows the 503 when search is not configured', async () => {
+      await renderSearch(
+        vi.fn().mockRejectedValue({
+          status: 503,
+          error: {
+            message: 'Search is not configured on this server: OPENROUTER_API_KEY is not set.',
+          },
+        }),
+      );
+
+      await searchFor('mars');
+
+      expect(await screen.findByText(/OPENROUTER_API_KEY is not set/)).toBeTruthy();
+    });
+
+    it('starts afresh after leaving for the Notebook, searching the query again', async () => {
+      const searchNotebook = vi.fn().mockResolvedValue([result()]);
+      const { navigate } = await renderSearch(searchNotebook);
+      await searchFor('mars');
+      await screen.findByRole('link', { name: /The Red Planet/ });
+
+      fireEvent.click(screen.getByRole('link', { name: 'Back to the Notebook' }));
+      await screen.findByText('Somewhere else');
+      await navigate(`${SEARCH_URL}?q=mars`);
+
+      await screen.findByRole('link', { name: /The Red Planet/ });
+      expect(searchNotebook).toHaveBeenCalledTimes(2);
     });
   });
 });

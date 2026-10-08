@@ -39,7 +39,7 @@ export type SearchNotebookQuery = z.infer<typeof searchNotebookQuerySchema>;
 // thing, so the frontend renders one type in both places.
 // `match` is where that best Chunk sits (NBK-96): the same pin a Citation
 // carries, so a result links to the Document page the way a Citation does
-// and opens its full content at that passage.
+// and opens its Converted Markdown at that Chunk.
 export const searchMatchSchema = z
   .object({
     versionId: z.string().uuid().describe('The Document Version the Chunk belongs to.'),

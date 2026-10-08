@@ -1,5 +1,5 @@
 import { Citation } from './chat.store';
-import { passageParams } from '../documents/passage-link';
+import { chunkLinkParams } from '../documents/chunk-link';
 
 /**
  * One piece of an answer's prose: either plain text, or a Citation marker
@@ -102,7 +102,7 @@ export function citationParams(
   threadId: string,
 ): Record<string, string | number> {
   return {
-    ...passageParams({ ...citation, versionId: citation.documentVersionId }),
+    ...chunkLinkParams({ ...citation, versionId: citation.documentVersionId }),
     thread: threadId,
   };
 }
