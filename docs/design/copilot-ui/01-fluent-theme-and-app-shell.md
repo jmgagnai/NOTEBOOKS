@@ -69,6 +69,8 @@ consumed as inline SVG through Material's icon registry so existing
 search, more-horizontal, delete, arrow-download, open, send, rename,
 chevron-down, notebook, document, sparkle, dismiss, checkmark, warning).
 
+> **Superseded by [spec 07](07-closer-copilot-pass.md)** — see its sidebar (the title bar is replaced).
+
 **App shell.** The toolbar becomes a 48 px white bar with a 1 px bottom
 border: the brand cluster on the left (mark + name, defined in spec 06 — until that lands, the name as text, 16/600); on the right an avatar button
 (28 px circle, accent background, initials derived from the e-mail's local

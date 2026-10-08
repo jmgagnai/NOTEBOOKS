@@ -44,6 +44,8 @@ screenshots). The look and the measurements below come from it.
 
 ## Implementation Decisions
 
+> **Superseded by [spec 07](07-closer-copilot-pass.md)** — see its Notebook page frame (two flat panes, no header row).
+
 **Page structure.** The Notebook page becomes a column: a 48 px header,
 then a CSS grid with three columns (`240px 1fr 300px`, 8 px gaps, 8 px
 side padding) filling the remaining height, on the page-background canvas
@@ -54,6 +56,8 @@ becomes one column with three rows: the navigator at its natural height,
 the Thread card taking the rest, the Documents card a scrolling strip of
 about a third of the height. Tabs remain a later refinement; stacking is
 the accepted first behaviour.
+
+> **Superseded by [spec 07](07-closer-copilot-pass.md)** — see its Notebook page frame: where the old header's controls go.
 
 **Header.** Left: a "Back to Notebooks" icon button (arrow-left, tooltip),
 the breadcrumb text "Notebooks ›" in secondary colour, then the Notebook
@@ -66,11 +70,15 @@ primary "Add Documents" button, and — only while the Documents panel is
 hidden — a secondary "Documents <count>" button that restores it
 (accessible name "Show Documents").
 
+> **Superseded by [spec 07](07-closer-copilot-pass.md)** — see its Documents pane (Add Documents moves to its top).
+
 **Add Documents.** The existing multi-select file input moves from the
 Documents section to the header, behind the "Add Documents" button, with
 its `accept`, `multiple` and disabled-while-a-batch-runs behaviour and
 its accessible name "Upload Documents" unchanged. Spec 03 restyles the
 button; this spec only relocates the control.
+
+> **Superseded by [spec 07](07-closer-copilot-pass.md)** — see its sidebar (the navigator moves there).
 
 **Chat Threads navigator.** A card labelled "Chat Threads" with its own
 header row (title, and a "New Chat Thread" control — defined in spec 04;

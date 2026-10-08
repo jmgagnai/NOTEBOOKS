@@ -119,6 +119,8 @@ in ascending order, each still a link to its own Chunk. `data-testid`
 "chat-citation" moves to the per-marker chip so counts in existing tests
 stay meaningful.
 
+> **Superseded by [spec 07](07-closer-copilot-pass.md)** — see its Composer (a pill, live on the Notebook landing).
+
 **Composer.** A bordered box (strong border, 8 px corners, white) holding
 an auto-growing textarea (accessible name "Ask a question", unchanged), a
 one-line hint ("Enter to send · Shift+Enter for a new line") and an icon
@@ -141,6 +143,8 @@ view at the bottom; when the first streamed block of an answer arrives,
 the answer's first line is scrolled to the top of the list and later
 blocks do not move the view, nor does the recorded message replacing the
 preview. There is no "follow the bottom while streaming" behaviour.
+
+> **Superseded by [spec 07](07-closer-copilot-pass.md)** — see its Middle pane: landing or Thread (the placeholder is removed).
 
 **Empty state.** Shown when there is no active Thread or the active Thread
 has no messages and nothing is streaming: sparkle, sentence, and three
