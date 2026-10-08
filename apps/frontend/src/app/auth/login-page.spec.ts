@@ -16,28 +16,47 @@ class DummyHomePage {}
 // successful navigateByUrl() is observed via the real Router's resulting
 // url rather than via a swapped-in DOM (that's covered by the app-level
 // shell/guard test instead).
+
+/** Renders the sign-in page at /login with `login` standing in for the API client. */
+async function renderLogin(login: ReturnType<typeof vi.fn>) {
+  await render(LoginPage, {
+    providers: [{ provide: AuthService, useValue: { login } }],
+    routes: [
+      { path: '', component: DummyHomePage },
+      { path: 'login', component: LoginPage },
+    ],
+    initialRoute: 'login',
+  });
+}
+
+function signInWith(email: string, password: string) {
+  fireEvent.input(screen.getByLabelText('Email'), { target: { value: email } });
+  fireEvent.input(screen.getByLabelText('Password'), { target: { value: password } });
+  fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+}
+
 describe('LoginPage', () => {
-  it('logs in and navigates to the home route on success', async () => {
+  // NBK-46: the page says "Sign in" to match the shell's "Sign out", shows
+  // the app name above the form and switches to register through a link.
+  it('shows the app name above a "Sign in" form that links to creating an account', async () => {
+    await renderLogin(vi.fn());
+
+    expect(screen.getByText('RAG Notebook')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Sign in' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Sign in' })).toBeTruthy();
+    expect(screen.getByText('No account?')).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Create one' }).getAttribute('href')).toBe('/register');
+  });
+
+  it('signs in and navigates to the home route on success', async () => {
     const login = vi.fn().mockResolvedValue({
       id: '1',
       email: 'ada@example.com',
       createdAt: '2026-01-01T00:00:00.000Z',
     });
+    await renderLogin(login);
 
-    await render(LoginPage, {
-      providers: [{ provide: AuthService, useValue: { login } }],
-      routes: [
-        { path: '', component: DummyHomePage },
-        { path: 'login', component: LoginPage },
-      ],
-      initialRoute: 'login',
-    });
-
-    fireEvent.input(screen.getByLabelText('Email'), { target: { value: 'ada@example.com' } });
-    fireEvent.input(screen.getByLabelText('Password'), {
-      target: { value: 'correct-horse-battery-staple' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Log in' }));
+    signInWith('ada@example.com', 'correct-horse-battery-staple');
 
     expect(login).toHaveBeenCalledWith({
       body: { email: 'ada@example.com', password: 'correct-horse-battery-staple' },
@@ -47,21 +66,11 @@ describe('LoginPage', () => {
     await vi.waitFor(() => expect(router.url).toBe('/'));
   });
 
-  it('shows an error and stays on the page when login fails', async () => {
+  it('shows an error and stays on the page when sign-in fails', async () => {
     const login = vi.fn().mockRejectedValue({ error: { message: 'Invalid email or password.' } });
+    await renderLogin(login);
 
-    await render(LoginPage, {
-      providers: [{ provide: AuthService, useValue: { login } }],
-      routes: [
-        { path: '', component: DummyHomePage },
-        { path: 'login', component: LoginPage },
-      ],
-      initialRoute: 'login',
-    });
-
-    fireEvent.input(screen.getByLabelText('Email'), { target: { value: 'ada@example.com' } });
-    fireEvent.input(screen.getByLabelText('Password'), { target: { value: 'wrong-password' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Log in' }));
+    signInWith('ada@example.com', 'wrong-password');
 
     expect(await screen.findByText('Invalid email or password.')).toBeTruthy();
 
