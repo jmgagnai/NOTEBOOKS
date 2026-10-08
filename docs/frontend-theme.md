@@ -210,7 +210,8 @@ NBK-43), `search`, `more-horizontal`, `delete`,
 `panel-right-contract`, `panel-right-expand`, `sign-out`, and the Document
 rows' type icons (NBK-42) `document-pdf`, `document-text` (Word),
 `document-one-page` (text, Markdown), `document-table` (Excel, CSV), with
-`document` for anything else. `FluentIconName`
+`document` for anything else, and `folder` (the Notebook rows on the home
+and the Notebook landing, spec 07). `FluentIconName`
 is the union of them. An unknown name renders an empty icon and logs through
 the `ErrorHandler`; it does not break the page.
 
@@ -237,7 +238,7 @@ import it: `index.html` (`<title>`, favicons) and `public/manifest.webmanifest`.
 
 | Image | Path | Where, at what size |
 |---|---|---|
-| Mark (the cat's head alone) | `/copycat-mark.svg` (`COPYCAT_MARK_SRC`) | title bar, 24 px, named by `APP_NAME` as the home link; the three empty states (Notebooks home, a Notebook's Documents panel, a Chat Thread with no messages), 64 px, decorative |
+| Mark (the cat's head alone) | `/copycat-mark.svg` (`COPYCAT_MARK_SRC`) | title bar, 24 px, named by `APP_NAME` as the home link; the two empty states (Notebooks home, a Notebook's Documents panel; the Chat Thread one went in NBK-81), 64 px, decorative |
 | Logo (the full scene) | `/copycat-logo.svg` (`COPYCAT_LOGO_SRC`) | sign-in and register pages, 96 px (`<app-auth-brand>`) |
 
 The mark is always `<app-copycat-mark>` (`shared/copycat-mark.ts`), an

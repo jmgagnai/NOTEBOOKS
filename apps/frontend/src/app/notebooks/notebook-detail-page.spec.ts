@@ -13,6 +13,7 @@ import {
   documentFor,
   deferred,
   RESEARCH,
+  landingTitle,
   renderWithUpload,
   typeTitle,
   fileNamed,
@@ -58,7 +59,7 @@ describe('NotebookDetailPage — workspace', () => {
       }),
     });
 
-    expect(await screen.findByText('Research')).toBeTruthy();
+    expect(await landingTitle('Research')).toBeTruthy();
     expect(await screen.findByText('report.txt')).toBeTruthy();
     // One compact row (NBK-42): the type icon named for what it shows, the
     // stage as a quiet line with a progress bar while ingestion runs, and no
@@ -559,9 +560,9 @@ describe('NotebookDetailPage — workspace', () => {
       const documents = documentsPanel();
 
       expect(within(navigator).getByRole('button', { name: 'New Chat Thread' })).toBeTruthy();
-      expect(
-        within(chat).getByText('Ask anything about the Documents in this Notebook'),
-      ).toBeTruthy();
+      // NBK-81: with no Chat Threads the Chat region is the Notebook landing.
+      expect(within(chat).getByRole('heading', { name: 'Notebook' })).toBeTruthy();
+      expect(within(chat).getByLabelText('Ask a question')).toBeTruthy();
       expect(within(documents).getByText('No Documents yet.')).toBeTruthy();
     });
 
@@ -575,7 +576,7 @@ describe('NotebookDetailPage — workspace', () => {
         id: NOTEBOOK_ID,
         body: { title: 'Research 2026' },
       });
-      expect(await screen.findByRole('button', { name: 'Research 2026' })).toBeTruthy();
+      expect(await landingTitle('Research 2026')).toBeTruthy();
       expect(screen.queryByLabelText('Notebook title')).toBeNull();
       // NBK-61: the browser tab follows the rename.
       expect(document.title).toBe(`Research 2026 – ${APP_NAME}`);
@@ -610,7 +611,7 @@ describe('NotebookDetailPage — workspace', () => {
       fireEvent.blur(await typeTitle('Archive'));
 
       expect(renameNotebook).toHaveBeenCalledWith({ id: NOTEBOOK_ID, body: { title: 'Archive' } });
-      expect(await screen.findByRole('button', { name: 'Archive' })).toBeTruthy();
+      expect(await landingTitle('Archive')).toBeTruthy();
     });
 
     it('discards the edit on Escape and sends nothing', async () => {
@@ -620,7 +621,7 @@ describe('NotebookDetailPage — workspace', () => {
       fireEvent.keyDown(await typeTitle('Mistake'), { key: 'Escape' });
 
       expect(renameNotebook).not.toHaveBeenCalled();
-      expect(screen.getByRole('button', { name: 'Research' })).toBeTruthy();
+      expect(await landingTitle('Research')).toBeTruthy();
       expect(screen.queryByLabelText('Notebook title')).toBeNull();
     });
 

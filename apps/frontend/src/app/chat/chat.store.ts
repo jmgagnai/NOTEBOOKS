@@ -274,6 +274,9 @@ export const ChatStore = signalStore(
           notebookId,
           threadId,
         })) as ChatMessage[];
+        // Closed (NBK-81) or swapped for another while the read was out:
+        // these are no longer the messages on screen.
+        if (store.activeThreadId() !== threadId) return;
         // An ask in this Thread can land while the read is out — the user
         // switched back mid-answer — and `sendMessage` has then appended an
         // exchange the snapshot predates. Keep it rather than let the older
@@ -287,6 +290,7 @@ export const ChatStore = signalStore(
         );
         patchState(store, { messages, messagesLoading: false });
       } catch (err) {
+        if (store.activeThreadId() !== threadId) return;
         patchState(store, {
           messagesLoading: false,
           error: errorMessage(err, 'Failed to load the Chat Thread.'),
@@ -363,6 +367,27 @@ export const ChatStore = signalStore(
       },
 
       openThread,
+
+      /**
+       * Closes the open Chat Thread (NBK-81, spec 07 "Middle pane"): the
+       * Thread view's back arrow returns to the Notebook landing. Only the
+       * client lets go — the Thread stays in the list and nothing is sent to
+       * the server, so an answer still being written there keeps being
+       * recorded, as when another Thread is opened. Not a reload either:
+       * `loadThreads` would reopen the newest Thread (NBK-43), and the
+       * landing must stay. A question in flight and failed questions are
+       * kept: they belong to their Thread, which may be opened again.
+       */
+      closeThread(): void {
+        patchState(store, {
+          activeThreadId: null,
+          messages: [],
+          messagesLoading: false,
+          streamingAnswer: null,
+          // The error row is the closed Thread's (or about an ask in it).
+          error: null,
+        });
+      },
 
       /**
        * Asks a question and appends the exchange.

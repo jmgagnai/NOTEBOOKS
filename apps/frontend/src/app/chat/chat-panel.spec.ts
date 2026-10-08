@@ -153,7 +153,7 @@ describe('Chat panel (ThreadNavigator + ThreadView) — Chat Threads', () => {
     });
 
     fireEvent.click(await screen.findByRole('button', { name: 'Open Revenue questions' }));
-    await screen.findByText('Ask anything about the Documents in this Notebook');
+    await screen.findByTestId('chat-messages');
 
     fireEvent.input(screen.getByLabelText('Ask a question'), {
       target: { value: 'What was revenue in Q3?' },
@@ -318,7 +318,7 @@ describe('Chat panel (ThreadNavigator + ThreadView) — Chat Threads', () => {
       await screen.findByRole('heading', { name: 'Supply chain' });
       fireEvent.click(row('Supply chain'));
 
-      await screen.findByText('Ask anything about the Documents in this Notebook');
+      await screen.findByTestId('chat-messages');
       expect(listChatMessages).toHaveBeenCalledTimes(1);
     });
   });
@@ -388,6 +388,38 @@ describe('Chat panel (ThreadNavigator + ThreadView) — Chat Threads', () => {
       });
       expect(await screen.findByRole('heading', { name: 'Supply chain' })).toBeTruthy();
       expect(screen.getByRole('button', { name: 'Open Supply chain' })).toBeTruthy();
+    });
+  });
+  // NBK-81 (spec 07 "Middle pane: landing or Thread", stories 37–38): an open
+  // Thread's back arrow closes it and returns to the Notebook landing. Only
+  // the client lets go of it: the Thread stays in the list, and nothing is
+  // reloaded — which is also why the newest Thread (NBK-43) does not reopen.
+  describe('NBK-81: back to the Notebook', () => {
+    it('returns from the open Thread to the landing, with no Thread marked current', async () => {
+      const listChatThreads = vi.fn().mockResolvedValue([thread()]);
+      const listChatMessages = vi.fn().mockResolvedValue([message()]);
+      await renderPanel({
+        listChatThreads: listChatThreads as never,
+        listChatMessages: listChatMessages as never,
+      });
+      const row = () => screen.getByRole('button', { name: 'Open Revenue questions' });
+      expect(await screen.findByText('What was revenue in Q3?')).toBeTruthy();
+      expect(row().getAttribute('aria-current')).toBe('true');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Back to Notebook' }));
+
+      expect(await screen.findByRole('heading', { name: 'Notebook' })).toBeTruthy();
+      expect(screen.queryByRole('heading', { name: 'Revenue questions' })).toBeNull();
+      expect(screen.queryByText('What was revenue in Q3?')).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Back to Notebook' })).toBeNull();
+      expect(row().getAttribute('aria-current')).toBeNull();
+      expect(listChatThreads).toHaveBeenCalledTimes(1);
+
+      // Closed, not gone: opening it again reads it back.
+      fireEvent.click(row());
+      expect(await screen.findByText('What was revenue in Q3?')).toBeTruthy();
+      expect(row().getAttribute('aria-current')).toBe('true');
+      expect(listChatMessages).toHaveBeenCalledTimes(2);
     });
   });
 });

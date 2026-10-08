@@ -16,7 +16,6 @@ import {
   appEvents,
   resetAppEvents,
   renderPanel,
-  openRevenueQuestions,
   draftAQuestion,
   sendHeld,
 } from './chat-panel.spec-helpers';
@@ -300,30 +299,6 @@ describe('Chat panel (ThreadNavigator + ThreadView) — asking', () => {
       expect(questionBox().value).toBe(ASK);
     });
 
-    it('replaces the empty state at once', async () => {
-      await sendHeld();
-
-      await screen.findByTestId('chat-pending-question');
-      expect(screen.queryByText('Ask anything about the Documents in this Notebook')).toBeNull();
-      expect(
-        screen.queryByRole('button', { name: 'Summarize the Documents in this Notebook' }),
-      ).toBeNull();
-    });
-
-    it('shows a starter prompt as a pending question', async () => {
-      const { sendChatMessage } = heldSend();
-      await openRevenueQuestions([], { sendChatMessage });
-      await screen.findByText('Ask anything about the Documents in this Notebook');
-
-      fireEvent.click(
-        screen.getByRole('button', { name: 'Summarize the Documents in this Notebook' }),
-      );
-
-      const row = await screen.findByTestId('chat-pending-question');
-      expect(within(row).getByText('Summarize the Documents in this Notebook')).toBeTruthy();
-      expect(within(row).getByText('Sending…')).toBeTruthy();
-    });
-
     // Story 11: the preview belongs to the Thread it was asked in.
     it('stays with its Chat Thread across a switch', async () => {
       const { settle } = await sendHeld({
@@ -420,157 +395,160 @@ describe('Chat panel (ThreadNavigator + ThreadView) — asking', () => {
     });
   });
 
-  // NBK-54 (spec 04 "Empty state", stories 20–21): with nothing to read, the
-  // Thread card offers three static starter prompts instead of a blank pane;
-  // activating one asks it, starting a Chat Thread first when none is open.
-  describe('NBK-54: empty state', () => {
-    const SUMMARIZE = 'Summarize the Documents in this Notebook';
-    const PROMPTS = [
-      SUMMARIZE,
-      'What are the key points across these Documents?',
-      'What questions do these Documents answer?',
-    ];
+  // NBK-81 (spec 07 "Notebook landing", "Asking from the landing",
+  // "Placeholder removed"): with no Thread open the Thread card is the
+  // Notebook landing — its title and a live composer — and sending from it
+  // starts a Chat Thread and asks in it, the sequence NBK-54's starter
+  // prompts ran, now the composer's. The prompts and their invitation are gone.
+  describe('NBK-81: asking from the landing', () => {
     const INVITATION = 'Ask anything about the Documents in this Notebook';
+    const SUMMARIZE = 'Summarize the Documents in this Notebook';
+    const send = () => screen.getByRole('button', { name: 'Send' }) as HTMLButtonElement;
+    const newThread = () =>
+      screen.getByRole('button', { name: 'New Chat Thread' }) as HTMLButtonElement;
 
-    const prompt = (name: string) => screen.getByRole('button', { name }) as HTMLButtonElement;
-
-    it('offers the three starter prompts when no Thread is open', async () => {
-      await renderPanel({ listChatThreads: vi.fn().mockResolvedValue([]) as never });
-
-      expect(await screen.findByText(INVITATION)).toBeTruthy();
-      for (const name of PROMPTS) {
-        // Keyboard operable: native, enabled buttons in the tab order, so
-        // Tab reaches each one and Enter or Space activates it.
-        expect(prompt(name).tagName).toBe('BUTTON');
-        expect(prompt(name).disabled).toBe(false);
-        expect(prompt(name).tabIndex).toBe(0);
-      }
-      expect(screen.queryByText('Open a Chat Thread, or start one, to ask a question.')).toBeNull();
-    });
-
-    // NBK-62 (spec 06 "Empty states"): the cat mark replaces the sparkle
-    // above the sentence; the sparkle is left to the assistant's avatar.
-    it('shows the cat mark above the sentence instead of the sparkle, hidden from assistive technology', async () => {
-      await renderPanel({ listChatThreads: vi.fn().mockResolvedValue([]) as never });
-
-      const sentence = await screen.findByText(INVITATION);
-      const mark = screen.getByTestId('copycat-mark') as HTMLImageElement;
-      expect(mark.getAttribute('src')).toBe('/copycat-mark.svg');
-      expect(mark.alt).toBe('');
-      expect(mark.closest('[aria-hidden="true"]')).toBeTruthy();
-      expect(
-        mark.compareDocumentPosition(sentence) & Node.DOCUMENT_POSITION_FOLLOWING,
-      ).toBeTruthy();
-      expect(document.querySelector('mat-icon[svgicon="sparkle"]')).toBeNull();
-    });
-
-    it('gives way to the Chat Thread once the open Thread has messages', async () => {
-      await renderPanel({
-        listChatThreads: vi.fn().mockResolvedValue([thread()]) as never,
-        listChatMessages: vi.fn().mockResolvedValue([message()]) as never,
-      });
-
-      expect(await screen.findByText('What was revenue in Q3?')).toBeTruthy();
-      expect(screen.queryByText(INVITATION)).toBeNull();
-      expect(screen.queryByRole('button', { name: SUMMARIZE })).toBeNull();
-    });
-
-    it('starts a Chat Thread when none is open and asks the prompt in it', async () => {
-      const createChatThread = vi.fn().mockResolvedValue(thread({ title: 'New Chat Thread' }));
-      const sendChatMessage = vi.fn().mockResolvedValue({
-        question: message({ id: 'q1', role: 'user', content: SUMMARIZE }),
-        answer: message({ id: 'a1', role: 'assistant', content: 'The Documents cover FY26.' }),
-      });
+    /** The landing of a Notebook with no Chat Threads, `ASK` typed into its box. */
+    async function draftOnTheLanding(overrides: Partial<Record<string, unknown>> = {}) {
       await renderPanel({
         listChatThreads: vi.fn().mockResolvedValue([]) as never,
-        createChatThread: createChatThread as never,
-        sendChatMessage: sendChatMessage as never,
+        listChatMessages: vi.fn().mockResolvedValue([]) as never,
+        ...overrides,
       });
+      await screen.findByText('No Chat Threads yet.');
+      fireEvent.input(questionBox(), { target: { value: ASK } });
+    }
 
-      await screen.findByText(INVITATION);
-      fireEvent.click(prompt(SUMMARIZE));
+    it('shows the Notebook title and an open question box, and nothing else, when no Thread is open', async () => {
+      await renderPanel({ listChatThreads: vi.fn().mockResolvedValue([]) as never });
+      await screen.findByText('No Chat Threads yet.');
 
-      expect(await screen.findByText('The Documents cover FY26.')).toBeTruthy();
+      // The page's Notebooks store is not loaded here, so the title is the
+      // fallback the Notebook page shows too.
+      const title = screen.getByRole('heading', { name: 'Notebook' });
+      expect(within(title).getByRole('button', { name: 'Notebook' })).toBeTruthy();
+      expect(questionBox().disabled).toBe(false);
+      expect(screen.queryByText(INVITATION)).toBeNull();
+      expect(screen.queryByRole('button', { name: SUMMARIZE })).toBeNull();
+      expect(screen.queryByTestId('copycat-mark')).toBeNull();
+      expect(screen.queryByText('Open or start a Chat Thread to ask')).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Back to Notebook' })).toBeNull();
+    });
+
+    it('starts a Chat Thread titled "New Chat Thread" and asks the question in it', async () => {
+      const createChatThread = vi.fn().mockResolvedValue(thread({ title: 'New Chat Thread' }));
+      const sendChatMessage = vi.fn().mockResolvedValue(q3Exchange());
+      await draftOnTheLanding({ createChatThread, sendChatMessage });
+
+      fireEvent.click(send());
+
+      expect(await screen.findByText('Revenue in Q3 was 12.4M.')).toBeTruthy();
+      expect(createChatThread).toHaveBeenCalledTimes(1);
       expect(createChatThread).toHaveBeenCalledWith({
         notebookId: NOTEBOOK_ID,
         body: { title: 'New Chat Thread' },
       });
+      expect(sendChatMessage).toHaveBeenCalledTimes(1);
       expect(sendChatMessage).toHaveBeenCalledWith({
         notebookId: NOTEBOOK_ID,
         threadId: 'thread-1',
-        body: { content: SUMMARIZE },
+        body: { content: ASK },
       });
+      // The new Thread is open, with the question, and in the list.
       expect(screen.getByRole('heading', { name: 'New Chat Thread' })).toBeTruthy();
-      expect(screen.queryByText(INVITATION)).toBeNull();
+      expect(screen.getByText(ASK)).toBeTruthy();
+      const row = screen.getByRole('button', { name: 'Open New Chat Thread' });
+      expect(row.getAttribute('aria-current')).toBe('true');
+      expect(screen.queryByRole('heading', { name: 'Notebook' })).toBeNull();
     });
 
-    // A second click while the first create is still pending would start a
-    // second, empty Thread: both ways of starting one wait for it.
-    it('starts one Chat Thread however often its controls are clicked while it is created', async () => {
+    it('shows the question at once as pending in the new Thread, the answer arriving under it', async () => {
+      const { sendChatMessage, settle } = heldSend();
+      await draftOnTheLanding({
+        createChatThread: vi.fn().mockResolvedValue(thread({ title: 'New Chat Thread' })),
+        sendChatMessage,
+      });
+
+      fireEvent.keyDown(questionBox(), { key: 'Enter' });
+
+      const row = await screen.findByTestId('chat-pending-question');
+      expect(within(row).getByText(ASK)).toBeTruthy();
+      expect(within(row).getByText('Sending…')).toBeTruthy();
+      expect(questionBox().value).toBe('');
+      appEvents.events.next(chunk(0, 'Revenue in Q3'));
+      expect(await screen.findByTestId('chat-streaming-answer')).toBeTruthy();
+
+      settle(q3Exchange());
+      expect(await screen.findByText('Revenue in Q3 was 12.4M.')).toBeTruthy();
+    });
+
+    // Story 35: a double click, or Enter then a click, while the Thread is
+    // being created must not start a second, empty one — nor ask twice.
+    it('starts one Chat Thread however often it is sent while that Thread is created', async () => {
       let created!: (thread: unknown) => void;
       const createChatThread = vi.fn().mockReturnValue(
         new Promise((resolve) => {
           created = resolve;
         }),
       );
-      await renderPanel({
-        listChatThreads: vi.fn().mockResolvedValue([]) as never,
-        createChatThread: createChatThread as never,
-        sendChatMessage: vi.fn().mockReturnValue(new Promise(() => {})) as never,
-      });
-      await screen.findByText(INVITATION);
-      const newThread = () =>
-        screen.getByRole('button', { name: 'New Chat Thread' }) as HTMLButtonElement;
+      const { sendChatMessage } = heldSend();
+      await draftOnTheLanding({ createChatThread, sendChatMessage });
 
+      fireEvent.click(send());
+      await waitFor(() => expect(send().disabled).toBe(true));
+      expect(questionBox().disabled).toBe(true);
+      expect(newThread().disabled).toBe(true);
+      fireEvent.click(send());
+      fireEvent.keyDown(questionBox(), { key: 'Enter' });
       fireEvent.click(newThread());
-      await waitFor(() => expect(newThread().disabled).toBe(true));
-      for (const name of PROMPTS) expect(prompt(name).disabled).toBe(true);
-      fireEvent.click(newThread());
-      fireEvent.click(prompt(SUMMARIZE));
       expect(createChatThread).toHaveBeenCalledTimes(1);
 
-      // Titled otherwise only so its header's rename button is not a second
-      // "New Chat Thread" button for the query above.
-      created(thread({ title: 'Q3 questions' }));
-      await waitFor(() => expect(newThread().disabled).toBe(false));
+      created(thread({ title: 'New Chat Thread' }));
+
+      // And closed again while the question is answered.
+      expect(await screen.findByRole('status', { name: 'Answering' })).toBeTruthy();
+      expect(questionBox().disabled).toBe(true);
       expect(createChatThread).toHaveBeenCalledTimes(1);
+      expect(sendChatMessage).toHaveBeenCalledTimes(1);
     });
 
-    // Story 21 with a Thread already open: no second Thread, and the
-    // prompts give way to the question they asked (NBK-70), so none can be
-    // asked into an answer still being written.
-    it('asks the prompt in the open empty Thread, which gives way to it while answering', async () => {
-      const { sendChatMessage, settle } = heldSend();
-      const createChatThread = vi.fn();
-      await renderPanel({
-        listChatThreads: vi.fn().mockResolvedValue([thread()]) as never,
-        listChatMessages: vi.fn().mockResolvedValue([]) as never,
-        createChatThread: createChatThread as never,
-        sendChatMessage: sendChatMessage as never,
+    it('keeps the question in the box when the Chat Thread cannot be started', async () => {
+      const sendChatMessage = vi.fn();
+      await draftOnTheLanding({
+        createChatThread: vi
+          .fn()
+          .mockRejectedValue({ error: { message: 'The database is unavailable.' } }),
+        sendChatMessage,
       });
 
-      await screen.findByRole('heading', { name: 'Revenue questions' });
-      await screen.findByText(INVITATION);
-      fireEvent.click(prompt(PROMPTS[1]));
+      fireEvent.click(send());
 
-      expect(await screen.findByRole('status', { name: 'Answering' })).toBeTruthy();
+      const alert = await screen.findByRole('alert');
+      expect(within(alert).getByText('The database is unavailable.')).toBeTruthy();
+      expect(sendChatMessage).not.toHaveBeenCalled();
+      expect(questionBox().disabled).toBe(false);
+      expect(questionBox().value).toBe(ASK);
+      expect(screen.getByRole('heading', { name: 'Notebook' })).toBeTruthy();
+    });
+
+    // Story 43: an open Thread with nothing in it is an empty message area,
+    // not the old placeholder — and asking there asks in it.
+    it('asks in an open empty Thread without starting another', async () => {
+      const createChatThread = vi.fn();
+      const { sendChatMessage } = await draftAQuestion({ createChatThread });
+
+      expect(screen.getByTestId('chat-messages').children).toHaveLength(0);
+      expect(screen.queryByText(INVITATION)).toBeNull();
+      expect(screen.queryByRole('button', { name: SUMMARIZE })).toBeNull();
+
+      fireEvent.click(send());
+
+      expect(await screen.findByText('Revenue in Q3 was 12.4M.')).toBeTruthy();
       expect(createChatThread).not.toHaveBeenCalled();
       expect(sendChatMessage).toHaveBeenCalledWith({
         notebookId: NOTEBOOK_ID,
         threadId: 'thread-1',
-        body: { content: PROMPTS[1] },
+        body: { content: ASK },
       });
-      expect(within(pendingRow()!).getByText(PROMPTS[1])).toBeTruthy();
-      for (const name of PROMPTS) expect(screen.queryByRole('button', { name })).toBeNull();
-      expect(sendChatMessage).toHaveBeenCalledTimes(1);
-
-      settle({
-        question: message({ id: 'q1', role: 'user', content: PROMPTS[1] }),
-        answer: message({ id: 'a1', role: 'assistant', content: 'Lead times fell.' }),
-      });
-
-      expect(await screen.findByText('Lead times fell.')).toBeTruthy();
-      expect(screen.queryByText(INVITATION)).toBeNull();
     });
   });
 });

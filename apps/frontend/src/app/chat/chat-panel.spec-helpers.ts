@@ -8,6 +8,7 @@ import { ThreadView } from './thread-view';
 import { AuthService } from '../api/services/auth.service';
 import { AuthStore } from '../auth/auth.store';
 import { ChatService } from '../api/services/chat.service';
+import { NotebooksService } from '../api/services/notebooks.service';
 import { AppEvent, AppEventsService } from '../events/app-events.service';
 import { provideAppIcons } from '../shared/fluent-icons';
 
@@ -241,6 +242,9 @@ export async function renderPanel(chatService: Partial<ChatService>) {
       provideRouter([]),
       provideAppIcons(),
       { provide: ChatService, useValue: chatService },
+      // The Notebook landing (NBK-81) shows and renames the Notebook's title
+      // through the Notebooks store; the page, not the panel, loads it.
+      { provide: NotebooksService, useValue: { listNotebooks: vi.fn().mockResolvedValue([]) } },
       {
         provide: AuthService,
         useValue: { getCurrentUser: vi.fn().mockResolvedValue(SIGNED_IN) },

@@ -1,36 +1,46 @@
-<div class="thread-view">
+<div class="thread-view" [class.thread-view--landing]="!activeThread()">
   @if (activeThread(); as thread) {
     <div class="thread-view__head">
       <!--
-        Spec 04 "Thread view header" (NBK-51): the title is the rename
-        control, as the Notebook title is. Renaming is open to anyone
-        (ADR-0001), so it is not gated on being the author — "Started by"
-        stays as the record of who started it. The heading keeps the Thread
-        findable by its title for assistive technology.
+        Spec 07 story 37 (NBK-81): back to the Notebook landing. It closes
+        the Thread on this client only; the Thread stays in the list.
       -->
-      <h3 class="thread-view__title">
-        <app-editable-title
-          size="medium"
-          [title]="thread.title"
-          editLabel="Rename Chat Thread"
-          tooltip="Rename Chat Thread"
-          (titleChange)="rename(thread.id, $event)"
-        />
-      </h3>
-      <span class="thread-view__started-by">Started by {{ thread.author.email }}</span>
+      <button
+        mat-icon-button
+        type="button"
+        class="thread-view__back"
+        aria-label="Back to Notebook"
+        matTooltip="Back to Notebook"
+        (click)="store.closeThread()"
+      >
+        <mat-icon svgIcon="arrow-left" />
+      </button>
+      <div class="thread-view__heading">
+        <!--
+          Spec 04 "Thread view header" (NBK-51): the title is the rename
+          control, as the Notebook title is. Renaming is open to anyone
+          (ADR-0001), so it is not gated on being the author — "Started by"
+          stays as the record of who started it. The heading keeps the Thread
+          findable by its title for assistive technology.
+        -->
+        <h3 class="thread-view__title">
+          <app-editable-title
+            size="medium"
+            [title]="thread.title"
+            editLabel="Rename Chat Thread"
+            tooltip="Rename Chat Thread"
+            (titleChange)="rename(thread.id, $event)"
+          />
+        </h3>
+        <span class="thread-view__started-by">Started by {{ thread.author.email }}</span>
+      </div>
     </div>
 
     @if (store.messagesLoading()) {
       <mat-progress-spinner mode="indeterminate" diameter="32" />
-    } @else if (
-      store.messages().length === 0 && !pendingQuestion() && streamingBlocks().length === 0
-    ) {
-      <app-thread-empty-state
-        [disabled]="store.sending() || store.creatingThread()"
-        (ask)="askStarter($event)"
-      />
     } @else {
-      <ol #messageList class="thread-view__messages">
+      <!-- With no messages yet it is simply empty (NBK-81: the placeholder is gone). -->
+      <ol #messageList class="thread-view__messages" data-testid="chat-messages">
         @for (message of store.messages(); track message.id) {
           <!--
             Spec 04 (NBK-44): a question is a right-aligned bubble with the
@@ -146,14 +156,33 @@
       </ol>
     }
   } @else {
-    <!-- NBK-54: with no Thread open a starter prompt starts one, so the prompts show here too. -->
-    <app-thread-empty-state
-      [disabled]="store.sending() || store.creatingThread()"
-      (ask)="askStarter($event)"
-    />
+    <!--
+      The Notebook landing (NBK-81, spec 07 stories 31–32, 36): nothing but
+      the Notebook and the question box under it, from which a question
+      starts a Chat Thread. The title is the Notebook's rename control, as in
+      the page header until NBK-82 removes that; a heading so the landing is
+      findable by the Notebook's name.
+    -->
+    <div class="thread-view__landing">
+      <mat-icon class="thread-view__landing-icon" svgIcon="folder" />
+      <h2 class="thread-view__landing-title">
+        <app-editable-title
+          size="page"
+          [title]="notebookTitle()"
+          editLabel="Notebook title"
+          tooltip="Rename Notebook"
+          (titleChange)="renameNotebook($event)"
+        />
+      </h2>
+    </div>
   }
 
-  <!-- Pinned under the messages whatever is open (NBK-45): it also carries the error row. -->
+  <!--
+    One instance whatever is shown (NBK-45): under the messages of an open
+    Thread, under the title on the landing. Kept outside the branches so
+    asking from the landing does not destroy the box mid-ask when the new
+    Thread opens. It also carries the error row.
+  -->
   <app-composer [notebookId]="notebookId()" />
 </div>
 

@@ -15,12 +15,61 @@
   flex: 1 1 auto;
   min-height: 0;
 
+  // The open Thread's top bar (NBK-81): the back arrow at the top left,
+  // then the title over "Started by".
   &__head {
     flex: none;
     display: flex;
+    align-items: flex-start;
+    gap: 0.25rem;
+    padding: 8px 12px 0 4px;
+  }
+
+  &__back {
+    flex: none;
+  }
+
+  &__heading {
+    min-width: 0;
+    display: flex;
     flex-direction: column;
     gap: 0.125rem;
-    padding: 8px 12px 0;
+  }
+
+  // The Notebook landing (NBK-81): the title block and the composer after
+  // it sit together in the middle of the pane, as on Copilot's Notebook
+  // page, rather than the composer pinned to the bottom of an empty pane.
+  // One column as wide as an open Thread's reading width (spec 07
+  // "Messages", about 760 px), the title lined up with the box's edge.
+  &--landing {
+    justify-content: center;
+    align-items: center;
+    padding: 24px;
+
+    > * {
+      box-sizing: border-box;
+      width: min(760px, 100%);
+    }
+  }
+
+  &__landing {
+    flex: none;
+    padding: 0 12px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+  }
+
+  &__landing-icon {
+    color: var(--mat-sys-on-surface-variant);
+  }
+
+  &__landing-title {
+    max-width: 100%;
+    margin: 0;
+    font: inherit;
   }
 
   // The heading only carries the semantics; the editable title sets the type.

@@ -14,12 +14,14 @@ import {
 import { MatTooltipModule } from '@angular/material/tooltip';
 
 /**
- * The type step the title is set in, after the three places the specs put
- * it: `large` is a page title (20/600, the Notebook header), `medium` a card
+ * The type step the title is set in, after the places the specs put it:
+ * `page` is spec 07's page-title role (40/600, the Notebook landing, NBK-81),
+ * `large` a page header title (20/600, the Notebook header), `medium` a card
  * header (16/600, the Chat Thread title), `small` a card title (14/600, a
- * Notebook card). Each maps onto the matching `--mat-sys-title-*` role.
+ * Notebook card). `page` maps onto `--app-type-page-title`, the others onto
+ * the matching `--mat-sys-title-*` role.
  */
-export type EditableTitleSize = 'large' | 'medium' | 'small';
+export type EditableTitleSize = 'page' | 'large' | 'medium' | 'small';
 
 /**
  * A title that is renamed in place (NBK-41, spec 02 "Header"): a button that
@@ -64,6 +66,7 @@ export type EditableTitleSize = 'large' | 'medium' | 'small';
   `,
   styleUrl: './editable-title.scss',
   host: {
+    '[class.editable-title--page]': 'size() === "page"',
     '[class.editable-title--large]': 'size() === "large"',
     '[class.editable-title--medium]': 'size() === "medium"',
     '[class.editable-title--small]': 'size() === "small"',
