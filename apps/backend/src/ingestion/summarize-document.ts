@@ -12,6 +12,7 @@ import {
   type GeneratedArtifacts,
   type SectionSummaryStore,
 } from './generated-artifacts.js';
+import { classifyProviderFailure } from './provider-failure.js';
 import {
   attemptFailed,
   documentVersionRefSchema,
@@ -326,7 +327,7 @@ export async function runSummarizeDocumentJob(
       pool,
       version,
       willRetry ? 'converted' : 'failed',
-      attemptFailed(err, { willRetry, failedAt: 'summarizing' }),
+      attemptFailed(classifyProviderFailure(err), { willRetry, failedAt: 'summarizing' }),
     );
     throw err;
   }

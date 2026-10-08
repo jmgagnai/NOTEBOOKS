@@ -82,6 +82,79 @@ function isRetryableStatus(status: number): boolean {
   return status === 408 || status === 429 || status >= 500;
 }
 
+/**
+ * The provider could not be reached or refused the work, as opposed to
+ * answering badly (NBK-66). Callers that have to tell a user which of the two
+ * happened — ingestion stages 2 and 3 — test for this class; everything else
+ * reads it as a plain `Error`, with the same message as before.
+ *
+ * The rule, shared by the completer and the embedder:
+ *
+ * - **Unavailable:** the request never got an answer (a thrown `fetch`: DNS,
+ *   socket, timeout), the provider said it would not or could not do the
+ *   work now (401/402/403 — key, credits, refusal — and 408, 429, 5xx), or it
+ *   reported an upstream failure in a 200 body. Nothing about the Document
+ *   caused these, and the same request may succeed later.
+ * - **Not unavailable (a plain `Error`):** any other 4xx, which means this
+ *   app sent a request the provider will never accept (a malformed body, a
+ *   retired model id); and a 200 whose answer is empty or malformed. Those
+ *   are this app's problem to fix, so a user is told "unexpected" rather than
+ *   "try later".
+ *
+ * Independent of {@link isRetryableStatus}: 401 is unavailable but not worth
+ * an in-process retry, and an empty answer is worth a retry but is not an
+ * outage.
+ */
+export class ProviderUnavailableError extends Error {
+  override readonly name = 'ProviderUnavailableError';
+}
+
+/** The HTTP half of the {@link ProviderUnavailableError} rule. */
+export function isUnavailableStatus(status: number): boolean {
+  return status === 401 || status === 402 || status === 403 || isRetryableStatus(status);
+}
+
+/**
+ * One in-process attempt at a provider call, as both clients' retry loops
+ * see it. `unavailable` decides which error the loop throws once it gives up.
+ */
+export interface ProviderAttempt<T> {
+  value?: T;
+  retryable: boolean;
+  unavailable: boolean;
+  error?: string;
+}
+
+/**
+ * Runs `attempt` with the clients' shared retry policy, throwing a
+ * {@link ProviderUnavailableError} or a plain `Error` according to the last
+ * attempt's outcome.
+ */
+export async function withProviderRetries<T>(
+  attempt: () => Promise<ProviderAttempt<T>>,
+  { retries, retryDelayMs, neverRan }: { retries: number; retryDelayMs: number; neverRan: string },
+): Promise<T> {
+  let last: ProviderAttempt<T> = { retryable: false, unavailable: false, error: neverRan };
+  for (let i = 0; i <= retries; i += 1) {
+    try {
+      last = await attempt();
+    } catch (err) {
+      // A thrown fetch is a transport problem (DNS, socket, timeout) —
+      // always worth another attempt, and the provider never answered.
+      last = {
+        retryable: true,
+        unavailable: true,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+    if (last.value !== undefined) return last.value;
+    if (!last.retryable || i === retries) break;
+    await new Promise((resolve) => setTimeout(resolve, retryDelayMs * 2 ** i));
+  }
+  const message = last.error ?? neverRan;
+  throw last.unavailable ? new ProviderUnavailableError(message) : new Error(message);
+}
+
 /** The option defaults both clients share, resolved once. */
 function resolveOptions(options: OpenRouterOptions) {
   if (!options.apiKey) {
@@ -148,9 +221,7 @@ function chatCompletionRequestInit(
 export function createOpenRouterCompleter(options: OpenRouterOptions): ChatCompleter {
   const { apiKey, url, doFetch, retries, retryDelayMs, timeoutMs } = resolveOptions(options);
 
-  async function attempt(
-    request: ChatCompletionRequest,
-  ): Promise<{ text?: string; retryable: boolean; error?: string }> {
+  async function attempt(request: ChatCompletionRequest): Promise<ProviderAttempt<string>> {
     const response = await doFetch(
       url,
       chatCompletionRequestInit(apiKey, request, { stream: false, timeoutMs }),
@@ -160,6 +231,7 @@ export function createOpenRouterCompleter(options: OpenRouterOptions): ChatCompl
       const body = await response.text().catch(() => '');
       return {
         retryable: isRetryableStatus(response.status),
+        unavailable: isUnavailableStatus(response.status),
         error: `OpenRouter returned ${response.status} for model ${request.model}: ${body.slice(0, 500)}`,
       };
     }
@@ -169,6 +241,7 @@ export function createOpenRouterCompleter(options: OpenRouterOptions): ChatCompl
       // OpenRouter can report an upstream provider failure in a 200 body.
       return {
         retryable: true,
+        unavailable: true,
         error: `OpenRouter error for model ${request.model}: ${payload.error.message}`,
       };
     }
@@ -176,30 +249,19 @@ export function createOpenRouterCompleter(options: OpenRouterOptions): ChatCompl
     if (typeof text !== 'string' || text.trim() === '') {
       return {
         retryable: true,
+        unavailable: false,
         error: `OpenRouter returned no content for model ${request.model}.`,
       };
     }
-    return { retryable: false, text };
+    return { retryable: false, unavailable: false, value: text };
   }
 
-  return async function complete(request: ChatCompletionRequest): Promise<string> {
-    let lastError = `OpenRouter call for model ${request.model} never ran.`;
-    for (let i = 0; i <= retries; i += 1) {
-      let outcome: Awaited<ReturnType<typeof attempt>>;
-      try {
-        outcome = await attempt(request);
-      } catch (err) {
-        // A thrown fetch is a transport problem (DNS, socket, timeout) —
-        // always worth another attempt.
-        outcome = { retryable: true, error: err instanceof Error ? err.message : String(err) };
-      }
-
-      if (outcome.text !== undefined) return outcome.text;
-      lastError = outcome.error ?? lastError;
-      if (!outcome.retryable || i === retries) break;
-      await new Promise((resolve) => setTimeout(resolve, retryDelayMs * 2 ** i));
-    }
-    throw new Error(lastError);
+  return function complete(request: ChatCompletionRequest): Promise<string> {
+    return withProviderRetries(() => attempt(request), {
+      retries,
+      retryDelayMs,
+      neverRan: `OpenRouter call for model ${request.model} never ran.`,
+    });
   };
 }
 

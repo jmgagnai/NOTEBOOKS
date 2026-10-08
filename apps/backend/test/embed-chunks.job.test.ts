@@ -718,6 +718,84 @@ describe('embed-chunks job', () => {
     expect(await readChunks(seeded.versionId)).toEqual([]);
   });
 
+  /**
+   * NBK-66: which failures of stage 3 a user is told were a service outage.
+   * The rule lives beside `ProviderUnavailableError` in src/llm/openrouter.ts;
+   * these cases pin it at the job seam, through the real embedder.
+   */
+  describe('NBK-66: failure reason', () => {
+    const json = (status: number, body: unknown): Response =>
+      new Response(JSON.stringify(body), {
+        status,
+        headers: { 'content-type': 'application/json' },
+      });
+
+    async function failureAfter(
+      fetchStub: typeof globalThis.fetch,
+      { willRetry }: { willRetry: boolean },
+    ) {
+      const seeded = await seedSummarizedVersion(
+        'outage.md',
+        `# Outage\n\n${prose('outage', 2)}\n`,
+      );
+      await expect(
+        runEmbedChunksJob(
+          {
+            pool,
+            embed: createOpenRouterEmbedder({
+              apiKey: 'test-key',
+              model: DEFAULT_EMBEDDING_MODEL,
+              fetch: fetchStub,
+              retries: 0,
+            }),
+          },
+          { payload: { documentId: seeded.documentId, versionId: seeded.versionId }, willRetry },
+        ),
+      ).rejects.toThrow();
+      const [document] = await listDocuments(pool, seeded.notebookId);
+      return document.failure;
+    }
+
+    it.each<[string, typeof globalThis.fetch]>([
+      [
+        'the provider cannot be reached',
+        async () => {
+          throw new TypeError('fetch failed');
+        },
+      ],
+      ['the provider is rate-limited', async () => json(429, { error: { message: 'slow down' } })],
+      ['the provider errors', async () => json(503, { error: { message: 'unavailable' } })],
+      ['the provider refuses the key', async () => json(401, { error: { message: 'no auth' } })],
+      [
+        'the provider reports an upstream failure in a 200',
+        async () => json(200, { error: { message: 'upstream provider down' } }),
+      ],
+    ])("records 'service-unavailable' when %s and no retry is left", async (_, fetchStub) => {
+      expect(await failureAfter(fetchStub, { willRetry: false })).toEqual({
+        reason: 'service-unavailable',
+        failedAt: 'indexing',
+      });
+    });
+
+    it.each<[string, typeof globalThis.fetch]>([
+      ['the provider returns the wrong number of embeddings', async () => json(200, { data: [] })],
+      [
+        'the request names a model the provider does not know',
+        async () => json(404, { error: { message: 'no such model' } }),
+      ],
+    ])("records 'unexpected' when %s", async (_, fetchStub) => {
+      expect(await failureAfter(fetchStub, { willRetry: false })).toEqual({
+        reason: 'unexpected',
+        failedAt: 'indexing',
+      });
+    });
+
+    it('records no reason while a retry is pending', async () => {
+      const outage: typeof globalThis.fetch = async () => json(503, {});
+      expect(await failureAfter(outage, { willRetry: true })).toBeNull();
+    });
+  });
+
   it('does nothing for a Document Version that no longer exists', async () => {
     const { calls, fetchStub } = stubEmbeddings();
 
