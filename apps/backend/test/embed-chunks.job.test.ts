@@ -633,7 +633,9 @@ describe('embed-chunks job', () => {
       'indexing',
       'summarized',
     ]);
-    expect(mine[1].data).toMatchObject({ error: expect.stringMatching(/429/) });
+    // NBK-67: the raw error stays on the row; a retry has no reason to show.
+    expect(mine[1].data).not.toHaveProperty('error');
+    expect(mine[1].data).not.toHaveProperty('failure');
   });
 
   it("marks the Version failed when embedding can't be retried", async () => {

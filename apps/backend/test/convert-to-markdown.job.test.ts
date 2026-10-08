@@ -220,6 +220,40 @@ describe('convert-to-Markdown job', () => {
     });
   });
 
+  describe('NBK-67: the status App Event carries the failure reason', () => {
+    /** Every status-changed event published for `seeded`, once `count` have arrived. */
+    async function eventsFor(seeded: SeededVersion, count: number) {
+      const mine = (all: AppEvent[]) =>
+        all.filter((e) => (e.data as { versionId?: string }).versionId === seeded.versionId);
+      return mine(await waitForEvents((all) => mine(all).length >= count));
+    }
+
+    it('announces a final failure with its reason and where it failed, and no raw error text', async () => {
+      const seeded = await seedUploadedVersion('scan-live.pdf', 'pictures of text');
+
+      await failAttempt(seeded, scanRefusal(), false);
+
+      const [converting, failed] = await eventsFor(seeded, 2);
+      expect(failed.data).toMatchObject({
+        status: 'failed',
+        failure: { reason: 'no-text-layer', failedAt: 'converting' },
+      });
+      expect(failed.data).not.toHaveProperty('error');
+      expect(converting.data).not.toHaveProperty('failure');
+    });
+
+    it('announces a retry with neither a reason nor the raw error text', async () => {
+      const seeded = await seedUploadedVersion('scan-live-retry.pdf', 'pictures of text');
+
+      await failAttempt(seeded, scanRefusal(), true);
+
+      const [, queued] = await eventsFor(seeded, 2);
+      expect(queued.data).toMatchObject({ status: 'queued' });
+      expect(queued.data).not.toHaveProperty('failure');
+      expect(queued.data).not.toHaveProperty('error');
+    });
+  });
+
   it('converts the stored upload and saves the Markdown on the Document Version', async () => {
     const seeded = await seedUploadedVersion('handbook.txt', 'the original bytes');
 
@@ -348,7 +382,7 @@ describe('convert-to-Markdown job', () => {
     expect(version.ingestion_error).toContain('transient docling crash');
   });
 
-  it('records a failure whose message is too long for an event, with the full text on the row', async () => {
+  it('records a failure whose message is too long for an event, with the full text on the row only', async () => {
     const seeded = await seedUploadedVersion('verbose.txt', 'noisy converter');
     // Stage 1 attaches up to 8000 bytes of Docling's own output to its error.
     // Before NBK-14's follow-up this blew the event bus's payload cap inside
@@ -391,9 +425,12 @@ describe('convert-to-Markdown job', () => {
         (e.data as { versionId?: string }).versionId === seeded.versionId &&
         (e.data as { status?: string }).status === 'failed',
     )!;
-    const announced = (failure.data as { error: string }).error;
-    expect(announced.startsWith('Docling exited with code 1')).toBe(true);
-    expect(announced.length).toBeLessThan(traceback.length);
+    // NBK-67: the event names the reason, never the raw text, so its size no
+    // longer depends on what the converter printed.
+    expect(failure.data).toMatchObject({
+      failure: { reason: 'unexpected', failedAt: 'converting' },
+    });
+    expect(failure.data).not.toHaveProperty('error');
   });
 
   // Per ADR-0004 and GLOSSARY.md, Ingestion is "a chain of independently

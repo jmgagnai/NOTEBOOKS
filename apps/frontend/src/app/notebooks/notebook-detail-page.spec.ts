@@ -1451,6 +1451,59 @@ describe('NotebookDetailPage', () => {
       expect(warning).toBeTruthy();
     });
 
+    // NBK-67: a user watching an upload learns why it failed the moment it
+    // does, and a reason never outlives the failure it explained.
+    it('takes the failure reason from the status App Event and drops it once the Version moves on', async () => {
+      const appEvents = appEventsStub();
+      const scan = documentFor('live-scan.pdf', { status: 'converting' });
+      await render(NotebookDetailPage, {
+        providers: pageProviders({
+          documents: { listDocuments: vi.fn().mockResolvedValue([scan]) },
+          appEvents,
+        }),
+      });
+      await screen.findByText('live-scan.pdf');
+      const announce = (status: string, failure?: unknown) =>
+        appEvents.events.next({
+          id: `event-${status}`,
+          type: 'document-version-status-changed',
+          topic: `notebook:${NOTEBOOK_ID}`,
+          occurredAt: '2026-01-01T00:00:01.000Z',
+          data: {
+            documentId: scan.id,
+            versionId: scan.latestVersion.id,
+            status,
+            ...(failure ? { failure } : {}),
+          },
+        });
+
+      announce('failed', { reason: 'no-text-layer', failedAt: 'converting' });
+      expect(
+        await within(documentRow('live-scan.pdf')).findByRole('img', {
+          name: 'Ingestion failed',
+          description:
+            'This PDF has no selectable text (it looks like a scan). Upload a PDF whose text can be selected.',
+        }),
+      ).toBeTruthy();
+
+      announce('queued');
+      await waitFor(() =>
+        expect(
+          within(documentRow('live-scan.pdf')).queryByRole('img', { name: 'Ingestion failed' }),
+        ).toBeNull(),
+      );
+
+      // A failure announced without a reason must not resurrect the earlier
+      // one: the scan sentence would tell the user to fix the wrong thing.
+      announce('failed');
+      expect(
+        await within(documentRow('live-scan.pdf')).findByRole('img', {
+          name: 'Ingestion failed',
+          description: 'Something went wrong on our side while ingesting this Document.',
+        }),
+      ).toBeTruthy();
+    });
+
     it('shows the version only once a Document has more than one Version', async () => {
       await renderWithUpload(vi.fn(), [
         documentFor('one.txt', { status: 'ready' }),

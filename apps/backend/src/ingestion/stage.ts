@@ -91,17 +91,25 @@ export interface IngestionVersion extends DocumentVersionRef {
  * `pg_notify` is transactional, so a status nobody committed is never
  * announced, and an announcement is never lost after a commit.
  *
- * `error` is included only when there is one, so a client can treat its
- * presence as meaningful rather than having to test for null. Per ADR-0004 an
- * event carries *what changed* and never bulk data — a NOTIFY payload has to
- * stay well inside Postgres's 8000-byte cap — which is why nothing here
- * carries Markdown, a summary, or metadata, and why the error is cut to a
- * headline (see `eventErrorSummary`). The full text is on the Version row.
+ * `failure` is included only on a final failure, so a client can treat its
+ * presence as meaningful rather than having to test for null; a client that
+ * sees an event without it clears whatever reason it showed before, which is
+ * what a New Version leaving `failed` needs (NBK-67).
+ *
+ * The raw error text is deliberately not here (NBK-67). It is written for
+ * developers, can carry a subprocess's whole captured output, and no client
+ * read it; the user is told the `failure` reason instead, and the full text
+ * stays on the Version row (`ingestion_error`). Per ADR-0004 an event carries
+ * *what changed* and never bulk data — a NOTIFY payload has to stay well
+ * inside Postgres's 8000-byte cap — which is also why nothing here carries
+ * Markdown, a summary, or metadata. Carrying the raw text once let a
+ * Docling traceback blow that cap inside the transaction recording the
+ * failure, so the failure was never recorded; a reason cannot.
  */
 export function versionStatusChanged(
   version: IngestionVersion,
   status: DocumentStatus,
-  error?: string | null,
+  failure?: DocumentFailure | null,
 ): AppEventDraft {
   return {
     type: DOCUMENT_VERSION_STATUS_CHANGED,
@@ -112,32 +120,10 @@ export function versionStatusChanged(
       versionId: version.versionId,
       filename: version.filename,
       status,
-      ...(error ? { error: eventErrorSummary(error) } : {}),
+      ...(failure ? { failure } : {}),
     },
   };
 }
-
-/**
- * The most of a Stage's error that fits in an event.
- *
- * A failure message can carry a subprocess's whole captured output — stage
- * 1 attaches up to 8000 bytes of Docling diagnostics — and an event that
- * size is refused by the bus. That refusal used to happen *inside* the
- * transaction recording the failure, so the failure was never recorded: the
- * Version stayed at "converting", the event bus's complaint replaced the
- * real error in the job table, and nothing told the user. The event gets
- * the headline; `ingestion_error` keeps everything.
- */
-export function eventErrorSummary(error: string): string {
-  if (error.length <= MAX_EVENT_ERROR_CHARS) return error;
-  return `${error.slice(0, MAX_EVENT_ERROR_CHARS)}…`;
-}
-
-/**
- * Well under the bus's 7000-byte cap even for multi-byte text, with room
- * left for the rest of the envelope.
- */
-const MAX_EVENT_ERROR_CHARS = 500;
 
 /**
  * A Stage's error that knows why, in user terms, the work could not be done
