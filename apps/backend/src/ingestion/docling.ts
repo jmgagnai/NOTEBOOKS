@@ -209,15 +209,25 @@ export function createDoclingConverter(options: DoclingOptions = {}): MarkdownCo
 
       const timer = setTimeout(() => {
         child.kill('SIGKILL');
-        reject(new Error(`Docling timed out after ${timeoutMs}ms converting ${inputName}.`));
+        reject(
+          new IngestionFailure(
+            'timed-out',
+            `Docling timed out after ${timeoutMs}ms converting ${inputName}.`,
+          ),
+        );
       }, timeoutMs);
 
       child.on('error', (err) => {
         clearTimeout(timer);
+        // NBK-65: a converter that never ran says nothing about the Document,
+        // so the user is told the service was unavailable, not that their
+        // upload is at fault.
         reject(
-          new Error(
+          new IngestionFailure(
+            'service-unavailable',
             `Could not start Docling via ${docker}: ${err.message}. ` +
               'See docs/ingestion-docling.md for the setup step.',
+            { cause: err },
           ),
         );
       });
@@ -229,8 +239,12 @@ export function createDoclingConverter(options: DoclingOptions = {}): MarkdownCo
           resolvePromise(output);
           return;
         }
+        // NBK-65: Docling crashing on a Document is the Document being
+        // unreadable to it; the diagnostics stay in the message, for
+        // operators, and never decide the reason.
         reject(
-          new Error(
+          new IngestionFailure(
+            'unreadable',
             `Docling exited with ${signal ? `signal ${signal}` : `code ${code}`}: ${output}`,
           ),
         );
@@ -246,7 +260,8 @@ export function createDoclingConverter(options: DoclingOptions = {}): MarkdownCo
     // or — worse, if an output file ever pre-existed — as a silent success
     // carrying the wrong content.
     if (!(await fileExists(produced))) {
-      throw new Error(
+      throw new IngestionFailure(
+        'unreadable',
         `Docling exited 0 but produced no Markdown for ${inputName}. Diagnostics: ${diagnostics || '(none)'}`,
       );
     }
