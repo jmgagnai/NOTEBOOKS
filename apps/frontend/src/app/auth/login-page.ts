@@ -4,7 +4,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
-import { APP_NAME } from '../shared/app-name';
+import { AuthBrand } from './auth-brand';
 import { AuthStore } from './auth.store';
 
 /**
@@ -17,6 +17,7 @@ import { AuthStore } from './auth.store';
   selector: 'app-login-page',
   standalone: true,
   imports: [
+    AuthBrand,
     MatButtonModule,
     MatFormFieldModule,
     MatInputModule,
@@ -27,7 +28,6 @@ import { AuthStore } from './auth.store';
   styleUrl: './login-page.scss',
 })
 export class LoginPage {
-  protected readonly appName = APP_NAME;
   protected readonly store = inject(AuthStore);
   private readonly router = inject(Router);
 
