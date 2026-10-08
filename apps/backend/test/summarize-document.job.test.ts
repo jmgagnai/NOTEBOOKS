@@ -632,14 +632,6 @@ describe('summarize-document job', () => {
     expect((version.abstract ?? '').trim().split(/\s+/)).toHaveLength(80);
   });
 
-  // Observed against the real API across several runs: asked for 50-100
-  // words, the model returns 99, 108, 112, 126 — in range about half the
-  // time, even after the corrective rewrite. For the Abstract that is not
-  // cosmetic: it is the artifact GLOSSARY.md defines by being skimmable on a
-  // card, and 126 words breaks the card it exists for. So for the two
-  // artifacts that are plain prose by definition, the range is enforced
-  // deterministically by dropping whole trailing sentences — never by
-  // trusting the model to count.
   // NBK-89: the Document page heads the Executive Summary itself, so the
   // model is told not to title it — left unsaid, it did so for 52 of 53
   // local Documents ("# Executive Summary", "**Executive Summary**", …).
@@ -678,6 +670,14 @@ describe('summarize-document job', () => {
     expect(promptOf('chatSnippet')).not.toMatch(noTitle);
   });
 
+  // Observed against the real API across several runs: asked for 50-100
+  // words, the model returns 99, 108, 112, 126 — in range about half the
+  // time, even after the corrective rewrite. For the Abstract that is not
+  // cosmetic: it is the artifact GLOSSARY.md defines by being skimmable on a
+  // card, and 126 words breaks the card it exists for. So for the two
+  // artifacts that are plain prose by definition, the range is enforced
+  // deterministically by dropping whole trailing sentences — never by
+  // trusting the model to count.
   it('trims a too-long Abstract back into its range at a sentence boundary', async () => {
     const seeded = await seedConvertedVersion('overlong.md', `# Overlong\n\n${body('overlong')}\n`);
 

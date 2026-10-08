@@ -11,18 +11,22 @@ function detail(container: HTMLElement, label: string): string | undefined {
   return within(container).getByText(label).nextElementSibling?.textContent?.trim();
 }
 
+/** Renders the page on `detail`, with any other generated client calls in `extra`. */
+function renderDetail(detail: object, extra: object = {}) {
+  return renderPage({ getDocument: vi.fn().mockResolvedValue(detail), ...extra });
+}
+
+/** The fixture Document with `executiveSummary` as its Executive Summary. */
+const withSummary = (executiveSummary: string) => ({ ...SUMMARIZED_DETAIL, executiveSummary });
+
 /**
  * Spec 08 (NBK-85): the page reads as an article — the extracted title as
  * its headline, a byline instead of a metadata form, the rest behind
  * "Details", and ✕ in a header row instead of a text back link.
  */
 describe('DocumentDetailPage — editorial reading view', () => {
-  function renderWith(detail: object) {
-    return renderPage({ getDocument: vi.fn().mockResolvedValue(detail) });
-  }
-
   it('heads the page with the extracted title, and names the file under it', async () => {
-    await renderWith(SUMMARIZED_DETAIL);
+    await renderDetail(SUMMARIZED_DETAIL);
 
     expect(
       await screen.findByRole('heading', { level: 1, name: 'Quarterly Report 2025' }),
@@ -31,7 +35,7 @@ describe('DocumentDetailPage — editorial reading view', () => {
   });
 
   it('falls back to the filename as the headline, without repeating it', async () => {
-    await renderWith({
+    await renderDetail({
       ...SUMMARIZED_DETAIL,
       metadata: { ...SUMMARIZED_DETAIL.metadata, title: null },
     });
@@ -41,7 +45,7 @@ describe('DocumentDetailPage — editorial reading view', () => {
   });
 
   it('sums the Document up in a byline, skipping what it does not state', async () => {
-    await renderWith({
+    await renderDetail({
       ...SUMMARIZED_DETAIL,
       metadata: {
         title: 'Quarterly Report 2025',
@@ -59,7 +63,7 @@ describe('DocumentDetailPage — editorial reading view', () => {
   });
 
   it('keeps the byline clean when the Document states nothing', async () => {
-    await renderWith({ ...SUMMARIZED_DETAIL, metadata: null });
+    await renderDetail({ ...SUMMARIZED_DETAIL, metadata: null });
 
     const byline = await screen.findByTestId('byline');
     expect(within(byline).getByText('v2')).toBeTruthy();
@@ -67,7 +71,7 @@ describe('DocumentDetailPage — editorial reading view', () => {
   });
 
   it('puts language, subject and keywords behind a closed "Details", not a form', async () => {
-    await renderWith({
+    await renderDetail({
       ...SUMMARIZED_DETAIL,
       metadata: {
         ...SUMMARIZED_DETAIL.metadata,
@@ -88,7 +92,7 @@ describe('DocumentDetailPage — editorial reading view', () => {
   });
 
   it('closes back to the Notebook from a header naming the file, not a text link', async () => {
-    await renderWith(SUMMARIZED_DETAIL);
+    await renderDetail(SUMMARIZED_DETAIL);
 
     const header = await screen.findByTestId('document-pane-header');
     expect(within(header).getByText('quarterly.pdf')).toBeTruthy();
@@ -98,7 +102,7 @@ describe('DocumentDetailPage — editorial reading view', () => {
   });
 
   it('offers no "Details" when there are none', async () => {
-    await renderWith({
+    await renderDetail({
       ...SUMMARIZED_DETAIL,
       metadata: { ...SUMMARIZED_DETAIL.metadata, keywords: [] },
     });
@@ -117,13 +121,6 @@ describe('DocumentDetailPage — editorial reading view', () => {
 describe('DocumentDetailPage — the Executive Summary under its own heading', () => {
   const SECTION = '## Key points\n\n- Revenue grew 18% year on year.\n';
 
-  function renderSummary(executiveSummary: string, extra: object = {}) {
-    return renderPage({
-      getDocument: vi.fn().mockResolvedValue({ ...SUMMARIZED_DETAIL, executiveSummary }),
-      ...extra,
-    });
-  }
-
   /** The page's Executive Summary section: its own heading and what follows. */
   async function summarySection(): Promise<HTMLElement> {
     const heading = await screen.findByRole('heading', { level: 2, name: 'Executive Summary' });
@@ -138,8 +135,9 @@ describe('DocumentDetailPage — the Executive Summary under its own heading', (
     ['a level-2 heading', '## Executive Summary'],
     ['a bold line', '**Executive Summary**'],
     ['a heading naming the Document', '# Executive Summary: *Sandworms of Dune*'],
+    ['a heading in bold', '# **Executive Summary**'],
   ])('leaves out a leading title given as %s', async (_shape, title) => {
-    await renderSummary(`${title}\n\n${SECTION}`);
+    await renderDetail(withSummary(`${title}\n\n${SECTION}`));
 
     const section = await summarySection();
     await within(section).findByRole('heading', { name: 'Key points' });
@@ -148,15 +146,24 @@ describe('DocumentDetailPage — the Executive Summary under its own heading', (
   });
 
   it('leaves out a title that is not on the first line, after blank lines', async () => {
-    await renderSummary(`\n\n# executive summary\n\n\n${SECTION}`);
+    await renderDetail(withSummary(`\n\n# executive summary\n\n\n${SECTION}`));
 
     const section = await summarySection();
     await within(section).findByRole('heading', { name: 'Key points' });
-    expect(section.textContent?.toLowerCase().split('executive summary').length).toBe(2);
+    expect(occurrences(section, 'executive summary')).toBe(0);
+  });
+
+  // Four spaces in make it an indented code block, not a heading.
+  it('keeps a title-like line indented as code', async () => {
+    await renderDetail(withSummary(`    # Executive Summary\n\n${SECTION}`));
+
+    const section = await summarySection();
+    await within(section).findByRole('heading', { name: 'Key points' });
+    expect(occurrences(section, 'Executive Summary')).toBe(2);
   });
 
   it('renders a summary that opens with a section of its own unchanged', async () => {
-    await renderSummary(`## Purpose\n\nWhy this report exists.\n\n${SECTION}`);
+    await renderDetail(withSummary(`## Purpose\n\nWhy this report exists.\n\n${SECTION}`));
 
     const section = await summarySection();
     expect(await within(section).findByRole('heading', { name: 'Purpose' })).toBeTruthy();
@@ -164,8 +171,10 @@ describe('DocumentDetailPage — the Executive Summary under its own heading', (
   });
 
   it('keeps an "Executive Summary" heading that is not the first line, and the words in a paragraph', async () => {
-    await renderSummary(
-      `## Purpose\n\nThis Executive Summary is short.\n\n## Executive Summary of the annex\n\nMore.\n`,
+    await renderDetail(
+      withSummary(
+        `## Purpose\n\nThis Executive Summary is short.\n\n## Executive Summary of the annex\n\nMore.\n`,
+      ),
     );
 
     const section = await summarySection();
@@ -180,7 +189,9 @@ describe('DocumentDetailPage — the Executive Summary under its own heading', (
       versionId: VERSION_ID,
       markdown: '# Executive Summary\n\nThe report opens on its own summary.\n',
     });
-    await renderSummary(`# Executive Summary\n\n${SECTION}`, { getDocumentVersionContent });
+    await renderDetail(withSummary(`# Executive Summary\n\n${SECTION}`), {
+      getDocumentVersionContent,
+    });
     await summarySection();
 
     fireEvent.click(screen.getByRole('button', { name: 'Read the full Document' }));
