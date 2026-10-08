@@ -145,8 +145,8 @@
             -->
               <app-markdown-view
                 [markdown]="markdown"
-                [highlightFrom]="citedFrom"
-                [highlightTo]="citedTo"
+                [highlightFrom]="citedFrom()"
+                [highlightTo]="citedTo()"
               />
             } @else {
               <p class="document-detail-page__pending">
