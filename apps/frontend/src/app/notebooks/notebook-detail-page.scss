@@ -1,30 +1,15 @@
 @use '../workspace-card';
 
-// The Notebook workspace (NBK-35): a column of header and pane grid filling
-// the page column beside the sidebar (NBK-79), so the panes scroll and the
-// page never does. The shell gives that column a definite height, which is
-// what `100%` resolves against.
+// The Notebook workspace (NBK-35): the pane grid filling the page column
+// beside the sidebar (NBK-79), so the panes scroll and the page never does.
+// The shell gives that column a definite height, which is what `100%`
+// resolves against. No header row above the grid since NBK-82.
 .notebook-detail-page {
   position: relative;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
   height: 100%;
-
-  // The page header: as high as the title bar, so the two read as one chrome.
-  &__header {
-    flex: none;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    height: var(--app-title-bar-height);
-    padding: 0 12px 0 8px;
-  }
-
-  &__crumb {
-    color: var(--mat-sys-on-surface-variant);
-    white-space: nowrap;
-  }
 
   &__spacer {
     flex: 1 1 auto;
@@ -55,7 +40,6 @@
     display: grid;
     grid-template-columns: 1fr 300px;
     gap: 1px;
-    border-top: 1px solid var(--mat-sys-outline-variant);
     background: var(--mat-sys-outline-variant);
 
     @media (max-width: 1100px) {
@@ -148,14 +132,25 @@
     pointer-events: none;
   }
 
-  // The count on "Show Documents" (NBK-37): a small tinted badge at the
-  // caption step, so the number reads as a count and not as part of the label.
-  &__count {
-    padding: 0 6px;
-    border-radius: var(--mat-sys-corner-full);
-    background: var(--mat-sys-primary-container);
-    color: var(--mat-sys-primary);
-    font: var(--mat-sys-label-medium);
+  // "Add Documents" over the panel header (NBK-82): full width, the
+  // secondary button, as Copilot's "Add references".
+  &__add {
+    flex: none;
+    padding: 12px 12px 4px;
+  }
+
+  &__add-button {
+    width: 100%;
+  }
+
+  // "Show Documents" (NBK-37) at the top right of the Chat pane (NBK-82),
+  // over the Thread view rather than in its flow, so the landing and the
+  // Thread's top bar keep their layout whether or not it is there.
+  &__show-documents {
+    position: absolute;
+    top: 6px;
+    right: 8px;
+    z-index: 1;
   }
 
   &__panel-head {

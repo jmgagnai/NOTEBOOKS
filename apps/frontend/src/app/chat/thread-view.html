@@ -159,14 +159,15 @@
     <!--
       The Notebook landing (NBK-81, spec 07 stories 31–32, 36): nothing but
       the Notebook and the question box under it, from which a question
-      starts a Chat Thread. The title is the Notebook's rename control, as in
-      the page header until NBK-82 removes that; a heading so the landing is
-      findable by the Notebook's name.
+      starts a Chat Thread. The title is the Notebook's rename control — the
+      only one since NBK-82 removed the page header — and a heading so the
+      landing is findable by the Notebook's name.
     -->
     <div class="thread-view__landing">
       <mat-icon class="thread-view__landing-icon" svgIcon="folder" />
       <h2 class="thread-view__landing-title">
         <app-editable-title
+          #landingTitle
           size="page"
           [title]="notebookTitle()"
           editLabel="Notebook title"

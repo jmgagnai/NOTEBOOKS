@@ -77,7 +77,7 @@ Search pages' cards read as the page itself. On the Notebook page the panes
 come from the `card`/`head`/`title`/`body` mixins in
 `apps/frontend/src/app/_workspace-card.scss` (white, no border, no corner);
 the workspace grid draws the lines by having a 1 px gap over an
-`outline-variant` background, plus a 1 px top border under the page header.
+`outline-variant` background (there is no page header row since NBK-82).
 The only surface that is not white is the sidebar, on
 `--app-sidebar-surface`. Items inside a pane (Notebook cards on the home,
 search results, the upload batch block) keep their own borders.
@@ -125,7 +125,6 @@ body (`body-medium`).
 
 | Token | Value | Meaning |
 |---|---|---|
-| `--app-title-bar-height` | 48 px | the Notebook page's header row (the title bar it matched is gone since NBK-79) |
 | `--app-control-height` | 32 px | buttons, icon buttons, the plain `.app-button` variants |
 | `--app-icon-size-small` | 14 px | a glyph inside a 24 px avatar (the assistant's sparkle) |
 | `--app-copilot-gradient` | azure → violet → magenta at 135° | the Copilot sparkle; used by `<app-sparkle-avatar>` (the assistant's chat avatar) and nowhere else, per spec 01 |

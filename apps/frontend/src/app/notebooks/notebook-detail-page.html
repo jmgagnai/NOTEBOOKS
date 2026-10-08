@@ -1,105 +1,15 @@
 <div class="notebook-detail-page">
   <!--
-    The page header (NBK-35): where the user is ("Notebooks › title"), the way
-    back, and the two Notebook-level actions. 48 px, like the title bar above
-    it, so the two read as one chrome.
-  -->
-  <header class="notebook-detail-page__header">
-    <button
-      mat-icon-button
-      type="button"
-      routerLink="/"
-      aria-label="Back to Notebooks"
-      matTooltip="Back to Notebooks"
-    >
-      <mat-icon svgIcon="arrow-left" />
-    </button>
-    <span class="notebook-detail-page__crumb">Notebooks &rsaquo;</span>
-    <!--
-      The title is the rename control (NBK-35, shared since NBK-41): a button
-      that reads as text — its accessible name is the title itself, the
-      tooltip "Rename Notebook" describes what activating it does — which
-      swaps to a text box. The control owns the editing; the committed title
-      goes through the Notebooks store here.
-    -->
-    <app-editable-title
-      [title]="notebook()?.title ?? 'Notebook'"
-      editLabel="Notebook title"
-      tooltip="Rename Notebook"
-      (titleChange)="rename($event)"
-    />
-    <span class="notebook-detail-page__spacer"></span>
-    <!--
-      Search (NBK-9) is how a user looks something up in the Documents without
-      opening a chat, so it has to be reachable from the Notebook they are
-      already looking at.
-    -->
-    <a
-      mat-stroked-button
-      class="notebook-detail-page__search"
-      [routerLink]="['/notebooks', notebookId, 'search']"
-      aria-label="Search this Notebook"
-    >
-      Search
-    </a>
-    <!--
-      Several files at once (NBK-16): the picker is multi-select and only
-      offers the accepted document types, derived from upload-rules.ts. The
-      visible button opens it; the input itself stays out of the tab order
-      and off screen (NBK-35), still named "Upload Documents" for the tests
-      and assistive technology that reach it directly.
-    -->
-    <button
-      mat-flat-button
-      type="button"
-      [disabled]="store.batchRunning()"
-      (click)="fileInput.click()"
-    >
-      <mat-icon svgIcon="add" />
-      Add Documents
-    </button>
-    <!--
-      Only while the Documents panel is hidden (NBK-37): the way back, named
-      for what it does, reading "Documents <count>" (spec 02) so the user
-      knows what they are bringing back. The plain count, not the panel
-      header's ready line: a hidden panel is about size, not progress.
-    -->
-    @if (documentsHidden()) {
-      <button
-        mat-stroked-button
-        type="button"
-        aria-label="Show Documents"
-        matTooltip="Show Documents"
-        (click)="showDocuments()"
-      >
-        <mat-icon svgIcon="panel-right-expand" />
-        Documents
-        <span class="notebook-detail-page__count">{{ store.documents().length }}</span>
-      </button>
-    }
-    <!--
-      Disabled while a batch runs (NBK-17): a second batch behind the
-      first is out of scope, so the picker cannot start one mid-way.
-    -->
-    <input
-      #fileInput
-      class="notebook-detail-page__file-input"
-      type="file"
-      multiple
-      tabindex="-1"
-      [accept]="accept"
-      [disabled]="store.batchRunning()"
-      (change)="onFileSelected($event)"
-      aria-label="Upload Documents"
-    />
-  </header>
-
-  <!--
     Two panes (NBK-35, flat since NBK-78), each a labelled landmark that
     scrolls on its own: the open Thread and the Documents panel. The Chat
     Threads navigator left for the sidebar (NBK-79), which renders the
     Threads this page loads. The chat component (NBK-34) owns its pane's
     content; the Documents panel's content is the page's own.
+
+    No header row above them since NBK-82 (spec 07 "Notebook page frame"):
+    the way back and Search are the sidebar's, the title and its rename the
+    Notebook landing's, "Add Documents" the top of the Documents panel's,
+    and "Show Documents" the Chat pane's.
   -->
   <div
     class="notebook-detail-page__workspace"
@@ -109,7 +19,25 @@
       class="notebook-detail-page__panel notebook-detail-page__panel--chat"
       aria-label="Chat"
     >
-      <app-thread-view [notebookId]="notebookId" />
+      <!--
+        Only while the Documents panel is hidden (NBK-37): the way back, at
+        the top right of the Chat pane (NBK-82), next to where the panel
+        returns. The plain count in the tooltip, not the panel header's
+        ready line: a hidden panel is about size, not progress.
+      -->
+      @if (documentsHidden()) {
+        <button
+          mat-icon-button
+          type="button"
+          class="notebook-detail-page__show-documents"
+          aria-label="Show Documents"
+          [matTooltip]="'Show Documents (' + store.documents().length + ')'"
+          (click)="showDocuments()"
+        >
+          <mat-icon svgIcon="panel-right-expand" />
+        </button>
+      }
+      <app-thread-view [notebookId]="notebookId" [editTitleOnArrival]="editTitleOnArrival" />
     </section>
 
     <!--
@@ -133,6 +61,39 @@
       @if (dragOver()) {
         <p class="notebook-detail-page__drop-hint">Drop files to upload them into this Notebook</p>
       }
+      <!--
+        Where Copilot puts "Add references" (NBK-82, spec 07 story 51): above
+        the panel header, full width. Several files at once (NBK-16): the
+        picker is multi-select and only offers the accepted document types,
+        derived from upload-rules.ts. The button opens it; the input itself
+        stays out of the tab order and off screen (NBK-35), still named
+        "Upload Documents" for the tests and assistive technology that reach
+        it directly. Both are disabled while a batch runs (NBK-17): a second
+        batch behind the first is out of scope.
+      -->
+      <div class="notebook-detail-page__add">
+        <button
+          mat-stroked-button
+          type="button"
+          class="notebook-detail-page__add-button"
+          [disabled]="store.batchRunning()"
+          (click)="fileInput.click()"
+        >
+          <mat-icon svgIcon="add" />
+          Add Documents
+        </button>
+        <input
+          #fileInput
+          class="notebook-detail-page__file-input"
+          type="file"
+          multiple
+          tabindex="-1"
+          [accept]="accept"
+          [disabled]="store.batchRunning()"
+          (change)="onFileSelected($event)"
+          aria-label="Upload Documents"
+        />
+      </div>
       <div class="notebook-detail-page__panel-head">
         <h2 class="notebook-detail-page__panel-title">Documents</h2>
         <span class="notebook-detail-page__panel-count" data-testid="documents-count">{{
@@ -175,12 +136,12 @@
           <p class="notebook-detail-page__error">{{ error }}</p>
         } @else if (store.documents().length === 0) {
           <!--
-            The first step, where the list would be (NBK-49): its button opens
-            the header's picker. Not while a batch runs — the batch panel above
-            is then what the Notebook has to show, and the picker is disabled.
+            The first step, where the list would be (NBK-49), under the
+            panel's "Add Documents" (NBK-82). Not while a batch runs — the
+            batch panel above is then what the Notebook has to show.
           -->
           @if (!store.batchRunning()) {
-            <app-documents-empty-state (add)="fileInput.click()" />
+            <app-documents-empty-state />
           }
         } @else {
           <!--

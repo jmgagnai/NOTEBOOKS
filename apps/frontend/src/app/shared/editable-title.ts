@@ -16,9 +16,9 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 /**
  * The type step the title is set in, after the places the specs put it:
  * `page` is spec 07's page-title role (40/600, the Notebook landing, NBK-81),
- * `large` a page header title (20/600, the Notebook header), `medium` a card
- * header (16/600, the Chat Thread title), `small` a card title (14/600, a
- * Notebook card). `page` maps onto `--app-type-page-title`, the others onto
+ * `large` a page header title (20/600, the default; the Notebook header's
+ * until NBK-82), `medium` a card header (16/600, the Chat Thread title),
+ * `small` a card title (14/600, a Notebook card). `page` maps onto `--app-type-page-title`, the others onto
  * the matching `--mat-sys-title-*` role.
  */
 export type EditableTitleSize = 'page' | 'large' | 'medium' | 'small';

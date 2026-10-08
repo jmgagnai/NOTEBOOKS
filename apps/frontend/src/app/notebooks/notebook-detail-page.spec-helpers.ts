@@ -208,8 +208,8 @@ export async function renderWithUpload(
 
 /**
  * The Notebook title on the landing (NBK-81): the Notebook has no Chat
- * Threads here, so the Chat region is the landing. Scoped to it because the
- * page header shows the same title button until NBK-82 removes the header.
+ * Threads here, so the Chat region is the landing — the only place the
+ * title is shown since NBK-82 removed the page header.
  */
 export async function landingTitle(title: string) {
   const heading = await within(elsewhereOnThePage()).findByRole('heading', { name: title });

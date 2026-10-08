@@ -11,7 +11,7 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
@@ -24,7 +24,6 @@ import { DocumentsEmptyState } from '../documents/documents-empty-state';
 import { Document, DocumentsStore } from '../documents/documents.store';
 import { UploadBatchPanel } from '../documents/upload-batch-panel';
 import { UPLOAD_ACCEPT } from '../documents/upload-rules';
-import { EditableTitle } from '../shared/editable-title';
 import { showPageTitle } from '../shared/page-title';
 import { UndoSnackBar } from '../shared/undo-snack-bar';
 import { NotebooksStore } from './notebooks.store';
@@ -70,13 +69,14 @@ function droppedEntries(dataTransfer: DataTransfer | null): {
 }
 
 /**
- * A Notebook's workspace (NBK-5, framed in NBK-35): a slim header, then
- * two panes side by side — the open Thread and the Documents panel with its rows (`DocumentList`, NBK-42) and their
- * upload, open, delete, restore and download actions. Notebooks have no
- * dedicated `GET /notebooks/:id` endpoint, so the Notebook itself (its
- * title, for the header and the browser tab) is looked up from
- * `NotebooksStore`'s already-loaded list by route id, the same list the
- * top-level Notebooks page uses.
+ * A Notebook's workspace (NBK-5, framed in NBK-35, header row gone since
+ * NBK-82): two panes side by side — the open Thread and the Documents panel
+ * with its rows (`DocumentList`, NBK-42) and their upload, open, delete,
+ * restore and download actions. Notebooks have no dedicated
+ * `GET /notebooks/:id` endpoint, so the Notebook itself (its title, for the
+ * browser tab and the landing) is looked up from `NotebooksStore`'s
+ * already-loaded list by route id, the same list the top-level Notebooks
+ * page uses.
  *
  * Each row links to the Document itself, where the Abstract (NBK-7), the
  * Executive Summary and the full converted content live.
@@ -94,7 +94,6 @@ function droppedEntries(dataTransfer: DataTransfer | null): {
   selector: 'app-notebook-detail-page',
   standalone: true,
   imports: [
-    EditableTitle,
     MatButtonModule,
     MatIconModule,
     MatProgressSpinnerModule,
@@ -102,7 +101,6 @@ function droppedEntries(dataTransfer: DataTransfer | null): {
     DocumentFilter,
     DocumentList,
     DocumentsEmptyState,
-    RouterLink,
     ThreadView,
     UploadBatchPanel,
   ],
@@ -122,7 +120,7 @@ function droppedEntries(dataTransfer: DataTransfer | null): {
 export class NotebookDetailPage implements OnInit, OnDestroy {
   private readonly route = inject(ActivatedRoute);
 
-  protected readonly notebooksStore = inject(NotebooksStore);
+  private readonly notebooksStore = inject(NotebooksStore);
   protected readonly store = inject(DocumentsStore);
   private readonly chatStore = inject(ChatStore);
   private readonly undoSnackBar = inject(UndoSnackBar);
@@ -163,33 +161,11 @@ export class NotebookDetailPage implements OnInit, OnDestroy {
    * Whether the navigation here asked for the title to open for editing:
    * "Create Notebook" does (spec 05 story 3), because the title it gave the
    * new Notebook is a placeholder. Read while the router is still
-   * activating this page, the only moment the navigation's state is at hand.
+   * activating this page, the only moment the navigation's state is at hand,
+   * and handed to the Thread view, whose landing holds the title (NBK-82).
    */
-  private editTitleOnArrival =
+  protected readonly editTitleOnArrival =
     inject(Router).currentNavigation()?.extras.state?.['editTitle'] === true;
-
-  private readonly headerTitle = viewChild(EditableTitle);
-
-  // Once the Notebook has loaded and the header has rendered its title, so
-  // the box opens on the real title rather than the "Notebook" placeholder;
-  // once only, so a later rename or list reload does not reopen it.
-  private readonly openTitleOnArrival = effect(() => {
-    const header = this.headerTitle();
-    if (!this.editTitleOnArrival || !header || !this.notebook()) return;
-    this.editTitleOnArrival = false;
-    afterNextRender(() => header.edit(), { injector: this.injector });
-  });
-
-  /**
-   * Renaming in place (NBK-35): the header title is an `app-editable-title`
-   * (NBK-41), which only hands over a title that differs from the current
-   * one, so nothing is sent for a click-and-click-away.
-   */
-  protected rename(title: string): void {
-    const notebook = this.notebook();
-    if (!notebook) return;
-    void this.notebooksStore.renameNotebook(notebook.id, title);
-  }
 
   /**
    * Whether the Documents panel is hidden (NBK-37), so the Thread takes its
@@ -210,7 +186,7 @@ export class NotebookDetailPage implements OnInit, OnDestroy {
 
   /**
    * Restores the panel and hands focus to its hide control: "Show Documents"
-   * is gone from the header the moment the panel is back, so the keyboard
+   * is gone from the Chat pane the moment the panel is back, so the keyboard
    * would otherwise land on the body. The focus waits for the render that
    * removes `inert` — a focus call on an inert element is silently ignored.
    */

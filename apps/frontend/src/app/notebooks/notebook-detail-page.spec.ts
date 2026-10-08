@@ -27,6 +27,7 @@ import {
   DROP_HINT,
   highlightsDocumentsPanel,
 } from './notebook-detail-page.spec-helpers';
+import { tooltipOf } from '../chat/chat-panel.spec-helpers';
 
 describe('NotebookDetailPage — workspace', () => {
   it("renders the Notebook's title and its Documents", async () => {
@@ -400,22 +401,6 @@ describe('NotebookDetailPage — workspace', () => {
     expect(downloadDocumentVersion).toHaveBeenCalledWith(NOTEBOOK_ID, 'doc-4', 'v-9', 'sheet.xlsx');
   });
 
-  // NBK-9: search is how a user looks something up in the Documents without
-  // opening a chat, so it has to be reachable from the Notebook they are
-  // already looking at.
-  it("links to this Notebook's search page", async () => {
-    const listDocuments = vi.fn().mockResolvedValue([]);
-
-    await render(NotebookDetailPage, {
-      providers: pageProviders({
-        documents: { listDocuments },
-      }),
-    });
-
-    const link = await screen.findByLabelText('Search this Notebook');
-    expect(link.getAttribute('href')).toBe(`/notebooks/${NOTEBOOK_ID}/search`);
-  });
-
   // NBK-18: files dragged from a file manager onto the Notebook page upload
   // as the same batch a picker selection would. jsdom has no DataTransfer or
   // DragEvent, so each drag event carries a constructed object shaped like a
@@ -566,6 +551,21 @@ describe('NotebookDetailPage — workspace', () => {
       expect(within(documents).getByText('No Documents yet.')).toBeTruthy();
     });
 
+    // NBK-82 (spec 07 "Notebook page frame"): no header row above the panes.
+    // Its controls moved: the way back and Search to the sidebar, the title to
+    // the landing, Add Documents into the Documents pane — so every control
+    // the page renders sits in one of the two panes.
+    it('has no header row: every control sits in the Chat region or the Documents pane', async () => {
+      await renderWithUpload(vi.fn(), [], { notebook: RESEARCH });
+
+      const chat = screen.getByRole('region', { name: 'Chat' });
+      const documents = documentsPanel();
+      const controls = [...screen.getAllByRole('button'), ...screen.queryAllByRole('link')];
+      expect(controls.filter((c) => !chat.contains(c) && !documents.contains(c))).toEqual([]);
+      expect(screen.queryByRole('button', { name: 'Back to Notebooks' })).toBeNull();
+      expect(screen.queryByRole('link', { name: 'Search this Notebook' })).toBeNull();
+    });
+
     it('renames the Notebook from its title on Enter', async () => {
       const renameNotebook = vi.fn().mockResolvedValue({ ...RESEARCH, title: 'Research 2026' });
       await renderWithUpload(vi.fn(), [], { notebook: RESEARCH, renameNotebook });
@@ -599,7 +599,10 @@ describe('NotebookDetailPage — workspace', () => {
         state: { editTitle: true },
       });
 
-      const box = (await screen.findByLabelText('Notebook title')) as HTMLInputElement;
+      // On the Notebook landing (NBK-82: the page header that held it is gone).
+      const box = (await within(elsewhereOnThePage()).findByLabelText(
+        'Notebook title',
+      )) as HTMLInputElement;
       expect(box.value).toBe('Research');
       expect(document.activeElement).toBe(box);
     });
@@ -625,38 +628,14 @@ describe('NotebookDetailPage — workspace', () => {
       expect(screen.queryByLabelText('Notebook title')).toBeNull();
     });
 
-    it('"Back to Notebooks" takes the user to the Notebooks list', async () => {
-      const listNotebooks = vi.fn().mockResolvedValue([RESEARCH]);
-      const listDocuments = vi.fn().mockResolvedValue([]);
-      const { navigate } = await render(RouterShell, {
-        routes: [
-          { path: 'notebooks/:notebookId', component: NotebookDetailPage },
-          { path: '', component: Elsewhere },
-        ],
-        providers: pageProviders({
-          notebooks: { listNotebooks },
-          documents: { listDocuments },
-          inRouterShell: true,
-        }),
-      });
-      await navigate(`/notebooks/${NOTEBOOK_ID}`);
-      await screen.findByText('No Documents yet.');
-
-      fireEvent.click(screen.getByRole('button', { name: 'Back to Notebooks' }));
-
-      expect(await screen.findByText('Somewhere else')).toBeTruthy();
-      expect(screen.queryByRole('button', { name: 'Back to Notebooks' })).toBeNull();
-    });
-
+    // NBK-82: at the top of the Documents pane, the header's old place gone.
     it('"Add Documents" opens the picker, and is disabled with it while a batch runs', async () => {
       const request = deferred<Record<string, unknown>>();
       await renderWithUpload(vi.fn().mockReturnValue(request.promise));
       const input = screen.getByLabelText('Upload Documents') as HTMLInputElement;
       const open = vi.spyOn(input, 'click');
 
-      // The header's button comes first; the empty Notebook's own (NBK-49)
-      // is in the Documents panel and goes away once the batch starts.
-      fireEvent.click(screen.getAllByRole('button', { name: 'Add Documents' })[0]);
+      fireEvent.click(within(documentsPanel()).getByRole('button', { name: 'Add Documents' }));
       expect(open).toHaveBeenCalledTimes(1);
 
       pick([fileNamed('a.txt')]);
@@ -701,9 +680,10 @@ describe('NotebookDetailPage — workspace', () => {
   });
 
   // NBK-37: a user reading answers can hide the Documents panel and get it
-  // back from the page header. Hidden means gone for assistive technology and
-  // the keyboard too, not just out of sight, so the tests ask the
-  // accessibility tree (role queries skip hidden content) rather than styles.
+  // back from the top of the Chat pane (NBK-82; the page header until then).
+  // Hidden means gone for assistive technology and the keyboard too, not just
+  // out of sight, so the tests ask the accessibility tree (role queries skip
+  // hidden content) rather than styles.
   describe('NBK-37: hiding the Documents panel', () => {
     const THREE = [documentFor('a.txt'), documentFor('b.txt'), documentFor('c.txt')];
 
@@ -712,7 +692,7 @@ describe('NotebookDetailPage — workspace', () => {
     }
 
     function showDocumentsButton() {
-      return screen.queryByRole('button', { name: 'Show Documents' });
+      return within(elsewhereOnThePage()).queryByRole('button', { name: 'Show Documents' });
     }
 
     it('offers "Hide Documents" in the panel and no "Show Documents" while the panel is visible', async () => {
@@ -722,7 +702,7 @@ describe('NotebookDetailPage — workspace', () => {
       expect(showDocumentsButton()).toBeNull();
     });
 
-    it('"Hide Documents" hides the panel and offers "Show Documents" with the Document count', async () => {
+    it('"Hide Documents" hides the panel and offers "Show Documents" in the Chat pane, the count in its tooltip', async () => {
       await renderWithUpload(vi.fn(), THREE);
 
       fireEvent.click(hideDocumentsButton());
@@ -733,7 +713,7 @@ describe('NotebookDetailPage — workspace', () => {
       expect(screen.getByRole('region', { name: 'Chat' })).toBeTruthy();
       const show = showDocumentsButton()!;
       expect(show).toBeTruthy();
-      expect(show.textContent?.replace(/\s+/g, ' ').trim()).toBe('Documents 3');
+      expect(await tooltipOf(show)).toBe('Show Documents (3)');
     });
 
     it('"Show Documents" restores the panel, goes away, and focuses "Hide Documents"', async () => {

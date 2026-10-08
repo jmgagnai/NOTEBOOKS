@@ -191,14 +191,41 @@ export class ThreadView {
     return streaming.chunks.map((text, index) => ({ index, text }));
   });
 
-  /**
-   * The landing's title (NBK-81): the Notebook as the page's Notebooks store
-   * holds it — the page loads the list — under the name the Notebook page
-   * falls back to while it loads.
-   */
-  protected readonly notebookTitle = computed(
-    () => this.notebooks.notebooks().find((n) => n.id === this.notebookId())?.title ?? 'Notebook',
+  /** The Notebook as the page's Notebooks store holds it; the page loads the list. */
+  private readonly notebook = computed(
+    () => this.notebooks.notebooks().find((n) => n.id === this.notebookId()) ?? null,
   );
+
+  /**
+   * The landing's title (NBK-81), under the name the Notebook page falls
+   * back to while the list loads.
+   */
+  protected readonly notebookTitle = computed(() => this.notebook()?.title ?? 'Notebook');
+
+  /**
+   * Whether to open the landing's title for editing on arrival: the page
+   * says so after "Create Notebook" (spec 05 story 3), whose title is a
+   * placeholder. An input rather than this view reading the navigation
+   * itself, because the page is what the router activates — the moment the
+   * navigation's state is at hand — and the landing title has been the only
+   * one on the page since NBK-82 removed the header.
+   */
+  readonly editTitleOnArrival = input(false);
+
+  private readonly landingTitle = viewChild<EditableTitle>('landingTitle');
+
+  // Once the Notebook has loaded and the landing has rendered its title, so
+  // the box opens on the real title rather than the "Notebook" placeholder;
+  // once only, so a later rename, list reload or return to the landing does
+  // not reopen it.
+  private titleOpenedOnArrival = false;
+  private readonly openTitleOnArrival = effect(() => {
+    const title = this.landingTitle();
+    if (this.titleOpenedOnArrival || !this.editTitleOnArrival()) return;
+    if (!title || !this.notebook()) return;
+    this.titleOpenedOnArrival = true;
+    afterNextRender(() => title.edit(), { injector: this.injector });
+  });
 
   /** The landing title hands over only a changed, non-blank title (NBK-41). */
   protected renameNotebook(title: string): void {

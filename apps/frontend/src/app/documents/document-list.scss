@@ -19,7 +19,10 @@
   align-items: center;
   gap: 4px;
   min-height: 40px;
-  padding: 0 4px 0 8px;
+  // A little air above and below (spec 07 "Documents pane", NBK-82), so the
+  // rows breathe like Copilot's Content list without growing a one-line row
+  // past the 40 px minimum by much.
+  padding: 4px 4px 4px 8px;
   border-radius: var(--mat-sys-corner-extra-small);
 
   &:hover,
