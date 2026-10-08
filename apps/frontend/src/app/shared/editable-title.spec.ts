@@ -95,4 +95,33 @@ describe('EditableTitle', () => {
 
     expect(renamed).toHaveBeenCalledWith('Archive');
   });
+
+  // NBK-56: a Notebook card starts the rename from its "…" menu rather than
+  // from the title, so the owner can open the box itself.
+  it('opens the box prefilled with the title when its owner calls edit()', async () => {
+    const { fixture } = await render(EditableTitle, {
+      inputs: { title: 'Research', editLabel: 'Notebook title' },
+    });
+
+    fixture.componentInstance.edit();
+    fixture.detectChanges();
+
+    const input = screen.getByLabelText('Notebook title') as HTMLInputElement;
+    expect(input.value).toBe('Research');
+  });
+
+  it.each([
+    ['committed', 'Enter'],
+    ['discarded', 'Escape'],
+  ])('tells its owner the box closed when the edit is %s', async (_case, key) => {
+    const closed = vi.fn();
+    await render(EditableTitle, {
+      inputs: { title: 'Research', editLabel: 'Notebook title' },
+      on: { editClosed: closed },
+    });
+
+    fireEvent.keyDown(typeTitle('Archive'), { key });
+
+    expect(closed).toHaveBeenCalledTimes(1);
+  });
 });

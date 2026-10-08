@@ -19,19 +19,22 @@
     <ul class="notebooks-page__grid" aria-label="Notebooks">
       @for (notebook of store.notebooks(); track notebook.id) {
         <li class="notebooks-page__card">
-          @if (editingId() === notebook.id) {
-            <!-- Stop-gap rename until NBK-56 moves Rename into the card's "…" menu
-                 and the shared editable title. -->
-            <div class="notebooks-page__rename">
-              <input
-                class="notebooks-page__rename-input"
-                type="text"
-                [attr.aria-label]="'Rename ' + notebook.title"
-                [value]="editingTitle()"
-                (input)="onEditTitleInput($event)"
+          <!-- While renaming, the card body stops being a link: a text box inside
+               an <a> would navigate on every click into it (NBK-56). -->
+          @if (renamingId() === notebook.id) {
+            <div class="notebooks-page__card-link">
+              <mat-icon class="notebooks-page__card-icon" svgIcon="notebook" />
+              <app-editable-title
+                class="notebooks-page__card-title-edit"
+                size="small"
+                editLabel="Notebook title"
+                [title]="notebook.title"
+                (titleChange)="rename(notebook.id, $event)"
+                (editClosed)="renamingId.set(null)"
               />
-              <button mat-button type="button" (click)="saveRename(notebook.id)">Save</button>
-              <button mat-button type="button" (click)="cancelRename()">Cancel</button>
+              <span class="notebooks-page__card-created">
+                Created {{ notebook.createdAt | date: 'mediumDate' }}
+              </span>
             </div>
           } @else {
             <a class="notebooks-page__card-link" [routerLink]="['/notebooks', notebook.id]">
@@ -41,26 +44,38 @@
                 Created {{ notebook.createdAt | date: 'mediumDate' }}
               </span>
             </a>
-            <!-- NBK-56 replaces these with the "Actions for <title>" menu. -->
-            <div class="notebooks-page__card-actions">
-              <button
-                mat-button
-                type="button"
-                [attr.aria-label]="'Rename ' + notebook.title"
-                (click)="startRename(notebook)"
-              >
-                Rename
-              </button>
-              <button
-                mat-button
-                type="button"
-                [attr.aria-label]="'Delete ' + notebook.title"
-                (click)="delete(notebook.id)"
-              >
-                Delete
-              </button>
-            </div>
           }
+          <!-- A sibling of the link, not inside it, so opening the menu never
+               opens the Notebook. -->
+          <button
+            mat-icon-button
+            type="button"
+            class="notebooks-page__card-menu"
+            [attr.aria-label]="'Actions for ' + notebook.title"
+            [matMenuTriggerFor]="cardMenu"
+          >
+            <mat-icon svgIcon="more-horizontal" />
+          </button>
+          <mat-menu #cardMenu="matMenu">
+            <button
+              mat-menu-item
+              type="button"
+              [attr.aria-label]="'Rename ' + notebook.title"
+              (click)="renamingId.set(notebook.id)"
+            >
+              <mat-icon svgIcon="rename" />
+              <span>Rename</span>
+            </button>
+            <button
+              mat-menu-item
+              type="button"
+              [attr.aria-label]="'Delete ' + notebook.title"
+              (click)="delete(notebook.id)"
+            >
+              <mat-icon svgIcon="delete" />
+              <span>Delete</span>
+            </button>
+          </mat-menu>
         </li>
       }
     </ul>

@@ -15,6 +15,15 @@ function pageProviders(notebooksService: Partial<Record<keyof NotebooksService, 
   return [{ provide: NotebooksService, useValue: notebooksService }, provideAppIcons()];
 }
 
+/**
+ * Opens the card's "…" menu for `title` and picks `action` from it (NBK-56):
+ * Rename and Delete live behind "Actions for <title>" rather than on the card.
+ */
+async function chooseFromCardMenu(title: string, action: 'Rename' | 'Delete') {
+  fireEvent.click(screen.getByRole('button', { name: `Actions for ${title}` }));
+  fireEvent.click(await screen.findByRole('menuitem', { name: `${action} ${title}` }));
+}
+
 // Seam-3 test (per NBK-1's testing decisions): render the real page +
 // SignalStore, mocking only the generated ng-openapi-gen client interface —
 // never the store or any Angular service internals directly.
@@ -111,7 +120,29 @@ describe('NotebooksPage', () => {
     expect(TestBed.inject(Router).url).toBe('/');
   });
 
-  it('renames a Notebook', async () => {
+  // NBK-56: the card keeps only its link and a "…" button; the menu holds
+  // the actions, and opening it must not open the Notebook underneath.
+  it('offers Rename and Delete from the card\'s "…" menu without opening the Notebook', async () => {
+    const listNotebooks = vi
+      .fn()
+      .mockResolvedValue([
+        { id: '1', title: 'Q3 Contracts', createdAt: '2026-01-01T00:00:00.000Z' },
+      ]);
+
+    await render(NotebooksPage, {
+      providers: pageProviders({ listNotebooks }),
+      routes: [{ path: 'notebooks/:notebookId', component: OpenedNotebook }],
+    });
+    await screen.findByText('Q3 Contracts');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Actions for Q3 Contracts' }));
+
+    expect(await screen.findByRole('menuitem', { name: 'Rename Q3 Contracts' })).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: 'Delete Q3 Contracts' })).toBeTruthy();
+    expect(TestBed.inject(Router).url).toBe('/');
+  });
+
+  it('renames a Notebook in place, committing on Enter', async () => {
     const listNotebooks = vi
       .fn()
       .mockResolvedValue([
@@ -126,17 +157,40 @@ describe('NotebooksPage', () => {
     await render(NotebooksPage, {
       providers: pageProviders({ listNotebooks, renameNotebook }),
     });
-
     await screen.findByText('Q3 Contracts');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Rename Q3 Contracts' }));
-    fireEvent.input(screen.getByLabelText('Rename Q3 Contracts'), {
-      target: { value: 'Q4 Contracts' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await chooseFromCardMenu('Q3 Contracts', 'Rename');
+    const box = await screen.findByLabelText('Notebook title');
+    expect(screen.queryByRole('button', { name: 'Save' })).toBeNull();
+    fireEvent.input(box, { target: { value: 'Q4 Contracts' } });
+    fireEvent.keyDown(box, { key: 'Enter' });
 
-    expect(await screen.findByText('Q4 Contracts')).toBeTruthy();
     expect(renameNotebook).toHaveBeenCalledWith({ id: '1', body: { title: 'Q4 Contracts' } });
+    expect(await screen.findByRole('link', { name: /Q4 Contracts/ })).toBeTruthy();
+    expect(screen.queryByLabelText('Notebook title')).toBeNull();
+  });
+
+  it('puts the title back when the rename is abandoned with Escape', async () => {
+    const listNotebooks = vi
+      .fn()
+      .mockResolvedValue([
+        { id: '1', title: 'Q3 Contracts', createdAt: '2026-01-01T00:00:00.000Z' },
+      ]);
+    const renameNotebook = vi.fn();
+
+    await render(NotebooksPage, {
+      providers: pageProviders({ listNotebooks, renameNotebook }),
+    });
+    await screen.findByText('Q3 Contracts');
+
+    await chooseFromCardMenu('Q3 Contracts', 'Rename');
+    const box = await screen.findByLabelText('Notebook title');
+    fireEvent.input(box, { target: { value: 'Mistake' } });
+    fireEvent.keyDown(box, { key: 'Escape' });
+
+    expect(renameNotebook).not.toHaveBeenCalled();
+    expect(await screen.findByRole('link', { name: /Q3 Contracts/ })).toBeTruthy();
+    expect(screen.queryByLabelText('Notebook title')).toBeNull();
   });
 
   it('deletes a Notebook, removing it from the list', async () => {
@@ -153,7 +207,7 @@ describe('NotebooksPage', () => {
 
     await screen.findByText('Q3 Contracts');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Delete Q3 Contracts' }));
+    await chooseFromCardMenu('Q3 Contracts', 'Delete');
 
     expect(deleteNotebook).toHaveBeenCalledWith({ id: '1' });
     await screen.findByText('No Notebooks yet.');
@@ -177,7 +231,7 @@ describe('NotebooksPage', () => {
     });
 
     await screen.findByText('Q3 Contracts');
-    fireEvent.click(screen.getByRole('button', { name: 'Delete Q3 Contracts' }));
+    await chooseFromCardMenu('Q3 Contracts', 'Delete');
     await screen.findByText('No Notebooks yet.');
 
     // The offer is a snack bar (NBK-33), which only becomes visible to
@@ -203,7 +257,7 @@ describe('NotebooksPage', () => {
     });
 
     await screen.findByText('Q3 Contracts');
-    fireEvent.click(screen.getByRole('button', { name: 'Delete Q3 Contracts' }));
+    await chooseFromCardMenu('Q3 Contracts', 'Delete');
 
     expect(await screen.findByText('Q3 Contracts deleted')).toBeTruthy();
     expect(screen.queryByText(/"Q3 Contracts" deleted\./)).toBeNull();
@@ -221,10 +275,10 @@ describe('NotebooksPage', () => {
     });
 
     await screen.findByText('Q3 Contracts');
-    fireEvent.click(screen.getByRole('button', { name: 'Delete Q3 Contracts' }));
+    await chooseFromCardMenu('Q3 Contracts', 'Delete');
     await screen.findByText('Q3 Contracts deleted');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Delete Onboarding Docs' }));
+    await chooseFromCardMenu('Onboarding Docs', 'Delete');
 
     expect(await screen.findByText('Onboarding Docs deleted')).toBeTruthy();
     await waitFor(() => expect(screen.queryByText('Q3 Contracts deleted')).toBeNull());
@@ -248,7 +302,7 @@ describe('NotebooksPage', () => {
     // snack bar's short opening delays elapse without being stepped by hand.
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'], shouldAdvanceTime: true });
     try {
-      fireEvent.click(screen.getByRole('button', { name: 'Delete Q3 Contracts' }));
+      await chooseFromCardMenu('Q3 Contracts', 'Delete');
       await screen.findByText('Q3 Contracts deleted');
 
       await vi.advanceTimersByTimeAsync(7_000);

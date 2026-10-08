@@ -52,7 +52,7 @@ export type EditableTitleSize = 'large' | 'medium' | 'small';
         type="button"
         class="editable-title__button"
         [matTooltip]="tooltip()"
-        (click)="startEditing()"
+        (click)="edit()"
       >
         {{ title() }}
       </button>
@@ -81,6 +81,13 @@ export class EditableTitle {
   /** The committed title, only when it differs from `title`. */
   readonly titleChange = output<string>();
 
+  /**
+   * The box closed, whether committed or discarded (NBK-56): an owner that
+   * shows the control only while renaming, like a Notebook card, puts its
+   * own title back on this.
+   */
+  readonly editClosed = output<void>();
+
   protected readonly editing = signal(false);
   protected readonly draft = signal('');
   private readonly box = viewChild<ElementRef<HTMLInputElement>>('box');
@@ -91,7 +98,11 @@ export class EditableTitle {
     this.box()?.nativeElement.select();
   });
 
-  protected startEditing(): void {
+  /**
+   * Opens the box, as activating the title does. Public for owners that
+   * start the rename from elsewhere — a Notebook card's "…" menu (NBK-56).
+   */
+  edit(): void {
     this.draft.set(this.title());
     this.editing.set(true);
   }
@@ -104,12 +115,15 @@ export class EditableTitle {
   protected commit(): void {
     if (!this.editing()) return;
     this.editing.set(false);
+    this.editClosed.emit();
     const title = this.draft().trim();
     if (!title || title === this.title()) return;
     this.titleChange.emit(title);
   }
 
   protected cancel(): void {
+    if (!this.editing()) return;
     this.editing.set(false);
+    this.editClosed.emit();
   }
 }
