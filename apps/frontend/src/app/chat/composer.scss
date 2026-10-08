@@ -1,3 +1,5 @@
+@use '@angular/material' as mat;
+
 // The question box (NBK-45, spec 04 "Composer"), a Copilot-style pill since
 // NBK-83 (spec 07): one bordered box, the textarea inside it borderless, so
 // the whole box reads as the control.
@@ -64,14 +66,24 @@
   }
 
   // Inset by the pill's corner, so the bar runs along the straight top edge
-  // rather than across the rounded ends.
+  // rather than across the rounded ends. `width: auto` because Material's
+  // `mdc-linear-progress` class on the bar itself sets `width: 100%`, which
+  // beats the right inset: the bar started 28 px in and ran 28 px past the
+  // box. The track is transparent so only the moving indicator shows — the
+  // old `--mdc-linear-progress-track-color` token no longer reaches it.
   &__progress {
     position: absolute;
     top: 0;
     left: var(--app-corner-pill);
     right: var(--app-corner-pill);
-    height: 2px;
-    --mdc-linear-progress-track-color: transparent;
+    width: auto;
+    @include mat.progress-bar-overrides(
+      (
+        track-color: transparent,
+        track-height: 2px,
+        active-indicator-height: 2px,
+      )
+    );
   }
 
   // Takes the send button's place at the same size, so the box does not
