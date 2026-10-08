@@ -8,8 +8,11 @@ import {
   SUMMARIZED_DETAIL,
   VERSION_ID,
   renderPage,
+  activatedRoute,
+  noChat,
   renderRouted,
   supersededVersionDetail,
+  versionDetail,
 } from './document-detail-page.spec-helpers';
 import type { AppEvent } from '../events/app-events.service';
 
@@ -54,7 +57,7 @@ describe('DocumentDetailPage — following Ingestion while open', () => {
   });
 
   /** What re-reading the Version returns once Stage 2 has written its artifacts. */
-  const SUMMARIZED_VERSION = supersededVersionDetail(VERSION_ID, {
+  const SUMMARIZED_VERSION = versionDetail(VERSION_ID, {
     version: {
       id: VERSION_ID,
       versionNumber: 2,
@@ -161,11 +164,112 @@ describe('DocumentDetailPage — following Ingestion while open', () => {
     expect(documents.getDocumentVersion).not.toHaveBeenCalled();
   });
 
+  it('keeps showing "not converted yet", with no spinner, while it reads the Converted Markdown again', async () => {
+    let deliver!: (content: unknown) => void;
+    const documents = {
+      ...clients(),
+      getDocumentVersionContent: vi
+        .fn()
+        .mockResolvedValueOnce({ versionId: VERSION_ID, markdown: null })
+        .mockImplementationOnce(() => new Promise((resolve) => (deliver = resolve))),
+    };
+    const { appEvents } = await renderPage(documents);
+    await screen.findByTestId('byline');
+    fireEvent.click(screen.getByRole('button', { name: 'Read the full Document' }));
+    await screen.findByText('This Document has not been converted to Markdown yet.');
+
+    appEvents.events.next(statusChanged('converted'));
+    await waitFor(() => expect(documents.getDocumentVersionContent).toHaveBeenCalledTimes(2));
+
+    expect(screen.getByText('This Document has not been converted to Markdown yet.')).toBeTruthy();
+    expect(screen.queryByRole('progressbar')).toBeNull();
+    deliver({ versionId: VERSION_ID, markdown: FULL_MARKDOWN });
+    expect(await screen.findByText('Revenue grew to 12.4M.')).toBeTruthy();
+  });
+
+  it('leaves the page as it is when a background read fails', async () => {
+    const documents = {
+      ...clients(),
+      getDocumentVersion: vi.fn().mockRejectedValue({ error: { message: 'Gateway timeout.' } }),
+      getDocumentVersionContent: vi
+        .fn()
+        .mockResolvedValueOnce({ versionId: VERSION_ID, markdown: null })
+        .mockRejectedValue({ error: { message: 'Gateway timeout.' } }),
+    };
+    const { appEvents } = await renderPage(documents);
+    const byline = await screen.findByTestId('byline');
+    fireEvent.click(screen.getByRole('button', { name: 'Read the full Document' }));
+    await screen.findByText('This Document has not been converted to Markdown yet.');
+
+    appEvents.events.next(statusChanged('summarized'));
+    await waitFor(() => expect(documents.getDocumentVersion).toHaveBeenCalled());
+    await waitFor(() => expect(documents.getDocumentVersionContent).toHaveBeenCalledTimes(2));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(screen.queryByText(/Gateway timeout|Failed to load/)).toBeNull();
+    expect(within(byline).getByText('Summarized')).toBeTruthy();
+  });
+
+  it('never moves the badge back when an earlier re-read answers after a later event', async () => {
+    let answerLate!: (detail: unknown) => void;
+    const documents = {
+      ...clients(),
+      getDocumentVersion: vi
+        .fn()
+        .mockImplementationOnce(() => new Promise((resolve) => (answerLate = resolve)))
+        .mockResolvedValue({ ...SUMMARIZED_VERSION, status: 'ready' }),
+    };
+    const { appEvents } = await renderPage(documents);
+    const byline = await screen.findByTestId('byline');
+
+    appEvents.events.next(statusChanged('summarized'));
+    appEvents.events.next(statusChanged('ready'));
+    expect(await within(byline).findByText('Ready')).toBeTruthy();
+    answerLate(SUMMARIZED_VERSION);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(within(screen.getByTestId('byline')).getByText('Ready')).toBeTruthy();
+  });
+
+  it('does not bring in the superseded notice when a newer Version arrives mid-read', async () => {
+    const documents = {
+      ...clients(),
+      getDocumentVersion: vi.fn().mockResolvedValue({
+        ...SUMMARIZED_VERSION,
+        isLatestVersion: false,
+        latestVersionNumber: 3,
+      }),
+    };
+    const { appEvents } = await renderPage(documents);
+    await screen.findByTestId('byline');
+
+    appEvents.events.next(statusChanged('summarized'));
+    await screen.findByRole('heading', { name: 'Key points' });
+
+    expect(screen.queryByTestId('cited-version-notice')).toBeNull();
+  });
+
+  it('leaves a pinned older Version alone when the latest Version moves on', async () => {
+    const OLD = '77777777-7777-7777-7777-777777777777';
+    const documents = {
+      ...clients(),
+      getDocumentVersion: vi.fn().mockResolvedValue(supersededVersionDetail(OLD)),
+    };
+    const { appEvents } = await renderPage(documents, activatedRoute({ version: OLD }));
+    const byline = await screen.findByTestId('byline');
+
+    appEvents.events.next(statusChanged('failed', { failure: { reason: 'unexpected' } }));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(within(byline).getByText('Ready')).toBeTruthy();
+    expect(documents.getDocumentVersion).toHaveBeenCalledTimes(1);
+  });
+
   // Through the real router: what only navigation shows.
   describe('across navigation', () => {
     const OTHER_DOCUMENT_ID = '99999999-9999-9999-9999-999999999999';
     const OTHER_VERSION_ID = '88888888-8888-8888-8888-888888888888';
-    const OTHER_VERSION = supersededVersionDetail(OTHER_VERSION_ID, {
+    const OTHER_VERSION = versionDetail(OTHER_VERSION_ID, {
       documentId: OTHER_DOCUMENT_ID,
       filename: 'suppliers.pdf',
       metadata: { title: 'Supplier Review' },
@@ -183,7 +287,7 @@ describe('DocumentDetailPage — following Ingestion while open', () => {
           .mockImplementationOnce(() => new Promise((resolve) => (answerLate = resolve)))
           .mockResolvedValue(OTHER_VERSION),
       };
-      const { navigate, appEvents } = await renderRouted(documents, chat());
+      const { navigate, appEvents } = await renderRouted(documents, noChat());
       await navigate(`/notebooks/${NOTEBOOK_ID}/documents/${DOCUMENT_ID}`);
       await screen.findByTestId('byline');
 
@@ -206,9 +310,11 @@ describe('DocumentDetailPage — following Ingestion while open', () => {
         ...clients(),
         listDocuments: vi.fn().mockResolvedValue([CONVERTING]),
       };
-      const { navigate, appEvents } = await renderRouted(documents, chat());
+      const { navigate, appEvents } = await renderRouted(documents, noChat());
       await navigate(`/notebooks/${NOTEBOOK_ID}`);
       await screen.findByText('quarterly.pdf');
+      // The Notebook page's subscriptions to the stream (Documents and chat).
+      const onNotebookPage = appEvents.events.observers.length;
 
       await navigate(`/notebooks/${NOTEBOOK_ID}/documents/${DOCUMENT_ID}`);
       const byline = await screen.findByTestId('byline');
@@ -219,6 +325,8 @@ describe('DocumentDetailPage — following Ingestion while open', () => {
       await waitFor(() => expect(screen.queryByTestId('byline')).toBeNull());
       appEvents.events.next(statusChanged('indexing'));
       expect(await screen.findByText('Indexing')).toBeTruthy();
+      // Handed over, not stacked: as many subscriptions as before the trip.
+      expect(appEvents.events.observers.length).toBe(onNotebookPage);
     });
   });
 });

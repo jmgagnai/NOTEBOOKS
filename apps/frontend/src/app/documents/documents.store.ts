@@ -86,7 +86,10 @@ interface DocumentVersionStatusChanged {
 
 const DOCUMENT_VERSION_STATUS_CHANGED = 'document-version-status-changed';
 
-/** Narrows a generic app event to a Document Version status change, or null. */
+// Two readings of the Ingestion stage order, which is the backend's:
+// `documentStatusSchema` in apps/backend/src/documents/schema.ts lists the
+// statuses in pipeline order — change these with it.
+
 /**
  * The statuses after which a Version's generated artifacts are written (or
  * never will be): the Document page re-reads its open Version on reaching
@@ -103,6 +106,7 @@ const CONVERTED: ReadonlySet<DocumentStatus> = new Set([
   'ready',
 ]);
 
+/** Narrows a generic app event to a Document Version status change, or null. */
 function asStatusChange(event: AppEvent): DocumentVersionStatusChanged | null {
   if (event.type !== DOCUMENT_VERSION_STATUS_CHANGED) return null;
   const { documentId, versionId, status, failure } = event.data as Partial<
@@ -634,15 +638,19 @@ export const DocumentsStore = signalStore(
           content.markdown === null &&
           CONVERTED.has(change.status)
         ) {
-          patchState(store, { openContent: null });
-          void loadContent(notebookId, change.documentId, change.versionId);
+          void refreshOpenContent(notebookId, change.documentId, change.versionId);
         }
       }
 
       /**
        * Reads the open Version again and updates it in place — no loading
-       * state, the Converted Markdown kept — unlike `loadDocumentVersion`,
-       * which starts the page over. It does not take a turn in the
+       * state, no error, the Converted Markdown kept — unlike
+       * `loadDocumentVersion`, which starts the page over. It takes the
+       * artifacts from the read and keeps what the page already knows better:
+       * the status and failure, which events have kept newer than any read
+       * (and which the Version-scoped read carries no reason for), and
+       * whether this is the latest Version — a re-upload mid-read is not
+       * this page's to announce. It does not take a turn in the
        * newest-read-wins order (NBK-87): it lands only if no read of the open
        * Document has started since, so a Citation followed meanwhile wins.
        */
@@ -658,18 +666,48 @@ export const DocumentsStore = signalStore(
             documentId,
             versionId,
           })) as DocumentVersionDetail;
-          if (request !== openRequest) return;
+          const open = store.openDocument();
+          if (request !== openRequest || open?.version.id !== versionId) return;
           patchState(store, {
             openDocument: {
               ...fromVersionDetail(detail),
-              // The Version-scoped read carries no failure reason (see
-              // `fromVersionDetail`); the event that brought us here did.
-              failure: store.openDocument()?.failure ?? null,
+              status: open.status,
+              failure: open.failure,
+              isLatestVersion: open.isLatestVersion,
+              latestVersionNumber: open.latestVersionNumber,
             },
           });
         } catch {
           // The status is already shown from the event; failing to bring in
           // the artifacts leaves the page as it was, which a reload mends.
+        }
+      }
+
+      /**
+       * Reads the open Version's Converted Markdown again once conversion is
+       * done, for a reader shown "not converted yet" (NBK-93). Quietly, like
+       * `refreshOpenVersion`: the sentence stays until the Markdown is there,
+       * and a failed read leaves it.
+       */
+      async function refreshOpenContent(
+        notebookId: string,
+        documentId: string,
+        versionId: string,
+      ): Promise<void> {
+        if (contentInFlight === versionId) return;
+        contentInFlight = versionId;
+        try {
+          const content = await documentsService.getDocumentVersionContent({
+            notebookId,
+            documentId,
+            versionId,
+          });
+          if (contentInFlight !== versionId) return;
+          contentInFlight = null;
+          if (store.openContent()?.versionId !== versionId) return;
+          patchState(store, { openContent: content });
+        } catch {
+          if (contentInFlight === versionId) contentInFlight = null;
         }
       }
 
@@ -722,11 +760,7 @@ export const DocumentsStore = signalStore(
         }
       }
 
-      /**
-       * Fetches the Converted Markdown of one Version for the open Document,
-       * once: an ask for the Version already loaded, or already on its way,
-       * waits on that instead (NBK-87).
-       */
+      // `loadDocumentContent`, also used by the live stream (NBK-93).
       async function loadContent(
         notebookId: string,
         documentId: string,
