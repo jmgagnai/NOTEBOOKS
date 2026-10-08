@@ -134,6 +134,7 @@ export async function renderRouted(
   documentsService: Partial<DocumentsService>,
   chatService: Partial<ChatService>,
 ) {
+  const appEvents = appEventsStub();
   const rendered = await render(RouterShell, {
     deferBlockBehavior: DeferBlockBehavior.Playthrough,
     routes: [
@@ -151,11 +152,11 @@ export async function renderRouted(
       { provide: ChatService, useValue: chatService },
       { provide: DocumentTransferService, useValue: {} },
       { provide: AuthService, useValue: { getCurrentUser: vi.fn().mockResolvedValue(SIGNED_IN) } },
-      appEventsStub().provider,
+      appEvents.provider,
     ],
   });
   await TestBed.inject(AuthStore).checkSession();
-  return rendered;
+  return { ...rendered, appEvents };
 }
 
 /** A chat client for a Notebook holding those two Chat Threads, both empty. */
