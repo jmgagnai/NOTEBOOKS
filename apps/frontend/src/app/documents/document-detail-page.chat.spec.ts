@@ -10,10 +10,12 @@ import {
 import {
   NEWER_THREAD,
   NOTEBOOK_ID,
+  activatedRoute,
   OLDER_THREAD,
   SUMMARIZED_DETAIL,
   chatPane,
   renderPage,
+  twoThreads,
 } from './document-detail-page.spec-helpers';
 
 /**
@@ -132,6 +134,24 @@ describe('DocumentDetailPage — chat beside the Document', () => {
     fireEvent.click(sendButton());
 
     expect(await within(chatPane()).findByText('Revenue in Q3 was 12.4M.')).toBeTruthy();
+  });
+
+  // Spec 08 (NBK-87): a Citation link names the Chat Thread it was cited
+  // in, so a pasted or reloaded link opens beside that Thread.
+  describe('with the Chat Thread named in the link', () => {
+    it('opens the named Chat Thread rather than the newest', async () => {
+      await renderPage(documents(), activatedRoute({ thread: 'thread-old' }), twoThreads());
+
+      expect(await within(chatPane()).findByText('Older questions')).toBeTruthy();
+      expect(within(chatPane()).queryByText('Newer questions')).toBeNull();
+    });
+
+    it('falls back to the newest Chat Thread when the named one is not in this Notebook', async () => {
+      await renderPage(documents(), activatedRoute({ thread: 'thread-gone' }), twoThreads());
+
+      expect(await within(chatPane()).findByText('Newer questions')).toBeTruthy();
+      expect(screen.queryByRole('alert')).toBeNull();
+    });
   });
 
   describe('on a window narrower than 900 px', () => {

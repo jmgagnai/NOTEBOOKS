@@ -1,7 +1,11 @@
 import { DeferBlockBehavior, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap } from '@angular/router';
 import { render, screen } from '@testing-library/angular';
+import { of } from 'rxjs';
 import { DocumentDetailPage } from './document-detail-page';
+import { DocumentTransferService } from './document-transfer.service';
+import { NotebookDetailPage } from '../notebooks/notebook-detail-page';
+import { Elsewhere, RouterShell } from '../notebooks/notebook-detail-page.spec-helpers';
 import { AuthService } from '../api/services/auth.service';
 import { ChatService } from '../api/services/chat.service';
 import { DocumentsService } from '../api/services/documents.service';
@@ -18,16 +22,19 @@ export const DOCUMENT_ID = '22222222-2222-2222-2222-222222222222';
 export const VERSION_ID = '33333333-3333-3333-3333-333333333333';
 
 // A Citation opens this page with the Document Version it pinned, the chunk
-// it points at and that chunk's character range in the Converted Markdown —
-// see `ThreadView.citationParams`.
+// it points at, that chunk's character range in the Converted Markdown and
+// the Chat Thread it was cited in — see `citationParams`. The page follows
+// the route as it changes, so the stub offers it as observables too; one
+// that never changes, which is what a page opened directly sees.
 export function activatedRoute(queryParams: Record<string, string> = {}) {
+  const paramMap = convertToParamMap({ notebookId: NOTEBOOK_ID, documentId: DOCUMENT_ID });
+  const queryParamMap = convertToParamMap(queryParams);
   return {
     provide: ActivatedRoute,
     useValue: {
-      snapshot: {
-        paramMap: convertToParamMap({ notebookId: NOTEBOOK_ID, documentId: DOCUMENT_ID }),
-        queryParamMap: convertToParamMap(queryParams),
-      },
+      snapshot: { paramMap, queryParamMap },
+      paramMap: of(paramMap),
+      queryParamMap: of(queryParamMap),
     },
   };
 }
@@ -116,3 +123,45 @@ export const NEWER_THREAD = thread({
   title: 'Newer questions',
   createdAt: '2026-02-01T00:00:00Z',
 });
+
+/**
+ * The Document page and the Notebook page behind the real router, with a
+ * page elsewhere to leave to: for what only navigation shows — the open
+ * Chat Thread carried between pages, and a Citation followed inside the
+ * page, which the router answers by reusing it rather than creating another.
+ */
+export async function renderRouted(
+  documentsService: Partial<DocumentsService>,
+  chatService: Partial<ChatService>,
+) {
+  const rendered = await render(RouterShell, {
+    deferBlockBehavior: DeferBlockBehavior.Playthrough,
+    routes: [
+      { path: '', component: Elsewhere },
+      { path: 'notebooks/:notebookId', component: NotebookDetailPage },
+      { path: 'notebooks/:notebookId/documents/:documentId', component: DocumentDetailPage },
+    ],
+    providers: [
+      provideAppIcons(),
+      { provide: NotebooksService, useValue: { listNotebooks: vi.fn().mockResolvedValue([]) } },
+      {
+        provide: DocumentsService,
+        useValue: { listDocuments: vi.fn().mockResolvedValue([]), ...documentsService },
+      },
+      { provide: ChatService, useValue: chatService },
+      { provide: DocumentTransferService, useValue: {} },
+      { provide: AuthService, useValue: { getCurrentUser: vi.fn().mockResolvedValue(SIGNED_IN) } },
+      appEventsStub().provider,
+    ],
+  });
+  await TestBed.inject(AuthStore).checkSession();
+  return rendered;
+}
+
+/** A chat client for a Notebook holding those two Chat Threads, both empty. */
+export function twoThreads(): Partial<ChatService> {
+  return {
+    listChatThreads: vi.fn().mockResolvedValue([OLDER_THREAD, NEWER_THREAD]) as never,
+    listChatMessages: vi.fn().mockResolvedValue([]) as never,
+  };
+}

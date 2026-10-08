@@ -327,14 +327,21 @@ export const ChatStore = signalStore(
        * the backend lists newest first today, but that ordering is its
        * choice, and the rule is "most recent".
        */
-      async loadThreads(notebookId: string): Promise<void> {
+      async loadThreads(
+        notebookId: string,
+        preferredThreadId: string | null = null,
+      ): Promise<void> {
         patchState(store, { threadsLoading: true, error: null });
         try {
           const threads = (await chatService.listChatThreads({ notebookId })) as ChatThread[];
           patchState(store, { threads, threadsLoading: false });
           if (store.activeThreadId() === null && threads.length > 0) {
+            // A Thread the caller names — the one a Citation link was cited
+            // in (spec 08) — wins over the newest, if it is in this Notebook;
+            // one that is not (deleted, another Notebook's) is ignored.
+            const preferred = threads.find((t) => t.id === preferredThreadId);
             const newest = threads.reduce((a, b) => (b.createdAt > a.createdAt ? b : a));
-            await openThread(notebookId, newest.id);
+            await openThread(notebookId, (preferred ?? newest).id);
           }
         } catch (err) {
           patchState(store, {

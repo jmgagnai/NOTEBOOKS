@@ -69,8 +69,16 @@ describe('Chat panel (ThreadNavigator + ThreadView) — messages and Citations',
         pathname: `/notebooks/${NOTEBOOK_ID}/documents/${DOCUMENT_ID}`,
         // The pinned Version, the pinned chunk, and the chunk's character
         // range — everything "open that exact Version at that location"
-        // needs, and nothing that would be re-resolved to the latest Version.
-        params: { version: VERSION_ID, chunk: CHUNK_ID, from: '120', to: '167' },
+        // needs, and nothing that would be re-resolved to the latest Version
+        // — plus the Chat Thread it was cited in (spec 08), so the Document
+        // page opens beside it.
+        params: {
+          version: VERSION_ID,
+          chunk: CHUNK_ID,
+          from: '120',
+          to: '167',
+          thread: 'thread-1',
+        },
       });
       expect(target(second)).toEqual({
         pathname: `/notebooks/${NOTEBOOK_ID}/documents/${DOCUMENT_ID}`,
@@ -79,6 +87,7 @@ describe('Chat panel (ThreadNavigator + ThreadView) — messages and Citations',
           chunk: '66666666-6666-6666-6666-666666666666',
           from: '0',
           to: '24',
+          thread: 'thread-1',
         },
       });
     });
@@ -100,7 +109,13 @@ describe('Chat panel (ThreadNavigator + ThreadView) — messages and Citations',
       expect(marker.textContent?.trim()).toBe('1');
       expect(target(marker)).toEqual({
         pathname: `/notebooks/${NOTEBOOK_ID}/documents/${DOCUMENT_ID}`,
-        params: { version: VERSION_ID, chunk: CHUNK_ID, from: '120', to: '167' },
+        params: {
+          version: VERSION_ID,
+          chunk: CHUNK_ID,
+          from: '120',
+          to: '167',
+          thread: 'thread-1',
+        },
       });
 
       // The prose either side of the marker survives unchanged.
@@ -353,7 +368,13 @@ describe('Chat panel (ThreadNavigator + ThreadView) — messages and Citations',
       const marker = within(cell).getByRole('link', { name: 'Citation 1' });
       expect(target(marker)).toEqual({
         pathname: `/notebooks/${NOTEBOOK_ID}/documents/${DOCUMENT_ID}`,
-        params: { version: VERSION_ID, chunk: CHUNK_ID, from: '120', to: '167' },
+        params: {
+          version: VERSION_ID,
+          chunk: CHUNK_ID,
+          from: '120',
+          to: '167',
+          thread: 'thread-1',
+        },
       });
     });
     // The rendered marker is a plain `<a href>` from `[innerHTML]`, not a
@@ -376,6 +397,7 @@ describe('Chat panel (ThreadNavigator + ThreadView) — messages and Citations',
         chunk: CHUNK_ID,
         from: '120',
         to: '167',
+        thread: 'thread-1',
       });
     });
 
