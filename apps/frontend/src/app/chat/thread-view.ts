@@ -9,9 +9,10 @@ import {
   input,
   viewChild,
 } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
-import { ChatMessage, ChatStore, ChatThread } from './chat.store';
+import { ChatStore, ChatThread, PendingQuestion } from './chat.store';
 import { Avatar } from '../shared/avatar';
 import { SparkleAvatar } from '../shared/sparkle-avatar';
 import { Composer } from './composer';
@@ -66,6 +67,7 @@ interface AnswerBlock {
     EditableTitle,
     MatProgressSpinnerModule,
     MatTooltipModule,
+    NgTemplateOutlet,
     Avatar,
     SparkleAvatar,
     ThreadEmptyState,
@@ -84,6 +86,9 @@ export class ThreadView {
 
   /** The Thread card's scrolling region (NBK-53); absent while loading or empty. */
   private readonly messageList = viewChild<ElementRef<HTMLElement>>('messageList');
+
+  /** The row of the question in flight, while there is one (NBK-70). */
+  private readonly pendingRow = viewChild<ElementRef<HTMLElement>>('pendingQuestion');
 
   /** The row of the answer being streamed, while there is one. */
   private readonly streamingRow = viewChild<ElementRef<HTMLElement>>('streamingAnswer');
@@ -116,28 +121,19 @@ export class ThreadView {
       );
     });
 
-    // Rule 2 (story 15c): the question just sent comes into view at the
-    // bottom. The store renders nothing optimistically, so the question is
-    // on screen only once the exchange is recorded — and if its answer
-    // streamed meanwhile, rule 3 has already placed the view, which the
-    // recorded exchange must not move.
-    let askedAt: { streamSeen: string | null; messageCount: number } | null = null;
+    // Rule 2 (story 15c, NBK-71): the question just sent comes into view at
+    // the bottom, the moment its pending row appears. Keyed on the pending
+    // question itself, so returning to its Thread mid-ask (rule 1 already
+    // lands at the end) and the recorded question replacing it are not moves:
+    // the recorded one sits where the preview was, already in view.
+    let seenPending: PendingQuestion | null = null;
     effect(() => {
-      const sending = this.store.sending();
-      const messageCount = this.store.messages().length;
-      if (sending) {
-        askedAt ??= { streamSeen: seenStream, messageCount };
-        return;
-      }
-      if (!askedAt) return;
-      const streamed = seenStream !== askedAt.streamSeen;
-      const recorded = messageCount > askedAt.messageCount;
-      askedAt = null;
-      if (streamed || !recorded) return;
-      this.afterRender((list) => {
-        const questions = list.querySelectorAll<HTMLElement>('.thread-view__message--user');
-        questions[questions.length - 1]?.scrollIntoView?.({ block: 'end', behavior: 'smooth' });
-      });
+      const pending = this.pendingQuestion();
+      if (pending === null || pending === seenPending) return;
+      seenPending = pending;
+      this.afterRender(() =>
+        this.pendingRow()?.nativeElement.scrollIntoView?.({ block: 'end', behavior: 'smooth' }),
+      );
     });
   }
 
@@ -162,6 +158,16 @@ export class ThreadView {
   );
 
   /**
+   * The question in flight (NBK-70), while its Thread is the open one: the
+   * store keeps it across a Thread switch, since the ask is still out, but
+   * it belongs only to the Thread it was asked in.
+   */
+  protected readonly pendingQuestion = computed<PendingQuestion | null>(() => {
+    const pending = this.store.pendingQuestion();
+    return pending?.threadId === this.store.activeThreadId() ? pending : null;
+  });
+
+  /**
    * The streaming answer as blocks to render, one per chunk received.
    *
    * One element per chunk rather than one joined string, because a chunk *is*
@@ -175,15 +181,9 @@ export class ThreadView {
     return streaming.chunks.map((text, index) => ({ index, text }));
   });
 
-  /**
-   * The visible attribution (NBK-44): the asker's short name — the e-mail's
-   * local part — or "Assistant". The full e-mail is the avatar's tooltip
-   * instead, so a shared Thread stays attributed without "@example.com" on
-   * every line; an answer no longer names its asker, since the question it
-   * follows already does.
-   */
-  protected author(message: ChatMessage): string {
-    return message.role === 'assistant' ? 'Assistant' : message.askedBy.email.split('@')[0];
+  /** The e-mail's local part: how a question's author line names its asker (NBK-44). */
+  protected shortName(email: string): string {
+    return email.split('@')[0];
   }
 
   /**

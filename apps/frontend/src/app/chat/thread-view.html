@@ -22,7 +22,9 @@
 
     @if (store.messagesLoading()) {
       <mat-progress-spinner mode="indeterminate" diameter="32" />
-    } @else if (store.messages().length === 0 && streamingBlocks().length === 0) {
+    } @else if (
+      store.messages().length === 0 && !pendingQuestion() && streamingBlocks().length === 0
+    ) {
       <app-thread-empty-state
         [disabled]="store.sending() || store.creatingThread()"
         (ask)="askStarter($event)"
@@ -33,34 +35,24 @@
           <!--
             Spec 04 (NBK-44): a question is a right-aligned bubble with the
             asker's initials avatar on its right; an answer is full-width
-            prose on the left behind the sparkle avatar. The avatar carries
-            the full e-mail as its tooltip so the line can show the short
-            name alone.
+            prose on the left behind the sparkle avatar.
           -->
-          <li [class]="'thread-view__message thread-view__message--' + message.role">
-            @if (message.role === 'assistant') {
+          @if (message.role === 'user') {
+            <li class="thread-view__message thread-view__message--user">
+              <ng-container *ngTemplateOutlet="question; context: { $implicit: message }" />
+            </li>
+          } @else {
+            <li class="thread-view__message thread-view__message--assistant">
               <app-sparkle-avatar class="thread-view__avatar" data-testid="chat-assistant-avatar" />
-            }
-            <div
-              [class]="
-                'thread-view__body ' +
-                (message.role === 'user' ? 'thread-view__bubble' : 'thread-view__answer')
-              "
-            >
-              <!--
-                Per-message attribution: GLOSSARY.md requires every message
-                to record which user asked it, and a shared Thread is
-                unreadable without it.
-              -->
-              <span class="thread-view__message-author" data-testid="chat-message-author">{{
-                author(message)
-              }}</span>
-              @if (message.role === 'assistant') {
+              <div class="thread-view__body thread-view__answer">
+                <!-- An answer no longer names its asker: the question it follows does. -->
+                <span class="thread-view__message-author" data-testid="chat-message-author"
+                  >Assistant</span
+                >
                 <!--
                   The answer as Markdown, each Citation marker a chip
                   linking to the exact Document Version and chunk it cites
-                  (NBK-12, NBK-52). A question stays plain text: it is what
-                  was typed, not Markdown.
+                  (NBK-12, NBK-52).
                 -->
                 <app-answer-body
                   class="thread-view__message-content"
@@ -68,26 +60,38 @@
                   [content]="message.content"
                   [citations]="message.citations"
                 />
-              } @else {
-                <p class="thread-view__message-content">{{ message.content }}</p>
-              }
 
-              @if (message.citations.length > 0) {
-                <!--
-                  And the same Citations grouped by Document Version, so the
-                  cited Documents are readable without hunting through the prose.
-                -->
-                <app-citation-groups [notebookId]="notebookId()" [citations]="message.citations" />
-              }
-            </div>
-            @if (message.role === 'user') {
-              <app-avatar
-                class="thread-view__avatar"
-                data-testid="chat-user-avatar"
-                [email]="message.askedBy.email"
-                [matTooltip]="message.askedBy.email"
-              />
-            }
+                @if (message.citations.length > 0) {
+                  <!--
+                    And the same Citations grouped by Document Version, so the
+                    cited Documents are readable without hunting through the prose.
+                  -->
+                  <app-citation-groups
+                    [notebookId]="notebookId()"
+                    [citations]="message.citations"
+                  />
+                }
+              </div>
+            </li>
+          }
+        }
+
+        @if (pendingQuestion(); as pending) {
+          <!--
+            The question just sent (NBK-70): the recorded question's own
+            layout, through the same template so the two cannot drift, and
+            muted with "Sending…" saying the server does not hold it yet.
+            Outside `store.messages()` for the reason the streaming answer
+            is: it is replaced by the recorded question, never promoted.
+          -->
+          <li
+            #pendingQuestion
+            class="thread-view__message thread-view__message--user thread-view__message--pending"
+            data-testid="chat-pending-question"
+          >
+            <ng-container
+              *ngTemplateOutlet="question; context: { $implicit: pending, sending: true }"
+            />
           </li>
         }
 
@@ -152,3 +156,28 @@
   <!-- Pinned under the messages whatever is open (NBK-45): it also carries the error row. -->
   <app-composer [notebookId]="notebookId()" />
 </div>
+
+<!--
+  A question's bubble and avatar, recorded or pending. A question is plain
+  text, not Markdown: it is what was typed. The visible attribution is the
+  asker's short name (NBK-44); the full e-mail is the avatar's tooltip, so a
+  shared Thread stays attributed — GLOSSARY.md requires every message to
+  record who asked it — without "@example.com" on every line.
+-->
+<ng-template #question let-question let-sending="sending">
+  <div class="thread-view__body thread-view__bubble">
+    <span class="thread-view__message-author" data-testid="chat-message-author">{{
+      shortName(question.askedBy.email)
+    }}</span>
+    <p class="thread-view__message-content">{{ question.content }}</p>
+    @if (sending) {
+      <span class="thread-view__sending" data-testid="chat-pending-sending">Sending…</span>
+    }
+  </div>
+  <app-avatar
+    class="thread-view__avatar"
+    data-testid="chat-user-avatar"
+    [email]="question.askedBy.email"
+    [matTooltip]="question.askedBy.email"
+  />
+</ng-template>

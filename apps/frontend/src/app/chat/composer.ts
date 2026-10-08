@@ -8,6 +8,7 @@ import {
   Injector,
   input,
   linkedSignal,
+  untracked,
   viewChild,
 } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
@@ -48,8 +49,9 @@ export class Composer {
   protected readonly store = inject(ChatStore);
 
   /**
-   * The question being typed. Survives a failed send so asking again works,
-   * and is dropped when another Thread is opened: it was asked of this one.
+   * The question being typed. Moves out of the box on send (NBK-70) and
+   * back in if the ask fails (`restoreFailedQuestion`); dropped when
+   * another Thread is opened: it was typed into this one.
    */
   protected readonly draft = linkedSignal<string | null, string>({
     source: () => this.store.activeThreadId(),
@@ -101,15 +103,39 @@ export class Composer {
   private wasAnswering = false;
 
   /**
+   * Takes back the text of a question that failed in the open Thread, so
+   * asking again is the retry (spec 04, "a failed ask keeps the draft").
+   * Driven by the store rather than by `ask`'s result because the ask can
+   * fail while another Thread is open: the text then waits with its own
+   * Thread and comes back here when that Thread is next opened (NBK-69
+   * story 7), instead of landing in the wrong box or being dropped.
+   */
+  private readonly restoreFailedQuestion = effect(() => {
+    const threadId = this.store.activeThreadId();
+    const failed = threadId === null ? undefined : this.store.failedQuestions()[threadId];
+    if (!failed) return;
+    untracked(() => {
+      this.setDraft(failed.content);
+      this.store.forgetFailedQuestion(threadId!);
+    });
+  });
+
+  /**
    * Sends `content` as this user's question in the open Thread and reports
    * whether the exchange landed. Public so a caller outside the box — the
    * empty state's starter prompts (spec 04) — sends through the same path
    * the keyboard does.
+   *
+   * The text leaves the box as it is sent, since it now shows in the Thread
+   * as the pending question (NBK-70), and comes back through
+   * `restoreFailedQuestion` if the ask fails. A starter prompt fails the
+   * same way, landing in the box ready to be asked again.
    */
   async ask(content: string): Promise<boolean> {
     const threadId = this.store.activeThreadId();
     const question = content.trim();
     if (!threadId || !question || this.store.sending()) return false;
+    this.setDraft('');
     return this.store.sendMessage(this.notebookId(), threadId, question);
   }
 
@@ -126,12 +152,13 @@ export class Composer {
   }
 
   protected async send(): Promise<void> {
-    // Cleared only on success: a failed ask records nothing on the server,
-    // so re-sending is the retry and the text has to still be here.
-    if (await this.ask(this.draft())) {
-      this.draft.set('');
-      this.fit();
-    }
+    await this.ask(this.draft());
+  }
+
+  private setDraft(text: string): void {
+    this.draft.set(text);
+    // The textarea's value follows the next render; its height must too.
+    afterNextRender(() => this.fit(), { injector: this.injector });
   }
 
   /**
