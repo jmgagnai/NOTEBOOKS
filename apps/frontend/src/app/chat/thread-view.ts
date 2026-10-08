@@ -111,9 +111,6 @@ export class ThreadView {
   /** The row of the question in flight, while there is one (NBK-70). */
   private readonly pendingRow = viewChild<ElementRef<HTMLElement>>('pendingQuestion');
 
-  /** The row of the answer being streamed, while there is one. */
-  private readonly streamingRow = viewChild<ElementRef<HTMLElement>>('streamingAnswer');
-
   constructor() {
     // NBK-53, rule 1 (story 15b): opening or switching to a Thread lands at
     // its end, once — after its messages are in, since scrolling the list
@@ -128,20 +125,28 @@ export class ThreadView {
       this.afterRender((list) => list.scrollTo?.({ top: list.scrollHeight }));
     });
 
-    // Rule 3 (story 15d): an answer's first block brings its start to the
-    // top, and that is the only move it makes. Keyed on the stream, not on
-    // the chunk count, so later blocks — and the recorded answer replacing
-    // the preview — find the stream already seen. There is deliberately no
-    // "follow the bottom": the reader reads a long answer from its start.
-    let seenStream: string | null = null;
+    // Rule 3 (story 15d, amended): the list follows an answer to its end —
+    // each block as it streams in, and the recorded exchange taking the
+    // preview's place, or arriving unstreamed — so the newest text, its
+    // Citations and the question box stay in view. Keyed on the open Thread:
+    // its messages arriving on open or switch are rule 1's landing, not a
+    // follow, and a count that drops (the Thread swapped) starts afresh.
+    let followedThread: string | null = null;
+    let followedMessages = 0;
+    let followedBlocks = 0;
     effect(() => {
-      const streamId = this.store.streamingAnswer()?.streamId ?? null;
-      if (streamId === null || streamId === seenStream) return;
-      seenStream = streamId;
-      this.afterRender(() =>
-        // Optional call: jsdom, for one, has no scrollIntoView.
-        this.streamingRow()?.nativeElement.scrollIntoView?.({ block: 'start', behavior: 'smooth' }),
-      );
+      const threadId = this.store.activeThreadId();
+      const messages = this.store.messages().length;
+      const blocks = this.streamingBlocks().length;
+      // Counted apart: the recorded exchange replacing a preview adds
+      // messages as it drops blocks, and either growing is news.
+      const grew =
+        threadId === followedThread && (messages > followedMessages || blocks > followedBlocks);
+      followedThread = threadId;
+      followedMessages = messages;
+      followedBlocks = blocks;
+      if (!grew || this.store.messagesLoading()) return;
+      this.afterRender((list) => list.scrollTo?.({ top: list.scrollHeight, behavior: 'smooth' }));
     });
 
     // Rule 2 (story 15c, NBK-71): the question just sent comes into view at

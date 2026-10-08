@@ -47,7 +47,7 @@ look and the interaction rules below were settled on the prototype branch
 15. As a user, while the backend is answering, I want the question box disabled with a visible loader in it (a thin progress bar along its top edge and a spinner where the send button was), so that I know an answer is coming and cannot send a second question meanwhile — and I want the box to take focus back when the answer lands.
 15b. As a user switching to a Chat Thread, I want to land at the bottom of its messages, so that I see the latest exchange first.
 15c. As a user sending a question, I want it scrolled into view at the bottom, so that I see what I asked while the answer is prepared.
-15d. As a user, when an answer starts arriving, I want its first line scrolled to the top of the list and the view to stay there while the rest streams in, so that I read a long answer from its start rather than chasing its end.
+15d. _(Amended 2026-10-08.)_ As a user, while an answer arrives, I want the list to follow it to the bottom — each block as it streams in, and the recorded answer — so that the newest text, its Citations and the question box stay in view without scrolling by hand. (It used to bring the answer's first line to the top and stay there.)
 15e. As a user, I want the question box to show focus without an outline around it (its border darkens instead), so that typing does not put a ring around the whole box.
 16. As a user, I want the open Chat Thread's title in the Thread card's header, editable by clicking it, so that renaming needs no form.
 17. As a user, I want the Chat Threads navigator to list every Thread with its author and start date and to mark the open one unmistakably (tinted fill, brand outline, bold title), so that I always know which Thread I am in.
@@ -139,10 +139,12 @@ the textarea is re-enabled and takes focus. A failed ask keeps the draft
 **Scrolling.** The message list is the Thread card's scrolling region.
 Three rules: opening or switching to a Thread scrolls to the bottom once
 its messages are loaded; sending a question scrolls that question into
-view at the bottom; when the first streamed block of an answer arrives,
-the answer's first line is scrolled to the top of the list and later
-blocks do not move the view, nor does the recorded message replacing the
-preview. There is no "follow the bottom while streaming" behaviour.
+view at the bottom; while an answer arrives, the list follows it to the
+bottom — on each streamed block, and when the recorded exchange replaces
+the preview or arrives unstreamed. (Amended 2026-10-08 at the user's
+request: the list used to bring the answer's first line to the top and
+stay there, so a long answer was read from its start; in practice the
+answer's end, its Citations and the question box went out of view.)
 
 > **Superseded by [spec 07](07-closer-copilot-pass.md)** — see its Middle pane: landing or Thread (the placeholder is removed).
 
@@ -172,8 +174,9 @@ sends it (creating a Thread first if needed).
   (e.g. a heading element and a table appear) while a marker inside a
   table cell still renders as a link with "Source n"; the open Thread's
   navigator row carries the selected state; switching Thread scrolls the
-  list to its end and the first streamed block scrolls the answer to the
-  top (assert via the scroll calls on the list element);
+  list to its end and each streamed block, and the recorded answer,
+  scrolls it to its end again (assert via the scroll calls on the list
+  element);
   Citations into one Document are grouped on one row with the Version;
   the empty state's starter prompt creates a Thread and sends the prompt;
   the error row is dismissible.
