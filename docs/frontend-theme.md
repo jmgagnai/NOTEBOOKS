@@ -138,10 +138,16 @@ body (`body-medium`).
 sidebar (`app-sidebar`, about 280 px, a 56 px rail when collapsed, on
 `--app-sidebar-surface`), then `main.app-shell__main`, a flex column that
 scrolls. The routed page element inside it gets `flex: 1 0 auto`, so it is
-at least the column's height and a longer page scrolls the column, not the
-window. A page that wants panes scrolling inside the viewport sets
-`height: 100%` on its own root (as `notebook-detail-page.scss` does) and
-lets the children scroll. `body` carries the page background
+at least the column's height and grows with its content: a longer page
+scrolls the column, not the window.
+
+A page whose panes scroll inside the viewport pins its root to its host —
+`:host { position: relative }` and the root `position: absolute; inset: 0`
+— as `notebook-detail-page.scss` and `document-detail-page.scss` do. Not
+`height: 100%` on the root: against a host that grows with its content it
+resolves to the content's height, the page scrolls as one, and whatever
+sits at the bottom of a pane (the question box) goes out of view. Both
+pages shipped that way until NBK-86 and #39 found it. `body` carries the page background
 (`--mat-sys-background`, white since spec 07).
 
 ## Focus
