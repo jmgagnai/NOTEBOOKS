@@ -129,6 +129,8 @@ describe('Search routes', () => {
     deleted?: boolean;
     /** The Converted Markdown; defaults to a placeholder no Chunk is found in. */
     markdown?: string;
+    /** The title Stage 2 extracted, if any. */
+    title?: string;
   }
 
   /**
@@ -168,6 +170,12 @@ describe('Search routes', () => {
         ],
       );
       const versionId = versionRows[0].id;
+      if (version.title !== undefined) {
+        await pool.query('UPDATE document_versions SET metadata = $2 WHERE id = $1', [
+          versionId,
+          { title: version.title },
+        ]);
+      }
 
       for (const [chunkIndex, embedding] of (version.chunks ?? []).entries()) {
         await pool.query(
@@ -265,6 +273,27 @@ describe('Search routes', () => {
       charStart: at,
       charEnd: at + 'chunk 1 of atlas.md'.length,
     });
+  });
+
+  // NBK-96: a result is headed by its extracted title, as the Document page is.
+  it('carries the title Stage 2 extracted, or null when there is none', async () => {
+    const session = await loginAsNewUser('searcher-title@example.com');
+    const notebookId = await createNotebook(session, 'Titles');
+    await seedDocument(notebookId, 'q3.pdf', [
+      { status: 'ready', chunks: [axis(0)], title: 'Quarterly Report' },
+    ]);
+    await seedDocument(notebookId, 'untitled.pdf', [{ status: 'ready', chunks: [axis(1)] }]);
+    queryVectors.set('report', axis(0));
+
+    const results = (await search(session, notebookId, 'report')).json() as {
+      filename: string;
+      title: string | null;
+    }[];
+
+    expect(results.map((r) => [r.filename, r.title])).toEqual([
+      ['q3.pdf', 'Quarterly Report'],
+      ['untitled.pdf', null],
+    ]);
   });
 
   it('gives a best Chunk not found in the Converted Markdown no range', async () => {

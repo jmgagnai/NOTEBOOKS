@@ -56,6 +56,12 @@ export const searchMatchSchema = z
   .describe("Where the Document's best-matching Chunk sits — what opening the result shows.");
 
 export const searchResultSchema = documentSchema.extend({
+  title: z
+    .string()
+    .nullable()
+    .describe(
+      "The title Stage 2 extracted from the Document's latest Version, or null when it stated none — what a result is headed by (NBK-96).",
+    ),
   match: searchMatchSchema,
   score: z
     .number()

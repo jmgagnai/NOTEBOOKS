@@ -40,6 +40,11 @@ export function searchNotebook(http: HttpClient, rootUrl: string, params: Search
 };
 
 /**
+ * The title Stage 2 extracted from the Document's latest Version, or null when it stated none — what a result is headed by (NBK-96).
+ */
+'title': string | null;
+
+/**
  * Where the Document's best-matching Chunk sits — what opening the result shows.
  */
 'match': {
@@ -97,6 +102,11 @@ export function searchNotebook(http: HttpClient, rootUrl: string, params: Search
       'sizeBytes': number;
       'createdAt': string;
       };
+      
+      /**
+       * The title Stage 2 extracted from the Document's latest Version, or null when it stated none — what a result is headed by (NBK-96).
+       */
+      'title': string | null;
       
       /**
        * Where the Document's best-matching Chunk sits — what opening the result shows.

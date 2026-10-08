@@ -78,9 +78,13 @@ const SEARCH_NOTEBOOK_SQL = `
     NULL AS failed_at,
     s.abstract,
     scored.chunk_id AS match_chunk_id,
+    -- Read here rather than added to \`searchable_versions\`, which chat
+    -- retrieval shares and has no use for it.
+    NULLIF(v.metadata ->> 'title', '') AS title,
     1 - scored.distance AS score
   FROM scored
   JOIN searchable_versions s ON s.version_id = scored.version_id
+  JOIN document_versions v ON v.id = s.version_id
   -- Ties broken by age, oldest first, so an identical query twice running
   -- never shuffles its own results.
   ORDER BY scored.distance ASC, s.document_created_at ASC, s.document_id ASC
@@ -97,10 +101,9 @@ export async function searchNotebook(
   queryEmbedding: number[],
   limit: number,
 ): Promise<SearchResult[]> {
-  const { rows } = await pool.query<DocumentRow & { score: string; match_chunk_id: string }>(
-    SEARCH_NOTEBOOK_SQL,
-    [notebookId, toVectorLiteral(queryEmbedding), limit],
-  );
+  const { rows } = await pool.query<
+    DocumentRow & { score: string; match_chunk_id: string; title: string | null }
+  >(SEARCH_NOTEBOOK_SQL, [notebookId, toVectorLiteral(queryEmbedding), limit]);
   // Each result's best Chunk located in its Version's Converted Markdown, so
   // the result opens at that passage (NBK-96). Read per query: one pass over
   // the results' Versions (see `docs/search.md`).
@@ -115,6 +118,7 @@ export async function searchNotebook(
     const range = ranges.get(row.match_chunk_id);
     return {
       ...toDocument(row),
+      title: row.title,
       match: {
         versionId: row.version_id,
         chunkId: row.match_chunk_id,
