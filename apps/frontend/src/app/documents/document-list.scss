@@ -109,12 +109,16 @@
   }
 
   // The 2 px indeterminate bar along the bottom of an in-progress row, inset
-  // to the row's text so it does not touch the rounded corners.
+  // to the row's text so it does not touch the rounded corners. `width:
+  // auto` because Material's `mdc-linear-progress` class on the bar itself
+  // sets `width: 100%`, which beats the right inset — it ran 8 px past the
+  // row (as the question box's answering bar did).
   &__progress {
     position: absolute;
     left: 8px;
     right: 8px;
     bottom: 0;
+    width: auto;
     @include mat.progress-bar-overrides(
       (
         track-height: 2px,
