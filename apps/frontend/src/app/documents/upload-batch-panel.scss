@@ -1,0 +1,91 @@
+// The upload batch block (NBK-50, spec 03 "Batch panel"): a bordered block at
+// the top of the Documents panel body, 12 px rows so a forty-file batch stays
+// a list the user can follow, and the conflict question as a highlighted
+// block inside it.
+:host {
+  display: block;
+}
+
+.upload-batch {
+  margin-bottom: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--mat-sys-outline-variant);
+  border-radius: var(--mat-sys-corner-small);
+  font: var(--mat-sys-body-small);
+
+  &__items {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  &__item {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0 6px;
+    min-height: 22px;
+  }
+
+  // One line per file: a long name truncates (full name on hover) rather
+  // than pushing the badge onto a line of its own.
+  &__filename {
+    flex: 1 1 0;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__reason {
+    flex-basis: 100%;
+    color: var(--mat-sys-on-surface-variant);
+  }
+
+  // The question the user has to answer, set off in the primary tint so it
+  // reads as waiting on them while the rows keep moving.
+  &__conflict {
+    margin-top: 6px;
+    padding: 8px;
+    border: 1px solid var(--mat-sys-primary);
+    border-radius: var(--mat-sys-corner-small);
+    background: var(--mat-sys-primary-container);
+    color: var(--mat-sys-on-primary-container);
+  }
+
+  &__conflict-title {
+    margin: 0 0 4px;
+    font: var(--mat-sys-title-small);
+  }
+
+  &__conflict-text {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+
+  &__conflict-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 4px;
+  }
+
+  // Spinner or summary, then the controls that steer the batch (NBK-17).
+  &__foot {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 4px;
+  }
+
+  &__summary {
+    margin: 0;
+    font-weight: 600;
+  }
+
+  &__spacer {
+    flex: 1 1 auto;
+  }
+}
