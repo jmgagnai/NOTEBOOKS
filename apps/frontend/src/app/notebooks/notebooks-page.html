@@ -1,36 +1,30 @@
-<mat-card class="notebooks-page">
-  <mat-card-header>
-    <mat-card-title>Notebooks</mat-card-title>
-  </mat-card-header>
+<div class="notebooks-page">
+  <header class="notebooks-page__header">
+    <h1 class="notebooks-page__heading">Notebooks</h1>
+    @if (!isEmpty()) {
+      <ng-container *ngTemplateOutlet="createButton" />
+    }
+  </header>
 
-  <mat-card-content>
-    <form class="notebooks-page__create" (submit)="submitCreate($event)">
-      <mat-form-field appearance="outline">
-        <mat-label>New Notebook title</mat-label>
-        <input
-          matInput
-          type="text"
-          [value]="newTitle()"
-          (input)="onNewTitleInput($event)"
-          required
-        />
-      </mat-form-field>
-      <button mat-flat-button type="submit">Create</button>
-    </form>
-
-    @if (store.loading()) {
-      <mat-progress-spinner mode="indeterminate" diameter="32" />
-    } @else if (store.error(); as error) {
-      <p class="notebooks-page__error">{{ error }}</p>
-    } @else if (store.notebooks().length === 0) {
+  @if (store.loading()) {
+    <mat-progress-spinner mode="indeterminate" diameter="32" />
+  } @else if (store.error(); as error) {
+    <p class="notebooks-page__error">{{ error }}</p>
+  } @else if (store.notebooks().length === 0) {
+    <div class="notebooks-page__empty">
       <p>No Notebooks yet.</p>
-    } @else {
-      <mat-list>
-        @for (notebook of store.notebooks(); track notebook.id) {
-          <mat-list-item class="notebooks-page__item">
-            @if (editingId() === notebook.id) {
+      <ng-container *ngTemplateOutlet="createButton" />
+    </div>
+  } @else {
+    <ul class="notebooks-page__grid" aria-label="Notebooks">
+      @for (notebook of store.notebooks(); track notebook.id) {
+        <li class="notebooks-page__card">
+          @if (editingId() === notebook.id) {
+            <!-- Stop-gap rename until NBK-56 moves Rename into the card's "…" menu
+                 and the shared editable title. -->
+            <div class="notebooks-page__rename">
               <input
-                class="notebooks-page__edit-input"
+                class="notebooks-page__rename-input"
                 type="text"
                 [attr.aria-label]="'Rename ' + notebook.title"
                 [value]="editingTitle()"
@@ -38,11 +32,17 @@
               />
               <button mat-button type="button" (click)="saveRename(notebook.id)">Save</button>
               <button mat-button type="button" (click)="cancelRename()">Cancel</button>
-            } @else {
-              <span class="notebooks-page__title">{{ notebook.title }}</span>
-              <button mat-button type="button" [routerLink]="['/notebooks', notebook.id]">
-                Open
-              </button>
+            </div>
+          } @else {
+            <a class="notebooks-page__card-link" [routerLink]="['/notebooks', notebook.id]">
+              <mat-icon class="notebooks-page__card-icon" svgIcon="notebook" />
+              <span class="notebooks-page__card-title">{{ notebook.title }}</span>
+              <span class="notebooks-page__card-created">
+                Created {{ notebook.createdAt | date: 'mediumDate' }}
+              </span>
+            </a>
+            <!-- NBK-56 replaces these with the "Actions for <title>" menu. -->
+            <div class="notebooks-page__card-actions">
               <button
                 mat-button
                 type="button"
@@ -59,10 +59,16 @@
               >
                 Delete
               </button>
-            }
-          </mat-list-item>
-        }
-      </mat-list>
-    }
-  </mat-card-content>
-</mat-card>
+            </div>
+          }
+        </li>
+      }
+    </ul>
+  }
+</div>
+
+<ng-template #createButton>
+  <button mat-flat-button type="button" [disabled]="creating()" (click)="create()">
+    Create Notebook
+  </button>
+</ng-template>
