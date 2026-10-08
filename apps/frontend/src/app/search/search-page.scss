@@ -171,6 +171,13 @@
       color: var(--mat-sys-on-surface);
     }
 
+    // An answer's excerpts: two lines, its question beside it already says
+    // what the Exchange was about (NBK-97).
+    &--excerpt {
+      -webkit-line-clamp: 2;
+      line-clamp: 2;
+    }
+
     &--pending {
       font-style: italic;
     }

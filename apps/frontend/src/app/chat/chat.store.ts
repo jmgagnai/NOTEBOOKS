@@ -364,8 +364,9 @@ export const ChatStore = signalStore(
        * the backend lists newest first today, but that ordering is its
        * choice, and the rule is "most recent".
        *
-       * A search result names an Exchange too (NBK-97): its Thread then
-       * opens at it even over one already open, as the result was chosen.
+       * A search result names an Exchange too (NBK-97): the user picked
+       * that result, so its Thread opens at it even over one already open —
+       * or, gone since, the newest does.
        */
       async loadThreads(
         notebookId: string,
@@ -376,15 +377,21 @@ export const ChatStore = signalStore(
         try {
           const threads = (await chatService.listChatThreads({ notebookId })) as ChatThread[];
           patchState(store, { threads, threadsLoading: false });
+          if (threads.length === 0) return;
           // A Thread the caller names — the one a Citation link was cited
           // in (spec 08), or a search result's — wins over the newest, if it
           // is in this Notebook; one that is not (deleted, another
           // Notebook's) is ignored.
           const preferred = threads.find((t) => t.id === preferredThreadId);
-          if (preferred && foundAnswerId !== null) {
-            await openThread(notebookId, preferred.id, foundAnswerId);
-          } else if (store.activeThreadId() === null && threads.length > 0) {
-            const newest = threads.reduce((a, b) => (b.createdAt > a.createdAt ? b : a));
+          const newest = threads.reduce((a, b) => (b.createdAt > a.createdAt ? b : a));
+          if (preferredThreadId !== null && foundAnswerId !== null) {
+            // Following a search result replaces whatever Thread was open.
+            await openThread(
+              notebookId,
+              (preferred ?? newest).id,
+              preferred ? foundAnswerId : null,
+            );
+          } else if (store.activeThreadId() === null) {
             await openThread(notebookId, (preferred ?? newest).id);
           }
         } catch (err) {

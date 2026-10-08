@@ -5,7 +5,7 @@ import { createAuthGuard } from '../auth/guard.js';
 import { errorResponseSchema } from '../auth/schema.js';
 import { notebookExists } from '../notebooks/repository.js';
 import type { Embedder } from '../llm/embeddings.js';
-import { searchExchanges } from './exchanges.js';
+import { EXCHANGE_RESULT_LIMIT, searchExchanges } from './exchanges.js';
 import { searchNotebook } from './repository.js';
 import {
   searchNotebookParamsSchema,
@@ -101,8 +101,7 @@ export function registerSearchRoutes(
       schema: {
         operationId: 'searchChatThreads',
         tags: ['search'],
-        summary:
-          "Search a Notebook's Chat Threads by keyword. Returns each matching Exchange — a question and the answer it produced — with its matches marked; up to 20, best first.",
+        summary: `Search a Notebook's Chat Threads by keyword. Returns each matching Exchange — a question and the answer it produced — with its matches marked; up to ${EXCHANGE_RESULT_LIMIT}, best first.`,
         description:
           'Full-text search over questions and answers (no embedding, so it needs no OpenRouter ' +
           'key). Deleted Chat Threads are left out. Per ADR-0001 there is no ownership check.',

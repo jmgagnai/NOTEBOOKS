@@ -197,6 +197,17 @@ describe('Chat Thread search', () => {
     expect(await results(session, notebookId, 'sholmès')).toEqual([]);
   });
 
+  it('treats a deleted Notebook as gone: 404, its Chat Threads unsearched', async () => {
+    const session = await signIn();
+    const notebookId = await notebookOf(session);
+    await threadWith(session, notebookId, 'Kept', [['Herlock?', 'Sholmès.']]);
+    await pool.query('UPDATE notebooks SET deleted_at = now() WHERE id = $1', [notebookId]);
+
+    const response = await search(session, notebookId, 'sholmès');
+
+    expect(response.statusCode).toBe(404);
+  });
+
   it('returns no results for a blank query', async () => {
     const session = await signIn();
     const notebookId = await notebookOf(session);

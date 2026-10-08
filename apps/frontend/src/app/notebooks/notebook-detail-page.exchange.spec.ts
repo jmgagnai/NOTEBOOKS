@@ -10,7 +10,14 @@ import {
   RouterShell,
   pageProviders,
 } from './notebook-detail-page.spec-helpers';
-import { listOf, message, thread } from '../chat/chat-panel.spec-helpers';
+import {
+  listOf,
+  message,
+  rowOf,
+  scrolled,
+  stubScrolling,
+  thread,
+} from '../chat/chat-panel.spec-helpers';
 
 /**
  * NBK-97: a Chat Thread result on the Search page opens the Notebook at
@@ -22,26 +29,16 @@ import { listOf, message, thread } from '../chat/chat-panel.spec-helpers';
 describe('NotebookDetailPage — opening a Chat Thread at an Exchange (NBK-97)', () => {
   let scrollTo: ReturnType<typeof vi.fn>;
   let scrollIntoView: ReturnType<typeof vi.fn>;
-  const originals = {
-    scrollTo: HTMLElement.prototype.scrollTo,
-    scrollIntoView: HTMLElement.prototype.scrollIntoView,
-  };
+  let restoreScrolling: () => void;
 
   beforeEach(() => {
-    scrollTo = vi.fn();
-    scrollIntoView = vi.fn();
-    HTMLElement.prototype.scrollTo = scrollTo as never;
-    HTMLElement.prototype.scrollIntoView = scrollIntoView as never;
+    ({ scrollTo, scrollIntoView, restore: restoreScrolling } = stubScrolling());
   });
 
   afterEach(() => {
-    HTMLElement.prototype.scrollTo = originals.scrollTo;
-    HTMLElement.prototype.scrollIntoView = originals.scrollIntoView;
+    restoreScrolling();
     TestBed.inject(ChatStore).reset();
   });
-
-  const scrolled = (spy: ReturnType<typeof vi.fn>) => spy.mock.contexts as HTMLElement[];
-  const rowOf = (text: string) => screen.getByText(text).closest('li')!;
 
   /** thread-1, older, holds the Exchange searched for; thread-2 is the newest. */
   const THREADS = [
@@ -119,6 +116,18 @@ describe('NotebookDetailPage — opening a Chat Thread at an Exchange (NBK-97)',
     await screen.findByText('Who ships the parts?');
     await waitFor(() => expect(scrolled(scrollTo)).toContain(listOf('Who ships the parts?')));
     expect(screen.queryByTestId('found-exchange')).toBeNull();
+  });
+
+  it('falls back to the newest Chat Thread even over one already open', async () => {
+    await renderAt(AT_A1);
+    await screen.findAllByTestId('found-exchange');
+    await TestBed.inject(Router).navigateByUrl(`/notebooks/${NOTEBOOK_ID}/search?q=revenue`);
+    await TestBed.inject(Router).navigateByUrl(
+      `/notebooks/${NOTEBOOK_ID}?thread=deleted&message=a9`,
+    );
+
+    expect(await screen.findByText('Who ships the parts?')).toBeTruthy();
+    expect(screen.queryByText('What was revenue in Q2?')).toBeNull();
   });
 
   it('lands at the bottom, unmarked, when that Chat Thread is opened any other way', async () => {
