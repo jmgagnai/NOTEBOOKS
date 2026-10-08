@@ -429,6 +429,15 @@ export const ChatStore = signalStore(
         stopWatching();
         patchState(store, initialState);
       },
+
+      /**
+       * Clears the error the user has read (NBK-45). Only the message goes:
+       * an error row above the composer is about an ask that is over, so
+       * there is nothing else to undo.
+       */
+      dismissError(): void {
+        patchState(store, { error: null });
+      },
     };
   }),
 );
