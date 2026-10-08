@@ -165,3 +165,32 @@ export function twoThreads(): Partial<ChatService> {
     listChatMessages: vi.fn().mockResolvedValue([]) as never,
   };
 }
+
+/**
+ * What the Version-scoped read returns for an older Version of the fixture
+ * Document — v1 of 2, superseded — with `overrides` on top: the shape a
+ * followed Citation reads the page from.
+ */
+export function supersededVersionDetail(versionId: string, overrides: object = {}) {
+  return {
+    documentId: DOCUMENT_ID,
+    notebookId: NOTEBOOK_ID,
+    filename: 'quarterly.pdf',
+    documentCreatedAt: '2026-01-01T00:00:00.000Z',
+    version: {
+      id: versionId,
+      versionNumber: 1,
+      mimeType: 'application/pdf',
+      sizeBytes: 90,
+      createdAt: '2025-12-01T00:00:00.000Z',
+    },
+    status: 'ready',
+    abstract: null,
+    chatSnippet: null,
+    executiveSummary: null,
+    metadata: null,
+    isLatestVersion: false,
+    latestVersionNumber: 2,
+    ...overrides,
+  };
+}

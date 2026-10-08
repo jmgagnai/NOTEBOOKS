@@ -191,10 +191,16 @@ export class DocumentDetailPage implements OnInit, OnDestroy {
    * failed Version without a reason still says something — the same
    * fallback the Documents panel's warning uses.
    */
-  protected readonly failureSentence = computed(() => {
-    const document = this.store.openDocument();
-    return document?.status === 'failed' ? failureSentence(document.failure) : null;
-  });
+  protected readonly failureSentence = computed(() =>
+    this.versionFailed() ? failureSentence(this.store.openDocument()!.failure) : null,
+  );
+
+  /**
+   * Whether the Version on screen failed Ingestion: what it lacks then will
+   * never come, so the page says so rather than that it is on its way
+   * (NBK-90).
+   */
+  protected readonly versionFailed = computed(() => this.store.openDocument()?.status === 'failed');
 
   /** Which Version's Converted Markdown this page shows. */
   private targetVersionId(): string | null {
