@@ -25,6 +25,14 @@
     font: var(--mat-sys-body-small);
   }
 
+  // Sits under the status badge it explains (NBK-68); error-coloured text
+  // rather than a container, since the badge already carries the alarm.
+  &__failure {
+    margin: -0.5rem 0 1rem;
+    color: var(--mat-sys-error);
+    font: var(--mat-sys-body-medium);
+  }
+
   &__metadata {
     display: grid;
     grid-template-columns: max-content 1fr;
