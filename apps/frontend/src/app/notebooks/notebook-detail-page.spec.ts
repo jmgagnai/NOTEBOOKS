@@ -1924,7 +1924,7 @@ describe('NotebookDetailPage', () => {
       const chat = screen.getByRole('region', { name: 'Chat' });
       const documents = screen.getByRole('complementary', { name: 'Documents' });
 
-      expect(within(navigator).getByRole('button', { name: 'Start Chat Thread' })).toBeTruthy();
+      expect(within(navigator).getByRole('button', { name: 'New Chat Thread' })).toBeTruthy();
       expect(
         within(chat).getByText('Open a Chat Thread, or start one, to ask a question.'),
       ).toBeTruthy();

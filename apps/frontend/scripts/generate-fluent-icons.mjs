@@ -11,11 +11,13 @@ import { fileURLToPath } from 'node:url';
 
 /**
  * The explicit set spec 01 "Icons" registers, plus spec 02's three, the title
- * bar's sign-out and the Document rows' type icons (NBK-42, spec 03 "Row
- * anatomy": PDF, Word, text, spreadsheet).
+ * bar's sign-out, spec 04's history (the Chat Threads navigator's title) and
+ * the Document rows' type icons (NBK-42, spec 03 "Row anatomy": PDF, Word,
+ * text, spreadsheet).
  */
 const NAMES = [
   'add',
+  'history',
   'search',
   'more-horizontal',
   'delete',

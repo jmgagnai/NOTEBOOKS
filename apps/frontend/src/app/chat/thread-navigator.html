@@ -1,24 +1,26 @@
 <div class="thread-navigator">
   <!--
-    The card's header row (NBK-35): the title and, until spec 04 replaces it
-    with its "New Chat Thread" control, the start-a-Thread box moved up here
-    from the list so the list alone scrolls in the body.
+    The workspace card's header row (NBK-35), as spec 04 settles it: the
+    title with its history icon and the one control that starts a Thread.
+    The icon-only button carries both an aria-label and a tooltip, so the
+    name is there for a screen reader and for a mouse (spec 01 "Icons").
   -->
   <div class="thread-navigator__head">
-    <h2 class="thread-navigator__title">Chat Threads</h2>
-
-    <div class="thread-navigator__new-thread">
-      <label class="thread-navigator__field">
-        <span class="thread-navigator__field-label">New Chat Thread title</span>
-        <input
-          type="text"
-          aria-label="New Chat Thread title"
-          [value]="newThreadTitle()"
-          (input)="newThreadTitle.set($any($event.target).value)"
-        />
-      </label>
-      <button mat-button type="button" (click)="startThread()">Start Chat Thread</button>
-    </div>
+    <h2 class="thread-navigator__title">
+      <mat-icon svgIcon="history" class="thread-navigator__title-icon" />
+      Chat Threads
+    </h2>
+    <span class="thread-navigator__spacer"></span>
+    <button
+      mat-icon-button
+      type="button"
+      class="thread-navigator__new-thread"
+      aria-label="New Chat Thread"
+      matTooltip="New Chat Thread"
+      (click)="newThread()"
+    >
+      <mat-icon svgIcon="add" />
+    </button>
   </div>
 
   <div class="thread-navigator__body">
@@ -28,27 +30,26 @@
       <p class="thread-navigator__empty">No Chat Threads yet.</p>
     } @else {
       <!--
-      Every Thread in the Notebook, whoever started it (GLOSSARY.md,
-      ADR-0001) — so each entry has to say whose it is, and none of them
-      is hidden or disabled for not being yours.
-    -->
+        Every Thread in the Notebook, whoever started it (GLOSSARY.md,
+        ADR-0001) — so each entry has to say whose it is, and none of them
+        is hidden or disabled for not being yours. The open Thread's row is
+        the current one, not a selected option: the rows are a navigator,
+        not a listbox, which is what makes `aria-current` the right state.
+      -->
       <ul class="thread-navigator__thread-list">
         @for (thread of store.threads(); track thread.id) {
-          <li
-            [class]="
-              'thread-navigator__thread' +
-              (thread.id === store.activeThreadId() ? ' thread-navigator__thread--active' : '')
-            "
-          >
+          <li class="thread-navigator__thread">
             <button
               type="button"
               class="thread-navigator__thread-open"
+              [class.thread-navigator__thread-open--active]="isOpen(thread)"
+              [attr.aria-current]="isOpen(thread) ? 'true' : null"
               [attr.aria-label]="'Open ' + thread.title"
               (click)="openThread(thread)"
             >
               <span class="thread-navigator__thread-title">{{ thread.title }}</span>
-              <span class="thread-navigator__thread-author"
-                >Started by {{ thread.author.email }}</span
+              <span class="thread-navigator__thread-meta"
+                >{{ thread.author.email }} · {{ thread.createdAt | date: 'MMM d' }}</span
               >
             </button>
           </li>
