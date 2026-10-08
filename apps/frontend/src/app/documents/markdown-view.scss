@@ -3,7 +3,9 @@
 // emulated view encapsulation does not add scoping attributes to — hence
 // `::ng-deep` on the children.
 .markdown-view {
-  line-height: 1.6;
+  // A host page may set its own (the Document page's article does, spec 08);
+  // chat answers keep the default.
+  line-height: var(--markdown-view-line-height, 1.6);
   overflow-wrap: break-word;
 
   // One wrapper per top-level Markdown block, so a Citation's character

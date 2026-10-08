@@ -1,8 +1,9 @@
 import { ActivatedRoute, convertToParamMap } from '@angular/router';
-import { fireEvent, render, screen, waitFor } from '@testing-library/angular';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/angular';
 import { DocumentDetailPage } from './document-detail-page';
 import { DocumentsService } from '../api/services/documents.service';
 import { APP_NAME } from '../shared/brand';
+import { provideAppIcons } from '../shared/fluent-icons';
 
 const NOTEBOOK_ID = '11111111-1111-1111-1111-111111111111';
 const DOCUMENT_ID = '22222222-2222-2222-2222-222222222222';
@@ -78,12 +79,15 @@ describe('DocumentDetailPage', () => {
 
     await render(DocumentDetailPage, {
       providers: [
+        provideAppIcons(),
         activatedRoute(),
         { provide: DocumentsService, useValue: { getDocument, getDocumentVersionContent } },
       ],
     });
 
-    expect(await screen.findByText('quarterly.pdf')).toBeTruthy();
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Quarterly Report 2025' }),
+    ).toBeTruthy();
     // The Executive Summary is Markdown, and is rendered as such.
     expect(await screen.findByRole('heading', { name: 'Key points' })).toBeTruthy();
     expect(screen.getByText('Revenue grew 18% year on year.')).toBeTruthy();
@@ -107,13 +111,14 @@ describe('DocumentDetailPage', () => {
 
     const { container } = await render(DocumentDetailPage, {
       providers: [
+        provideAppIcons(),
         activatedRoute(),
         { provide: DocumentsService, useValue: { getDocument, getDocumentVersionContent } },
       ],
     });
 
     await screen.findByRole('heading', { name: 'Key points' });
-    fireEvent.click(screen.getByRole('button', { name: 'Show full content' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Read the full Document' }));
 
     expect(await screen.findByText('Revenue grew to 12.4M.')).toBeTruthy();
     expect(getDocumentVersionContent).toHaveBeenCalledWith({
@@ -137,7 +142,11 @@ describe('DocumentDetailPage', () => {
     document.title = 'A stale title';
     const getDocument = vi.fn().mockResolvedValue(SUMMARIZED_DETAIL);
     const { fixture } = await render(DocumentDetailPage, {
-      providers: [activatedRoute(), { provide: DocumentsService, useValue: { getDocument } }],
+      providers: [
+        provideAppIcons(),
+        activatedRoute(),
+        { provide: DocumentsService, useValue: { getDocument } },
+      ],
     });
 
     await waitFor(() => expect(document.title).toBe(`quarterly.pdf – ${APP_NAME}`));
@@ -154,19 +163,20 @@ describe('DocumentDetailPage', () => {
 
     await render(DocumentDetailPage, {
       providers: [
+        provideAppIcons(),
         activatedRoute(),
         { provide: DocumentsService, useValue: { getDocument, getDocumentVersionContent } },
       ],
     });
 
     await screen.findByRole('heading', { name: 'Key points' });
-    fireEvent.click(screen.getByRole('button', { name: 'Show full content' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Read the full Document' }));
     await screen.findByText('Revenue grew to 12.4M.');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Hide full content' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Hide the full Document' }));
     expect(screen.queryByText('Revenue grew to 12.4M.')).toBeNull();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Show full content' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Read the full Document' }));
     expect(await screen.findByText('Revenue grew to 12.4M.')).toBeTruthy();
     // Already loaded once; re-expanding must not re-download 200 pages.
     expect(getDocumentVersionContent).toHaveBeenCalledTimes(1);
@@ -183,10 +193,14 @@ describe('DocumentDetailPage', () => {
     });
 
     await render(DocumentDetailPage, {
-      providers: [activatedRoute(), { provide: DocumentsService, useValue: { getDocument } }],
+      providers: [
+        provideAppIcons(),
+        activatedRoute(),
+        { provide: DocumentsService, useValue: { getDocument } },
+      ],
     });
 
-    expect(await screen.findByText('quarterly.pdf')).toBeTruthy();
+    expect(await screen.findByRole('heading', { level: 1, name: 'quarterly.pdf' })).toBeTruthy();
     expect(
       screen.getByText('The Executive Summary is still being generated for this Document.'),
     ).toBeTruthy();
@@ -196,7 +210,11 @@ describe('DocumentDetailPage', () => {
     const getDocument = vi.fn().mockRejectedValue({ error: { message: 'Document not found.' } });
 
     await render(DocumentDetailPage, {
-      providers: [activatedRoute(), { provide: DocumentsService, useValue: { getDocument } }],
+      providers: [
+        provideAppIcons(),
+        activatedRoute(),
+        { provide: DocumentsService, useValue: { getDocument } },
+      ],
     });
 
     expect(await screen.findByText('Document not found.')).toBeTruthy();
@@ -214,7 +232,11 @@ describe('DocumentDetailPage', () => {
     });
 
     await render(DocumentDetailPage, {
-      providers: [activatedRoute(), { provide: DocumentsService, useValue: { getDocument } }],
+      providers: [
+        provideAppIcons(),
+        activatedRoute(),
+        { provide: DocumentsService, useValue: { getDocument } },
+      ],
     });
 
     expect(
@@ -230,10 +252,14 @@ describe('DocumentDetailPage', () => {
       .mockResolvedValue({ ...SUMMARIZED_DETAIL, status: 'ready', failure: null });
 
     await render(DocumentDetailPage, {
-      providers: [activatedRoute(), { provide: DocumentsService, useValue: { getDocument } }],
+      providers: [
+        provideAppIcons(),
+        activatedRoute(),
+        { provide: DocumentsService, useValue: { getDocument } },
+      ],
     });
 
-    await screen.findByText('quarterly.pdf');
+    await screen.findByTestId('byline');
     expect(screen.queryByTestId('failure-reason')).toBeNull();
     expect(screen.queryByText(/Upload a PDF whose text can be selected/)).toBeNull();
   });
@@ -329,10 +355,14 @@ describe('DocumentDetailPage', () => {
       const client = citationClient();
 
       await render(DocumentDetailPage, {
-        providers: [citationRoute(), { provide: DocumentsService, useValue: client }],
+        providers: [
+          provideAppIcons(),
+          citationRoute(),
+          { provide: DocumentsService, useValue: client },
+        ],
       });
 
-      // Opened at the content, not behind the "Show full content" action: a
+      // Opened at the content, not behind the "Read the full Document" action: a
       // reader who followed a Citation asked for a Chunk, not for a summary.
       expect(await screen.findByText('Revenue grew to 12.4M.')).toBeTruthy();
       expect(client.getDocumentVersionContent).toHaveBeenCalledWith({
@@ -349,8 +379,12 @@ describe('DocumentDetailPage', () => {
     it("shows the pinned Version's own summary, metadata and version number", async () => {
       const client = citationClient();
 
-      const { container } = await render(DocumentDetailPage, {
-        providers: [citationRoute(), { provide: DocumentsService, useValue: client }],
+      await render(DocumentDetailPage, {
+        providers: [
+          provideAppIcons(),
+          citationRoute(),
+          { provide: DocumentsService, useValue: client },
+        ],
       });
 
       await screen.findByText('Revenue grew to 12.4M.');
@@ -378,7 +412,7 @@ describe('DocumentDetailPage', () => {
       // the bug this test exists for, so the assertion is on the badge line
       // itself rather than on the page text — the superseded notice below it
       // legitimately names v2 as well.
-      const metaLine = container.querySelector('.document-detail-page__meta-line');
+      const metaLine = screen.getByTestId('byline');
       expect(metaLine?.textContent).toContain('v1');
       expect(metaLine?.textContent).not.toContain('v2');
       // The badge shows v1's own ingestion status, not the latest Version's
@@ -390,7 +424,11 @@ describe('DocumentDetailPage', () => {
       const client = citationClient();
 
       await render(DocumentDetailPage, {
-        providers: [citationRoute(), { provide: DocumentsService, useValue: client }],
+        providers: [
+          provideAppIcons(),
+          citationRoute(),
+          { provide: DocumentsService, useValue: client },
+        ],
       });
 
       // Now that every field on the page belongs to v1, the notice is no
@@ -416,7 +454,11 @@ describe('DocumentDetailPage', () => {
       });
 
       await render(DocumentDetailPage, {
-        providers: [citationRoute(), { provide: DocumentsService, useValue: client }],
+        providers: [
+          provideAppIcons(),
+          citationRoute(),
+          { provide: DocumentsService, useValue: client },
+        ],
       });
 
       await screen.findByText('Revenue grew to 12.4M.');
@@ -429,7 +471,11 @@ describe('DocumentDetailPage', () => {
       const client = citationClient();
 
       await render(DocumentDetailPage, {
-        providers: [citationRoute(), { provide: DocumentsService, useValue: client }],
+        providers: [
+          provideAppIcons(),
+          citationRoute(),
+          { provide: DocumentsService, useValue: client },
+        ],
       });
 
       // The cited range resolves to the block of the rendered Markdown it
@@ -450,6 +496,7 @@ describe('DocumentDetailPage', () => {
 
       await render(DocumentDetailPage, {
         providers: [
+          provideAppIcons(),
           // A Citation whose chunk text could not be located in the Converted
           // Markdown carries no `from`/`to` — the Version must still open.
           activatedRoute({ version: OLD_VERSION_ID, chunk: CHUNK_ID }),
@@ -469,10 +516,123 @@ describe('DocumentDetailPage', () => {
         .mockRejectedValue({ error: { message: 'Document Version not found.' } });
 
       await render(DocumentDetailPage, {
-        providers: [citationRoute(), { provide: DocumentsService, useValue: client }],
+        providers: [
+          provideAppIcons(),
+          citationRoute(),
+          { provide: DocumentsService, useValue: client },
+        ],
       });
 
       expect(await screen.findByText('Document Version not found.')).toBeTruthy();
     });
   });
 });
+
+/**
+ * Spec 08 (NBK-85): the page reads as an article — the extracted title as
+ * its headline, a byline instead of a metadata form, the rest behind
+ * "Details", and ✕ in a header row instead of a text back link.
+ */
+describe('DocumentDetailPage — editorial reading view', () => {
+  async function renderWith(detail: object) {
+    const getDocument = vi.fn().mockResolvedValue(detail);
+    return render(DocumentDetailPage, {
+      providers: [
+        provideAppIcons(),
+        activatedRoute(),
+        { provide: DocumentsService, useValue: { getDocument } },
+      ],
+    });
+  }
+
+  it('heads the page with the extracted title, and names the file under it', async () => {
+    await renderWith(SUMMARIZED_DETAIL);
+
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Quarterly Report 2025' }),
+    ).toBeTruthy();
+    expect(screen.getByTestId('document-filename').textContent).toContain('quarterly.pdf');
+  });
+
+  it('falls back to the filename as the headline, without repeating it', async () => {
+    await renderWith({
+      ...SUMMARIZED_DETAIL,
+      metadata: { ...SUMMARIZED_DETAIL.metadata, title: null },
+    });
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'quarterly.pdf' })).toBeTruthy();
+    expect(screen.queryByTestId('document-filename')).toBeNull();
+  });
+
+  it('sums the Document up in a byline, skipping what it does not state', async () => {
+    await renderWith({
+      ...SUMMARIZED_DETAIL,
+      metadata: {
+        title: 'Quarterly Report 2025',
+        authors: ['A. Analyst', 'B. Writer'],
+        publishedOn: '2025-03-31',
+        documentType: 'report',
+      },
+    });
+
+    const byline = await screen.findByTestId('byline');
+    expect(
+      within(byline).getByText('A. Analyst, B. Writer · 2025-03-31 · report · v2'),
+    ).toBeTruthy();
+    expect(within(byline).getByText('Summarized')).toBeTruthy();
+  });
+
+  it('keeps the byline clean when the Document states nothing', async () => {
+    await renderWith({ ...SUMMARIZED_DETAIL, metadata: null });
+
+    const byline = await screen.findByTestId('byline');
+    expect(within(byline).getByText('v2')).toBeTruthy();
+    expect(within(byline).getByText('Summarized')).toBeTruthy();
+  });
+
+  it('puts language, subject and keywords behind a closed "Details", not a form', async () => {
+    await renderWith({
+      ...SUMMARIZED_DETAIL,
+      metadata: {
+        ...SUMMARIZED_DETAIL.metadata,
+        language: 'en',
+        subject: 'Finance',
+        keywords: ['revenue', 'risk'],
+      },
+    });
+
+    const details = (await screen.findByText('Details')).closest('details') as HTMLDetailsElement;
+    expect(details.open).toBe(false);
+    expect(detail(details, 'Language')).toBe('en');
+    expect(detail(details, 'Subject')).toBe('Finance');
+    expect(detail(details, 'Keywords')).toBe('revenue, risk');
+    // The labelled metadata grid is gone: what it held is in the byline now.
+    expect(screen.queryByText('Document Type')).toBeNull();
+    expect(screen.queryByText('Authors')).toBeNull();
+  });
+
+  it('closes back to the Notebook from a header naming the file, not a text link', async () => {
+    await renderWith(SUMMARIZED_DETAIL);
+
+    const header = await screen.findByTestId('document-pane-header');
+    expect(within(header).getByText('quarterly.pdf')).toBeTruthy();
+    const close = within(header).getByRole('link', { name: 'Back to the Notebook' });
+    expect(close.getAttribute('href')).toBe(`/notebooks/${NOTEBOOK_ID}`);
+    expect(screen.queryByText(/← Back to the Notebook/)).toBeNull();
+  });
+
+  it('offers no "Details" when there are none', async () => {
+    await renderWith({
+      ...SUMMARIZED_DETAIL,
+      metadata: { ...SUMMARIZED_DETAIL.metadata, keywords: [] },
+    });
+
+    await screen.findByTestId('byline');
+    expect(screen.queryByText('Details')).toBeNull();
+  });
+});
+
+/** The value listed under `label` in a definition list. */
+function detail(container: HTMLElement, label: string): string | undefined {
+  return within(container).getByText(label).nextElementSibling?.textContent?.trim();
+}

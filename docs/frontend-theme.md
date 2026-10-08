@@ -107,17 +107,18 @@ sit on the scale without per-page rules. Rendered Markdown
 
 ### Spec 07 roles
 
-Three larger roles for the pages that copy Copilot's big type (spec 07,
-NBK-78). No Material component reads them, so they are app tokens:
+Larger roles for the pages that copy Copilot's big type (spec 07,
+NBK-78, and spec 08). No Material component reads them, so they are app tokens:
 `--app-type-<role>` is the shorthand (`font: var(--app-type-page-title)`),
 with `-weight`, `-size` and `-line-height` parts. They are defined from the
 `$app-type-scale` map in `styles.scss`.
 
 | Role | Token | Value | Used by |
 |---|---|---|---|
-| Page title | `--app-type-page-title` | 600 40/52 | the Notebooks home title and the Notebook landing title only |
+| Page title | `--app-type-page-title` | 600 40/52 | the Notebooks home title, the Notebook landing title and the Document page's headline only |
 | Row title | `--app-type-row-title` | 400 20/28 | a Notebook's title in a row of the home list |
 | Reading | `--app-type-reading` | 400 16/26 | questions and answers in a Chat Thread: long prose, generous line height |
+| Document | `--app-type-document` | 400 17/30 | the Document page's article — Executive Summary and full content (spec 08) |
 
 The Documents pane does not take the reading role: it keeps the dense 14 px
 body (`body-medium`).
