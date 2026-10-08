@@ -1,16 +1,23 @@
+// NBK-80 (spec 07 "Notebooks home"): Copilot's home — a large title, then
+// full-width rows between dividers on the flat white surface.
 .notebooks-page {
-  padding: 24px;
+  padding: 32px 40px;
+
+  @media (max-width: 600px) {
+    padding: 24px 16px;
+  }
 
   &__header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 16px;
-    margin-bottom: 16px;
+    margin-bottom: 24px;
   }
 
   &__heading {
     margin: 0;
+    font: var(--app-type-page-title);
   }
 
   &__error {
@@ -29,62 +36,80 @@
     }
   }
 
-  // Four columns on a wide window down to one on a narrow one (spec 05).
-  &__grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-    gap: 16px;
+  &__list {
     margin: 0;
     padding: 0;
     list-style: none;
+    border-top: 1px solid var(--mat-sys-outline-variant);
   }
 
-  &__card {
+  &__row {
     position: relative;
-    display: flex;
-    flex-direction: column;
-    background: var(--mat-sys-surface);
-    border: 1px solid var(--mat-sys-outline-variant);
-    border-radius: var(--mat-sys-corner-medium);
+    border-bottom: 1px solid var(--mat-sys-outline-variant);
 
-    &:hover,
-    &:focus-within {
-      border-color: var(--mat-sys-on-surface-variant);
+    &:hover {
+      background: var(--mat-sys-surface-container-low);
     }
   }
 
-  &__card-link {
+  // The link fills the row, so a click anywhere on it opens the Notebook;
+  // the right padding keeps the title clear of the "…" button above it.
+  &__row-link {
     display: flex;
-    flex-direction: column;
-    gap: 4px;
-    padding: 16px 48px 16px 16px;
-    border-radius: inherit;
+    align-items: center;
+    gap: 16px;
+    padding: 12px 56px 12px 12px;
     color: inherit;
     text-decoration: none;
   }
 
-  &__card-icon {
-    color: var(--mat-sys-primary);
+  &__row-icon {
+    flex: none;
+    color: var(--mat-sys-on-surface-variant);
   }
 
-  &__card-title {
-    display: -webkit-box;
+  &__row-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  &__row-title {
     overflow: hidden;
-    font: var(--mat-sys-title-small);
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
+    font: var(--app-type-row-title);
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
-  &__card-created {
+  &__row-created {
     font: var(--mat-sys-body-small);
     color: var(--mat-sys-on-surface-variant);
   }
 
-  // Top right, over the card body's padding, so the title wraps clear of it.
-  &__card-menu {
+  // Revealed on hover and on focus anywhere in the row, and kept while its
+  // menu is open. Opacity rather than visibility, so the button stays in
+  // the tab order and Tab from the link lands on it.
+  &__row-menu {
     position: absolute;
-    top: 8px;
+    top: 50%;
     right: 8px;
+    opacity: 0;
+    transform: translateY(-50%);
+
+    &[aria-expanded='true'] {
+      opacity: 1;
+    }
+  }
+
+  &__row:hover &__row-menu,
+  &__row:focus-within &__row-menu {
+    opacity: 1;
+  }
+
+  // Without hover (touch), the menu would be unreachable while hidden.
+  @media (hover: none) {
+    &__row-menu {
+      opacity: 1;
+    }
   }
 }

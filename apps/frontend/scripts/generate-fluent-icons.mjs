@@ -40,6 +40,7 @@ const NAMES = [
   'document-text',
   'document-one-page',
   'document-table',
+  'folder',
 ];
 
 const require = createRequire(import.meta.url);
