@@ -39,7 +39,10 @@
       -->
       <ul class="thread-navigator__thread-list">
         @for (thread of store.threads(); track thread.id) {
-          <li class="thread-navigator__thread">
+          <li
+            class="thread-navigator__thread"
+            [class.thread-navigator__thread--mine]="isMine(thread)"
+          >
             <button
               type="button"
               class="thread-navigator__thread-open"
@@ -53,6 +56,34 @@
                 >{{ thread.author.email }} · {{ thread.createdAt | date: 'MMM d' }}</span
               >
             </button>
+            @if (isMine(thread)) {
+              <!--
+                NBK-95: the author's own Threads only, Delete its one item;
+                shown on hover and focus, like the Notebook rows' (spec 07
+                story 24).
+              -->
+              <button
+                mat-icon-button
+                type="button"
+                class="thread-navigator__thread-menu"
+                [attr.aria-label]="'Actions for ' + thread.title"
+                matTooltip="More actions"
+                [matMenuTriggerFor]="threadMenu"
+              >
+                <mat-icon svgIcon="more-horizontal" />
+              </button>
+              <mat-menu #threadMenu="matMenu">
+                <button
+                  mat-menu-item
+                  type="button"
+                  [attr.aria-label]="'Delete ' + thread.title"
+                  (click)="deleteThread(thread)"
+                >
+                  <mat-icon svgIcon="delete" />
+                  <span>Delete</span>
+                </button>
+              </mat-menu>
+            }
           </li>
         }
       </ul>

@@ -59,6 +59,44 @@
     gap: 2px;
   }
 
+  // A row carries its "⋯" menu over its right end (NBK-95), so the row is
+  // the menu's containing block and the author's rows keep their text clear
+  // of it.
+  &__thread {
+    position: relative;
+  }
+
+  &__thread--mine &__thread-open {
+    padding-right: 40px;
+  }
+
+  // The author's own rows only: hidden until the row is hovered or holds
+  // focus, or its menu is open, as on the Notebook rows (spec 07 story 24).
+  // Opacity, not visibility, so it stays in the tab order.
+  &__thread-menu {
+    position: absolute;
+    top: 50%;
+    right: 4px;
+    opacity: 0;
+    transform: translateY(-50%);
+
+    &[aria-expanded='true'] {
+      opacity: 1;
+    }
+  }
+
+  &__thread:hover &__thread-menu,
+  &__thread:focus-within &__thread-menu {
+    opacity: 1;
+  }
+
+  // Without hover (touch), the menu would be unreachable while hidden.
+  @media (hover: none) {
+    &__thread-menu {
+      opacity: 1;
+    }
+  }
+
   // One row per Thread: the whole row is the button, so the hit area is the
   // row and the selected mark can be drawn on the button itself.
   &__thread-open {

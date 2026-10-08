@@ -145,7 +145,8 @@ function toChatMessage(row: ChatMessageRow, citations: Citation[] = []): ChatMes
  */
 export async function listChatThreads(pool: Pool, notebookId: string): Promise<ChatThread[]> {
   const { rows } = await pool.query<ChatThreadRow>(
-    `${SELECT_THREAD} WHERE t.notebook_id = $1 ORDER BY t.created_at DESC, t.id DESC`,
+    `${SELECT_THREAD} WHERE t.notebook_id = $1 AND t.deleted_at IS NULL
+     ORDER BY t.created_at DESC, t.id DESC`,
     [notebookId],
   );
   return rows.map(toChatThread);
@@ -185,10 +186,70 @@ export async function findChatThread(
 ): Promise<ChatThread | null> {
   const { rows } = await pool.query<ChatThreadRow>(
     `${SELECT_THREAD}
-     WHERE t.id = $1 AND t.notebook_id = $2 AND ${notebookIsActive('t.notebook_id')}`,
+     WHERE t.id = $1 AND t.notebook_id = $2 AND t.deleted_at IS NULL
+       AND ${notebookIsActive('t.notebook_id')}`,
     [threadId, notebookId],
   );
   return rows[0] ? toChatThread(rows[0]) : null;
+}
+
+/**
+ * Whether `threadId` is a deleted Chat Thread of this (live) Notebook: what
+ * turns a 404 on asking into "This Chat Thread was deleted." (NBK-95) for
+ * someone who still had it open.
+ */
+export async function isChatThreadDeleted(
+  pool: Pool,
+  notebookId: string,
+  threadId: string,
+): Promise<boolean> {
+  const { rowCount } = await pool.query(
+    `SELECT 1 FROM chat_threads
+     WHERE id = $1 AND notebook_id = $2 AND deleted_at IS NOT NULL
+       AND ${notebookIsActive('notebook_id')}`,
+    [threadId, notebookId],
+  );
+  return rowCount === 1;
+}
+
+/**
+ * Soft-deletes a live Chat Thread (NBK-95). The author rule is the route's;
+ * this only refuses a Thread that is already deleted or whose Notebook is,
+ * on the `UPDATE` itself for the reason `renameChatThread` gives. Returns
+ * whether it deleted one.
+ */
+export async function deleteChatThread(
+  pool: Pool,
+  notebookId: string,
+  threadId: string,
+): Promise<boolean> {
+  const { rowCount } = await pool.query(
+    `UPDATE chat_threads SET deleted_at = now()
+     WHERE id = $1 AND notebook_id = $2 AND deleted_at IS NULL
+       AND ${notebookIsActive('notebook_id')}`,
+    [threadId, notebookId],
+  );
+  return rowCount === 1;
+}
+
+/**
+ * Brings a deleted Chat Thread back, with everything it held (NBK-95; the
+ * Administrator rule is the route's). Returns the Thread, or `null` when
+ * there is no deleted Thread by that id in a live Notebook.
+ */
+export async function restoreChatThread(
+  pool: Pool,
+  notebookId: string,
+  threadId: string,
+): Promise<ChatThread | null> {
+  const { rowCount } = await pool.query(
+    `UPDATE chat_threads SET deleted_at = NULL
+     WHERE id = $1 AND notebook_id = $2 AND deleted_at IS NOT NULL
+       AND ${notebookIsActive('notebook_id')}`,
+    [threadId, notebookId],
+  );
+  if (rowCount !== 1) return null;
+  return findChatThread(pool, notebookId, threadId);
 }
 
 /**
@@ -209,7 +270,8 @@ export async function renameChatThread(
 ): Promise<ChatThread | null> {
   const { rowCount } = await pool.query(
     `UPDATE chat_threads SET title = $3
-     WHERE id = $1 AND notebook_id = $2 AND ${notebookIsActive('notebook_id')}`,
+     WHERE id = $1 AND notebook_id = $2 AND deleted_at IS NULL
+       AND ${notebookIsActive('notebook_id')}`,
     [threadId, notebookId, title],
   );
   if (rowCount !== 1) return null;
@@ -265,6 +327,8 @@ const INSERT_MESSAGE = `
  * Two statements rather than one two-row `VALUES`, so the `seq` the question
  * gets is unambiguously lower than the answer's — a Chat Thread's order is
  * read back from that column, not from a timestamp the two rows share.
+ *
+ * Returns `null`, writing nothing, when the Thread was deleted meanwhile.
  */
 export async function appendQuestionAndAnswer(
   pool: Pool,
@@ -273,8 +337,16 @@ export async function appendQuestionAndAnswer(
   question: string,
   answer: string,
   citations: ResolvedCitation[] = [],
-): Promise<{ question: ChatMessage; answer: ChatMessage }> {
+): Promise<{ question: ChatMessage; answer: ChatMessage } | null> {
   return inTransaction(pool, async (client) => {
+    // The Thread may have been deleted while its answer was being written
+    // (NBK-95). Locked rather than merely read, so a delete either lands
+    // first — and nothing is written — or waits for this exchange.
+    const live = await client.query(
+      'SELECT 1 FROM chat_threads WHERE id = $1 AND deleted_at IS NULL FOR UPDATE',
+      [threadId],
+    );
+    if (live.rowCount !== 1) return null;
     const questionRows = await client.query<ChatMessageRow>(INSERT_MESSAGE, [
       threadId,
       askerId,

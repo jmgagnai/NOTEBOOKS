@@ -22,6 +22,9 @@ No test makes a real OpenRouter call.
 To see a UI change rendered — signed in, as screenshots — see
 `docs/run-for-screenshots.md`.
 
+Administrators (restoring a deleted Chat Thread, `ADMIN_EMAILS`) use the
+API with curl: see `docs/administration.md`.
+
 Hit something the environment fought you on — a gated Docker image, a
 Testcontainers flake, a silent `ng build` failure? See
 `docs/environment-gotchas.md` before debugging it.

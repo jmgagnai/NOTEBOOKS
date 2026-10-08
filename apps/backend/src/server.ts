@@ -28,6 +28,10 @@ const DOCUMENTS_BUCKET = process.env.DOCUMENTS_BUCKET ?? 'rag-notebook-documents
 // server-side configuration only (see llm/models.ts) — never user-selectable,
 // per NBK-1.
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
+// Who may restore a deleted Chat Thread (NBK-95): a comma-separated list of
+// emails, normalised by `buildApp`. Unset or empty, no one may. See
+// docs/administration.md.
+const ADMIN_EMAILS = (process.env.ADMIN_EMAILS ?? '').split(',');
 
 /**
  * Says which Postgres answered, or which one didn't. A Homebrew or MacPorts
@@ -140,6 +144,7 @@ async function main(): Promise<void> {
     appEvents,
     chat,
     embed,
+    administrators: ADMIN_EMAILS,
   });
   await app.listen({ port: PORT, host: '0.0.0.0' });
   // eslint-disable-next-line no-console

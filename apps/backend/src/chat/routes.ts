@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import type { Pool } from 'pg';
+import { z } from 'zod';
 import { createAuthGuard } from '../auth/guard.js';
 import { errorResponseSchema } from '../auth/schema.js';
 import { notebookExists } from '../notebooks/repository.js';
@@ -8,10 +9,13 @@ import { streamAnswer, type ChatDeps, type GroundedAnswer } from './answer-quest
 import {
   appendQuestionAndAnswer,
   createChatThread,
+  deleteChatThread,
   findChatThread,
+  isChatThreadDeleted,
   listChatMessages,
   listChatThreads,
   renameChatThread,
+  restoreChatThread,
 } from './repository.js';
 import {
   chatThreadIdParamsSchema,
@@ -35,18 +39,25 @@ export interface RegisterChatRoutesOptions {
    * question nothing will ever answer.
    */
   chat?: ChatDeps;
+  /**
+   * The Administrators' emails, lower-cased (GLOSSARY.md; `ADMIN_EMAILS`):
+   * who may restore a deleted Chat Thread. Empty — the default — means no
+   * one may.
+   */
+  administrators?: ReadonlySet<string>;
 }
 
 /**
  * Registers Chat Thread routes, nested under a Notebook. Every route sits
  * behind the auth guard — the asking user is what attribution is recorded
- * from — but, per ADR-0001, no route checks who authored anything: listing
- * is unfiltered, and a Thread someone else started is as readable and
- * continuable as your own.
+ * from — and, per ADR-0001, a Thread someone else started is as readable,
+ * renameable and continuable as your own. The two exceptions are its
+ * amendment's (NBK-95): only a Thread's author deletes it, and only an
+ * Administrator restores it.
  */
 export function registerChatRoutes(
   app: FastifyInstance,
-  { pool, chat }: RegisterChatRoutesOptions,
+  { pool, chat, administrators = new Set() }: RegisterChatRoutesOptions,
 ): void {
   const authGuard = createAuthGuard(pool);
 
@@ -138,6 +149,95 @@ export function registerChatRoutes(
     },
   );
 
+  app.withTypeProvider<ZodTypeProvider>().delete(
+    '/notebooks/:notebookId/threads/:threadId',
+    {
+      preHandler: authGuard,
+      schema: {
+        operationId: 'deleteChatThread',
+        tags: ['chat'],
+        summary: 'Delete a Chat Thread (its author only)',
+        description:
+          'Soft-deletes the Chat Thread: it leaves the list and every route answers 404 for it, ' +
+          'but its messages and their Citations are kept, and an Administrator can restore it. ' +
+          'Only the user who started the Thread may delete it (ADR-0001 amendment).',
+        params: chatThreadIdParamsSchema,
+        response: {
+          204: z.null().describe('No content'),
+          403: errorResponseSchema,
+          404: errorResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const { notebookId, threadId } = request.params;
+      const user = request.authUser!;
+      const thread = await findChatThread(pool, notebookId, threadId);
+      if (!thread) {
+        await reply.status(404).send({ message: 'Chat Thread not found.' });
+        return;
+      }
+      if (thread.author.id !== user.id) {
+        await reply
+          .status(403)
+          .send({ message: 'Only the user who started a Chat Thread may delete it.' });
+        return;
+      }
+      if (!(await deleteChatThread(pool, notebookId, threadId))) {
+        await reply.status(404).send({ message: 'Chat Thread not found.' });
+        return;
+      }
+      // There is no list of deleted Threads: this line is how an
+      // Administrator finds one to restore (docs/administration.md).
+      // eslint-disable-next-line no-console
+      console.info(
+        `Chat Thread deleted: id=${threadId} title=${JSON.stringify(thread.title)} ` +
+          `notebook=${notebookId} author=${thread.author.email}`,
+      );
+      await reply.status(204).send(null);
+    },
+  );
+
+  app.withTypeProvider<ZodTypeProvider>().post(
+    '/notebooks/:notebookId/threads/:threadId/restore',
+    {
+      preHandler: authGuard,
+      schema: {
+        operationId: 'restoreChatThread',
+        tags: ['chat'],
+        summary: 'Restore a deleted Chat Thread (Administrator only)',
+        description:
+          'Brings a deleted Chat Thread back with its messages. Only an Administrator — a user ' +
+          "whose email is in the backend's `ADMIN_EMAILS` — may call it; the app's UI never " +
+          'does. See docs/administration.md.',
+        params: chatThreadIdParamsSchema,
+        response: {
+          200: chatThreadSchema,
+          403: errorResponseSchema,
+          404: errorResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      if (!administrators.has(request.authUser!.email.toLowerCase())) {
+        await reply
+          .status(403)
+          .send({ message: 'Only an Administrator may restore a Chat Thread.' });
+        return;
+      }
+      const thread = await restoreChatThread(
+        pool,
+        request.params.notebookId,
+        request.params.threadId,
+      );
+      if (!thread) {
+        await reply.status(404).send({ message: 'No deleted Chat Thread by that id.' });
+        return;
+      }
+      await reply.status(200).send(thread);
+    },
+  );
+
   app.withTypeProvider<ZodTypeProvider>().get(
     '/notebooks/:notebookId/threads/:threadId/messages',
     {
@@ -193,9 +293,15 @@ export function registerChatRoutes(
       },
     },
     async (request, reply) => {
-      const thread = await findChatThread(pool, request.params.notebookId, request.params.threadId);
+      const { notebookId, threadId } = request.params;
+      const thread = await findChatThread(pool, notebookId, threadId);
       if (!thread) {
-        await reply.status(404).send({ message: 'Chat Thread not found.' });
+        // Someone who still had it open asks in a Thread its author deleted
+        // (NBK-95): say so, rather than that it never existed.
+        const deleted = await isChatThreadDeleted(pool, notebookId, threadId);
+        await reply.status(404).send({
+          message: deleted ? 'This Chat Thread was deleted.' : 'Chat Thread not found.',
+        });
         return;
       }
       if (!chat) {
@@ -279,6 +385,16 @@ export function registerChatRoutes(
         answer.text,
         answer.citations,
       );
+      if (!exchange) {
+        // Deleted by its author while the answer was being written (NBK-95):
+        // nothing is recorded, and the preview others saw stream is dropped
+        // the way a failed answer's is.
+        await stream.failed('This Chat Thread was deleted.').catch((err: unknown) => {
+          request.log.warn({ err }, 'Could not announce a dropped chat answer.');
+        });
+        await reply.status(404).send({ message: 'This Chat Thread was deleted.' });
+        return;
+      }
 
       // Published only now that the row exists, so the event can name it:
       // this is what turns a client's chunk preview into the persisted
