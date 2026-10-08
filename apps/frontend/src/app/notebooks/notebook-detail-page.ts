@@ -24,6 +24,7 @@ import { DocumentList } from '../documents/document-list';
 import { ConflictChoice, Document, DocumentsStore } from '../documents/documents.store';
 import { UPLOAD_ACCEPT } from '../documents/upload-rules';
 import { APP_NAME } from '../shared/app-name';
+import { EditableTitle } from '../shared/editable-title';
 import { StatusBadge } from '../shared/status-badge';
 import { UndoSnackBar } from '../shared/undo-snack-bar';
 import { NotebooksStore } from './notebooks.store';
@@ -93,6 +94,7 @@ function droppedEntries(dataTransfer: DataTransfer | null): {
   selector: 'app-notebook-detail-page',
   standalone: true,
   imports: [
+    EditableTitle,
     MatButtonModule,
     MatCheckboxModule,
     MatIconModule,
@@ -159,41 +161,14 @@ export class NotebookDetailPage implements OnInit, OnDestroy {
   }
 
   /**
-   * Renaming in place (NBK-35): the header title is a button that swaps to a
-   * text box holding `titleDraft`. Page state, like the Notebooks page's own
-   * rename form: nothing is sent until the draft is committed.
+   * Renaming in place (NBK-35): the header title is an `app-editable-title`
+   * (NBK-41), which only hands over a title that differs from the current
+   * one, so nothing is sent for a click-and-click-away.
    */
-  protected readonly renaming = signal(false);
-  protected readonly titleDraft = signal('');
-  private readonly titleInput = viewChild<ElementRef<HTMLInputElement>>('titleInput');
-
-  // The box appears on demand, so it is focused when it does — otherwise a
-  // click on the title would leave the keyboard nowhere.
-  private readonly focusTitleInput = effect(() => {
-    this.titleInput()?.nativeElement.select();
-  });
-
-  protected startRename(): void {
-    this.titleDraft.set(this.notebook()?.title ?? '');
-    this.renaming.set(true);
-  }
-
-  /**
-   * Enter and leaving the box both commit. Commit is a no-op once the box is
-   * gone: Enter closes it, and some browsers then fire the blur of the
-   * removed element, which must not rename a second time.
-   */
-  protected commitRename(): void {
-    if (!this.renaming()) return;
-    this.renaming.set(false);
-    const title = this.titleDraft().trim();
+  protected rename(title: string): void {
     const notebook = this.notebook();
-    if (!notebook || !title || title === notebook.title) return;
+    if (!notebook) return;
     void this.notebooksStore.renameNotebook(notebook.id, title);
-  }
-
-  protected cancelRename(): void {
-    this.renaming.set(false);
   }
 
   /**

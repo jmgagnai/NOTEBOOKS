@@ -16,33 +16,18 @@
     </button>
     <span class="notebook-detail-page__crumb">Notebooks &rsaquo;</span>
     <!--
-      The title is the rename control (NBK-35): a button that reads as text —
-      its accessible name is the title itself, the tooltip "Rename Notebook"
-      describes what activating it does — which swaps to a text box. Enter or
-      leaving the box commits through the Notebooks store, Escape discards.
+      The title is the rename control (NBK-35, shared since NBK-41): a button
+      that reads as text — its accessible name is the title itself, the
+      tooltip "Rename Notebook" describes what activating it does — which
+      swaps to a text box. The control owns the editing; the committed title
+      goes through the Notebooks store here.
     -->
-    @if (renaming()) {
-      <input
-        #titleInput
-        class="notebook-detail-page__title-input"
-        type="text"
-        aria-label="Notebook title"
-        [value]="titleDraft()"
-        (input)="titleDraft.set($any($event.target).value)"
-        (keydown.enter)="commitRename()"
-        (keydown.escape)="cancelRename()"
-        (blur)="commitRename()"
-      />
-    } @else {
-      <button
-        type="button"
-        class="notebook-detail-page__title"
-        matTooltip="Rename Notebook"
-        (click)="startRename()"
-      >
-        {{ notebook()?.title ?? 'Notebook' }}
-      </button>
-    }
+    <app-editable-title
+      [title]="notebook()?.title ?? 'Notebook'"
+      editLabel="Notebook title"
+      tooltip="Rename Notebook"
+      (titleChange)="rename($event)"
+    />
     <span class="notebook-detail-page__spacer"></span>
     <!--
       Search (NBK-9) is how a user looks something up in the Documents without

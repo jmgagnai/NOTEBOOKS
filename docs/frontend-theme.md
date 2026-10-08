@@ -82,6 +82,7 @@ sit on the scale without per-page rules. Rendered Markdown
 |---|---|---|
 | `--app-title-bar-height` | 48 px | the `mat-toolbar` height; pages fill `100vh` minus it |
 | `--app-control-height` | 32 px | buttons, icon buttons, the plain `.app-button` variants |
+| `--app-copilot-gradient` | azure → violet → magenta at 135° | the Copilot sparkle; used by `<app-sparkle-avatar>` (the assistant's chat avatar) and nowhere else, per spec 01 |
 
 `app-root` is a flex column; the routed page element (whatever follows the
 toolbar) gets `flex: 1 1 auto; min-height: 0`. That leaves it no definite
