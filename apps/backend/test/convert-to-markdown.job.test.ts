@@ -14,11 +14,16 @@ import {
   type AppEventSubscriber,
 } from '../src/events/bus.js';
 import { listDocuments } from '../src/documents/repository.js';
+import type { FailureReason } from '../src/documents/schema.js';
 import { runConvertToMarkdownJob } from '../src/ingestion/convert-to-markdown.js';
 import { IngestionFailure } from '../src/ingestion/stage.js';
-import type { MarkdownConversionRequest } from '../src/ingestion/docling.js';
+import {
+  createDoclingConverter,
+  type MarkdownConversionRequest,
+} from '../src/ingestion/docling.js';
 import { createS3Client, ensureBucket, getObject, putObject } from '../src/storage/s3-client.js';
 import { startMinio } from './support/minio-container.js';
+import { missingDocker, scriptedDocker } from './support/scripted-docker.js';
 
 const DOCUMENTS_BUCKET = 'rag-notebook-documents-job-test';
 
@@ -218,6 +223,79 @@ describe('convert-to-Markdown job', () => {
       expect((await readVersion(seeded.versionId)).ingestion_status).toBe('converted');
       expect(await publishedFailure(seeded)).toBeNull();
     });
+  });
+
+  /**
+   * NBK-65: the real converter, run against a scripted `docker` binary, so
+   * what the user is shown is checked from the way Docling actually failed
+   * rather than from an error the test classified itself.
+   */
+  describe('NBK-65: stage 1 names its failures', () => {
+    async function convertWithDocling(
+      seeded: SeededVersion,
+      docling: { docker: string; timeoutMs?: number },
+      willRetry: boolean,
+    ) {
+      await expect(
+        runConvertToMarkdownJob(
+          {
+            pool,
+            s3,
+            documentsBucket: DOCUMENTS_BUCKET,
+            tempDir: tempRoot,
+            convertToMarkdown: createDoclingConverter(docling),
+          },
+          { payload: { documentId: seeded.documentId, versionId: seeded.versionId }, willRetry },
+        ),
+      ).rejects.toBeInstanceOf(IngestionFailure);
+    }
+
+    const cases: {
+      reason: FailureReason;
+      when: string;
+      docling: () => Promise<{ docker: string; timeoutMs?: number }>;
+    }[] = [
+      {
+        reason: 'unreadable',
+        when: 'Docling exits with an error',
+        docling: async () => ({ docker: await scriptedDocker("echo 'damaged' >&2; exit 1") }),
+      },
+      {
+        reason: 'unreadable',
+        when: 'Docling exits 0 without writing Markdown',
+        docling: async () => ({ docker: await scriptedDocker("echo 'failed to convert'") }),
+      },
+      {
+        reason: 'timed-out',
+        when: 'Docling is killed after its timeout',
+        docling: async () => ({ docker: await scriptedDocker('exec sleep 30'), timeoutMs: 200 }),
+      },
+      {
+        reason: 'service-unavailable',
+        when: 'Docling cannot be started',
+        docling: async () => ({ docker: missingDocker() }),
+      },
+    ];
+
+    for (const { reason, when, docling } of cases) {
+      it(`records '${reason}' at 'converting' when ${when} on the final attempt`, async () => {
+        const seeded = await seedUploadedVersion('report.txt', 'Quarterly report');
+
+        await convertWithDocling(seeded, await docling(), false);
+
+        expect((await readVersion(seeded.versionId)).ingestion_status).toBe('failed');
+        expect(await publishedFailure(seeded)).toEqual({ reason, failedAt: 'converting' });
+      });
+
+      it(`records no reason when ${when} and a retry is pending`, async () => {
+        const seeded = await seedUploadedVersion('report-retry.txt', 'Quarterly report');
+
+        await convertWithDocling(seeded, await docling(), true);
+
+        expect((await readVersion(seeded.versionId)).ingestion_status).toBe('queued');
+        expect(await publishedFailure(seeded)).toBeNull();
+      });
+    }
   });
 
   it('converts the stored upload and saves the Markdown on the Document Version', async () => {

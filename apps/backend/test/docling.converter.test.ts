@@ -12,6 +12,7 @@ import {
   looksScanned,
   markdownOutputPath,
 } from '../src/ingestion/docling.js';
+import { missingDocker, scriptedDocker } from './support/scripted-docker.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -162,6 +163,58 @@ describe('Docling converter: arguments and OCR policy (fake docker)', () => {
 
     expect(await fake.invocations()).toHaveLength(1);
     expect(await readFile(outputPath, 'utf8')).toBe('');
+  });
+});
+
+/**
+ * NBK-65: every way stage 1 knows it failed carries its reason on the typed
+ * failure. The assertions are on `reason` alone, never the message, so the
+ * diagnostics can be reworded without changing what the user is told.
+ */
+describe('Docling converter: named failures (scripted docker)', () => {
+  async function convertWith(docker: string, timeoutMs?: number): Promise<unknown> {
+    const workDir = await mkdtemp(join(tmpdir(), 'nbk-docling-fail-'));
+    const inputPath = join(workDir, 'report.pdf');
+    await writeFile(inputPath, textPdf('Quarterly report'));
+    return createDoclingConverter({ docker, timeoutMs })({
+      inputPath,
+      outputPath: markdownOutputPath(workDir),
+    }).then(
+      () => {
+        throw new Error('expected the conversion to fail');
+      },
+      (err: unknown) => err,
+    );
+  }
+
+  it("is 'unreadable' when Docling exits with an error", async () => {
+    const failure = await convertWith(
+      await scriptedDocker("echo 'RuntimeError: PDF is damaged' >&2; exit 1"),
+    );
+
+    expect(failure).toBeInstanceOf(IngestionFailure);
+    expect(failure).toMatchObject({ reason: 'unreadable' });
+  });
+
+  it("is 'unreadable' when Docling exits 0 but writes no Markdown", async () => {
+    const failure = await convertWith(await scriptedDocker("echo 'failed to convert'; exit 0"));
+
+    expect(failure).toBeInstanceOf(IngestionFailure);
+    expect(failure).toMatchObject({ reason: 'unreadable' });
+  });
+
+  it("is 'timed-out' when Docling is killed after its timeout", async () => {
+    const failure = await convertWith(await scriptedDocker('exec sleep 30'), 200);
+
+    expect(failure).toBeInstanceOf(IngestionFailure);
+    expect(failure).toMatchObject({ reason: 'timed-out' });
+  });
+
+  it("is 'service-unavailable' when Docling cannot be started", async () => {
+    const failure = await convertWith(missingDocker());
+
+    expect(failure).toBeInstanceOf(IngestionFailure);
+    expect(failure).toMatchObject({ reason: 'service-unavailable' });
   });
 });
 
