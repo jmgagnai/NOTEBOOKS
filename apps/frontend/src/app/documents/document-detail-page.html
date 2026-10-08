@@ -20,6 +20,13 @@
         <app-status-badge [status]="document.status" />
         <span>v{{ document.version.versionNumber }}</span>
       </p>
+      @if (failureSentence(); as sentence) {
+        <!--
+          NBK-68: the reason's sentence from the closed set (ADR-0009), never
+          the raw error — it says what went wrong and what to do next.
+        -->
+        <p class="document-detail-page__failure" data-testid="failure-reason">{{ sentence }}</p>
+      }
 
       @if (metadataEntries().length > 0) {
         <dl class="document-detail-page__metadata">
