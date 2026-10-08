@@ -19,6 +19,9 @@ either, while running the backend is not:
 
 No test makes a real OpenRouter call.
 
+To see a UI change rendered — signed in, as screenshots — see
+`docs/run-for-screenshots.md`.
+
 Hit something the environment fought you on — a gated Docker image, a
 Testcontainers flake, a silent `ng build` failure? See
 `docs/environment-gotchas.md` before debugging it.
@@ -26,9 +29,9 @@ Testcontainers flake, a silent `ng build` failure? See
 ## Checks
 
 `pnpm run check` is the fast gate (no Docker, no network): migration numbering,
-formatting, theme tokens in component styles, both typechecks, then the OpenAPI
-contract and the UI copy against `GLOSSARY.md`'s `_Avoid_` lists. `pnpm run
-verify` adds the test suite. The pre-commit hook runs a subset; CI runs
+the repo scripts' own tests, formatting, theme tokens in component styles, both
+typechecks, then the OpenAPI contract and the UI copy against `GLOSSARY.md`'s
+`_Avoid_` lists. `pnpm run verify` adds the test suite. The pre-commit hook runs a subset; CI runs
 everything, plus the frontend production build and its size budgets.
 
 ## Coding standards
