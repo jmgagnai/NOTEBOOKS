@@ -551,4 +551,44 @@ describe('Chat panel (ThreadNavigator + ThreadView) — asking', () => {
       });
     });
   });
+
+  // NBK-83 (spec 07 "Composer"): the Copilot-style pill. Its look is not
+  // testable here; what it offers is — the same two controls, nothing the
+  // app cannot do, and the caveat under it once answers are on screen.
+  describe('NBK-83: pill composer', () => {
+    const CAVEAT = 'AI-generated content may be incorrect';
+
+    it('offers the question box and Send, and no attach or microphone control', async () => {
+      await draftAQuestion();
+
+      expect(questionBox().getAttribute('placeholder')).toBe('Ask a question about this Notebook…');
+      expect(screen.getByRole('button', { name: 'Send' })).toBeTruthy();
+      // Spec 07 story 46: Copilot's "+" and microphone are features this
+      // app does not have, so the box must not offer them under any name.
+      for (const name of [
+        /attach/i,
+        /upload/i,
+        /^\+$/,
+        /^add$/i,
+        /microphone/i,
+        /voice/i,
+        /dictat/i,
+      ]) {
+        expect(screen.queryByRole('button', { name })).toBeNull();
+      }
+    });
+
+    it('shows the AI caveat under the box in an open Thread, and not on the landing', async () => {
+      await renderPanel({
+        listChatThreads: vi.fn().mockResolvedValue([thread()]) as never,
+        listChatMessages: vi.fn().mockResolvedValue([]) as never,
+      });
+      expect(await screen.findByText(CAVEAT)).toBeTruthy();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Back to Notebook' }));
+
+      await waitFor(() => expect(screen.queryByText(CAVEAT)).toBeNull());
+      expect(questionBox()).toBeTruthy();
+    });
+  });
 });

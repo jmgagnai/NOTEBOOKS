@@ -20,8 +20,9 @@ import { ChatStore } from './chat.store';
 import { NEW_THREAD_TITLE } from './thread-navigator';
 
 /**
- * The question box (NBK-45, spec 04 "Composer"): one bordered box holding
- * the growing textarea, the keyboard hint and the icon send button. It asks
+ * The question box (NBK-45, spec 04 "Composer"; a Copilot-style pill since
+ * NBK-83, spec 07): the growing textarea and the round send button in one
+ * box, the keyboard hint and, in an open Thread, the AI caveat under it. It asks
  * in the open Chat Thread, or, on the Notebook landing where none is open,
  * starts one and asks there (NBK-81).
  *
@@ -77,6 +78,12 @@ export class Composer {
    * is open: sending starts one (NBK-81).
    */
   protected readonly closed = computed(() => this.answering() || this.store.creatingThread());
+
+  /**
+   * Whether a Chat Thread is open: the caveat under the box (spec 07 story
+   * 44) is about answers, so it shows where answers are, not on the landing.
+   */
+  protected readonly threadOpen = computed(() => this.store.activeThreadId() !== null);
 
   /** Whitespace is not a question: the same rule `send` applies, shown on the button. */
   protected readonly canSend = computed(() => !this.closed() && this.draft().trim().length > 0);

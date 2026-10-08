@@ -1,5 +1,6 @@
-// The question box (NBK-45, spec 04 "Composer"): one bordered 8 px box, the
-// textarea inside it borderless, so the whole box reads as the control.
+// The question box (NBK-45, spec 04 "Composer"), a Copilot-style pill since
+// NBK-83 (spec 07): one bordered box, the textarea inside it borderless, so
+// the whole box reads as the control.
 :host {
   display: block;
   flex: none;
@@ -32,14 +33,17 @@
   --mat-icon-button-state-layer-color: var(--mat-sys-on-error-container);
 }
 
+// About 56 px tall on one line (spec 07): 11 px + the 32 px send button
+// + 11 px + the two border pixels; the textarea is sized to the same 32 px
+// row, so the box only grows when the draft does.
 .composer {
   position: relative;
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 8px 8px 6px 12px;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 11px 11px 11px 20px;
   border: 1px solid var(--mat-sys-outline);
-  border-radius: var(--mat-sys-corner-medium);
+  border-radius: var(--app-corner-pill);
   background: var(--mat-sys-surface);
   transition: border-color 0.12s;
 
@@ -59,18 +63,21 @@
     border-color: var(--mat-sys-primary-container);
   }
 
+  // Inset by the pill's corner, so the bar runs along the straight top edge
+  // rather than across the rounded ends.
   &__progress {
     position: absolute;
     top: 0;
-    left: 8px;
-    right: 8px;
+    left: var(--app-corner-pill);
+    right: var(--app-corner-pill);
     height: 2px;
     --mdc-linear-progress-track-color: transparent;
   }
 
-  // Takes the send button's place at the same size, so the bar's row does
-  // not jump when the state flips.
+  // Takes the send button's place at the same size, so the box does not
+  // jump when the state flips.
   &__answering {
+    flex: none;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -78,17 +85,21 @@
     height: var(--app-control-height);
   }
 
+  // The question is typed in the reading role it will be shown in (spec 07
+  // "Messages"), so the box and the bubble read the same.
   &__input {
+    flex: 1 1 auto;
+    min-width: 0;
+    box-sizing: border-box;
     border: 0;
     resize: none;
-    font: inherit;
-    line-height: var(--mat-sys-body-medium-line-height);
+    font: var(--app-type-reading);
     color: var(--mat-sys-on-surface);
     background: transparent;
-    padding: 6px 0;
-    min-height: calc(var(--mat-sys-body-medium-line-height) + 12px);
+    padding: 3px 0;
+    min-height: var(--app-control-height);
     // Grows with the draft (story 4) to about six lines, then scrolls.
-    max-height: calc(6 * var(--mat-sys-body-medium-line-height) + 12px);
+    max-height: calc(6 * var(--app-type-reading-line-height) + 6px);
     overflow-y: auto;
 
     &::placeholder {
@@ -100,23 +111,15 @@
     }
   }
 
-  &__bar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-  }
-
-  &__hint {
-    font: var(--mat-sys-body-small);
-    color: var(--mat-sys-on-surface-variant);
-  }
-
   // The send control is the box's one primary action, so it is filled like
-  // a primary button rather than subtle like the app's other icon buttons.
+  // a primary button rather than subtle like the app's other icon buttons;
+  // round, as Copilot's is (spec 07).
   &__send.mat-mdc-icon-button {
+    flex: none;
+    --mat-icon-button-container-shape: var(--app-corner-round);
     --mat-icon-button-icon-color: var(--mat-sys-on-primary);
     --mat-icon-button-state-layer-color: var(--mat-sys-on-primary);
+    border-radius: var(--app-corner-round);
     background: var(--mat-sys-primary);
 
     &:hover:not(:disabled) {
@@ -130,5 +133,21 @@
     &:disabled {
       background: var(--mat-sys-surface-container-high);
     }
+  }
+
+  // Under the box: the AI caveat on the left in an open Thread (spec 07
+  // story 44), the keyboard or answering hint on the right.
+  &__foot {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 4px 12px;
+    padding: 6px 20px 0;
+    font: var(--mat-sys-body-small);
+    color: var(--mat-sys-on-surface-variant);
+  }
+
+  &__hint {
+    margin-left: auto;
   }
 }

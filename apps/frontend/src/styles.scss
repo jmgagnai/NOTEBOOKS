@@ -174,6 +174,12 @@ html {
   // round chips (Citation chips). `corner-full` cannot serve: it is pinned
   // at 4 px above so that buttons stay square-ish.
   --app-corner-round: 9999px;
+  // The composer's pill (spec 07 "Composer", NBK-83): half its 56 px
+  // one-line height, so one line reads as a full pill, while a draft grown
+  // to several lines keeps 28 px corners rather than becoming a stadium
+  // whose ends would cut into the text. The one pill in the app; spec 01's
+  // "no pills" rule otherwise stands.
+  --app-corner-pill: 28px;
 
   // Elevation off: surfaces are separated by 1 px borders. Only floating
   // overlays (menus, dialogs) keep a soft shadow at level 3 and above.

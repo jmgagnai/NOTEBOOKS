@@ -43,6 +43,7 @@ const NAMES = [
   'panel-left-contract',
   'panel-left-expand',
   'folder',
+  'arrow-up',
 ];
 
 const require = createRequire(import.meta.url);
