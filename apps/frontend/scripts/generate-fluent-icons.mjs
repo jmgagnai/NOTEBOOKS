@@ -42,6 +42,7 @@ const NAMES = [
   'document-table',
   'panel-left-contract',
   'panel-left-expand',
+  'folder',
 ];
 
 const require = createRequire(import.meta.url);

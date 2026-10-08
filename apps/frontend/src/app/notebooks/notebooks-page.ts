@@ -32,8 +32,9 @@ import { NotebooksStore } from './notebooks.store';
 const UNTITLED_NOTEBOOK = 'Untitled Notebook';
 
 /**
- * The Notebooks home (NBK-4, re-laid out as a grid of cards by NBK-55): lets
- * any authenticated user create, open, rename, delete and restore Notebooks.
+ * The Notebooks home (NBK-4; a grid of cards from NBK-55, a list of rows
+ * from NBK-80): lets any authenticated user create, open, rename, delete and
+ * restore Notebooks.
  * Per ADR-0001 there is no ownership restriction in the UI either: every
  * Notebook shown here can be renamed/deleted/restored by whoever is logged
  * in, regardless of who created it.
@@ -69,10 +70,10 @@ export class NotebooksPage implements OnInit {
   // Guards against a double click creating two Untitled Notebooks.
   protected readonly creating = signal(false);
 
-  /** The Notebook whose card is showing the rename box, picked from its "…" menu. */
+  /** The Notebook whose row is showing the rename box, picked from its "…" menu. */
   protected readonly renamingId = signal<string | null>(null);
 
-  // Only the card being renamed renders the editable title, and its box
+  // Only the row being renamed renders the editable title, and its box
   // opens as soon as it appears: the menu's "Rename" is the activation, so
   // the user is not asked to click the title a second time (NBK-56).
   // Untracked, so a list reload re-binding the title cannot reopen the box
@@ -83,7 +84,7 @@ export class NotebooksPage implements OnInit {
     if (title) untracked(() => title.edit());
   });
 
-  private readonly cardLinks = viewChildren<ElementRef<HTMLElement>>('cardLink');
+  private readonly rowLinks = viewChildren<ElementRef<HTMLElement>>('rowLink');
   private readonly injector = inject(Injector);
 
   ngOnInit(): void {
@@ -91,9 +92,9 @@ export class NotebooksPage implements OnInit {
   }
 
   /**
-   * Puts the card's link back in place of the rename box. When the box
+   * Puts the row's link back in place of the rename box. When the box
    * closed on Enter or Escape it took the focus with it, so the focus goes
-   * to that card's link, the control the rename belongs to, once it is
+   * to that row's link, the control the rename belongs to, once it is
    * rendered again.
    */
   protected closeRename(id: string, refocus: boolean): void {
@@ -101,7 +102,7 @@ export class NotebooksPage implements OnInit {
     if (!refocus) return;
     afterNextRender(
       () =>
-        this.cardLinks()
+        this.rowLinks()
           .find((link) => link.nativeElement.dataset['notebookId'] === id)
           ?.nativeElement.focus(),
       { injector: this.injector },
