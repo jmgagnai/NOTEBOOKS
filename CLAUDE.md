@@ -26,9 +26,10 @@ Testcontainers flake, a silent `ng build` failure? See
 ## Checks
 
 `pnpm run check` is the fast gate (no Docker, no network): migration numbering,
-formatting, both typechecks, then the published OpenAPI contract against
-`GLOSSARY.md`'s `_Avoid_` lists. `pnpm run verify` adds the test suite. The
-pre-commit hook runs a subset; CI runs everything.
+formatting, theme tokens in component styles, both typechecks, then the OpenAPI
+contract and the UI copy against `GLOSSARY.md`'s `_Avoid_` lists. `pnpm run
+verify` adds the test suite. The pre-commit hook runs a subset; CI runs
+everything, plus the frontend production build and its size budgets.
 
 ## Coding standards
 

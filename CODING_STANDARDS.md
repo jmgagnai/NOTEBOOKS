@@ -8,10 +8,11 @@ applies every one of them to the diff.
 
 ## Vocabulary in user-facing text
 
-`GLOSSARY.md` is enforced on the OpenAPI contract only. UI copy, error
-messages and log lines are held to the same glossary by review: a Document, a
-Document Version, a Notebook, a Chat Thread, a Citation — and none of the
-words under each term's `_Avoid_`. "File" is the raw upload and nothing else.
+`GLOSSARY.md` is enforced by `pnpm run check` on the OpenAPI contract and on
+UI copy (template text and labels). Error messages, log lines, test names and
+comments are held to the same glossary by review: a Document, a Document
+Version, a Notebook, a Chat Thread, a Citation — and none of the words under
+each term's `_Avoid_`. "File" is the raw upload and nothing else.
 
 ## Constants mirrored across the two apps
 

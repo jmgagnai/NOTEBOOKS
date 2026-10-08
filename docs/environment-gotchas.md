@@ -82,6 +82,19 @@ commit past it with `git -c core.hooksPath=/dev/null commit ...`. CI runs the
 full set regardless, so nothing is skipped for the branch, only for the local
 commit.
 
+## Parallel test runs time out on an overloaded machine
+
+Five-second timeouts that land on the first test of a file, and move to a
+different file on every run, are load, not code. Several `ng test` runs at
+once (parallel implementer agents, each running the frontend suite) pushed
+the load average on an 8-core machine past 390, and the suite failed with 2 to
+19 such timeouts per run while every file passed on its own.
+
+`uptime` confirms it. Run the spec file you changed on its own while working
+(`--include='**/<name>.spec.ts'`), the full suite once at the end, and re-run
+a red full suite alone before believing it. A merge is verified only by a run
+on a quiet machine.
+
 ## A local Postgres on 5432 shadows the Docker one
 
 `pnpm infra:up` publishes the compose Postgres on `*:5432`. A Homebrew or
