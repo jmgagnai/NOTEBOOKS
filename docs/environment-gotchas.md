@@ -95,6 +95,20 @@ the load average on an 8-core machine past 390, and the suite failed with 2 to
 a red full suite alone before believing it. A merge is verified only by a run
 on a quiet machine.
 
+## The agent's shell is zsh, and zsh splits nothing for you
+
+Claude Code runs Bash-tool commands in the user's shell, which on this machine
+is zsh, and two zsh defaults fail quietly where bash would not:
+
+- **An unquoted variable is one word.** `git push --delete $BRANCHES`, with
+  the names held newline-separated in one variable, passes them as a single
+  argument; the first branch cleanup of the Copilot UI series deleted nothing
+  while its loop counted 20. Feed a list through `xargs`, or loop with
+  `while read`.
+- **An unmatched glob is an error.** `grep -rn x --include=*.ts` fails with
+  `no matches found` before grep runs. Quote globs meant for the command:
+  `--include='*.ts'`.
+
 ## A local Postgres on 5432 shadows the Docker one
 
 `pnpm infra:up` publishes the compose Postgres on `*:5432`. A Homebrew or
