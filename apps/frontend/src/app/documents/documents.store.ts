@@ -176,6 +176,12 @@ export interface OpenDocument {
   version: DocumentVersion;
   isLatestVersion: boolean;
   latestVersionNumber: number;
+  /**
+   * Why `version` failed Ingestion, when it did (NBK-68). Null from the
+   * Version-scoped read, which does not carry a reason yet; the page then
+   * falls back to the `unexpected` sentence rather than saying nothing.
+   */
+  failure: DocumentFailure | null;
 }
 
 /** The latest-Version read, as the page's view model. */
@@ -195,6 +201,7 @@ function fromDocumentDetail(detail: DocumentDetail): OpenDocument {
     // construction, not a claim needing a second lookup.
     isLatestVersion: true,
     latestVersionNumber: detail.latestVersion.versionNumber,
+    failure: detail.failure,
   };
 }
 
@@ -213,6 +220,7 @@ function fromVersionDetail(detail: DocumentVersionDetail): OpenDocument {
     version: detail.version,
     isLatestVersion: detail.isLatestVersion,
     latestVersionNumber: detail.latestVersionNumber,
+    failure: null,
   };
 }
 
