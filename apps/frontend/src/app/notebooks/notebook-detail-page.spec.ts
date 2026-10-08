@@ -2073,7 +2073,8 @@ describe('NotebookDetailPage', () => {
       expect(screen.getByRole('region', { name: 'Chat' })).toBeTruthy();
       const show = showDocumentsButton()!;
       expect(show).toBeTruthy();
-      expect(show.textContent?.replace(/\s+/g, ' ').trim()).toBe('Documents 3');
+      // The panel header's count line since NBK-48: none of the three is ready yet.
+      expect(show.textContent?.replace(/\s+/g, ' ').trim()).toBe('0/3 ready');
     });
 
     it('"Show Documents" restores the panel, goes away, and focuses "Hide Documents"', async () => {
@@ -2111,6 +2112,133 @@ describe('NotebookDetailPage', () => {
       fireEvent.drop(documentsPanel(), { dataTransfer });
       expect(await screen.findByText('1 uploaded, 0 skipped, 0 failed')).toBeTruthy();
       expect(uploadDocument).toHaveBeenCalledWith(NOTEBOOK_ID, report);
+    });
+  });
+
+  // NBK-48: the panel header says how big the Notebook is and how much of it
+  // is ready, and a quick filter narrows the rows by filename — client-side,
+  // so it is told apart from "Search this Notebook" by never reaching the API.
+  describe('NBK-48: count and filter', () => {
+    function panelCount() {
+      return within(documentsPanel()).getByTestId('documents-count').textContent?.trim();
+    }
+
+    it('the panel header reads "<n> Documents" when every Document is ready, "<ready>/<n> ready" otherwise', async () => {
+      await renderWithUpload(vi.fn(), [
+        documentFor('a.txt', { status: 'ready' }),
+        documentFor('b.txt', { status: 'ready' }),
+      ]);
+      expect(panelCount()).toBe('2 Documents');
+    });
+
+    it('reads "<ready>/<n> ready" while some are ingesting, and moves with App Events', async () => {
+      const appEvents = appEventsStub();
+      const listDocuments = vi
+        .fn()
+        .mockResolvedValue([
+          documentFor('a.txt', { status: 'ready' }),
+          documentFor('b.txt', { status: 'indexing' }),
+          documentFor('c.txt', { status: 'failed' }),
+        ]);
+      await render(NotebookDetailPage, {
+        providers: pageProviders({ documents: { listDocuments }, appEvents }),
+      });
+      await screen.findByText('a.txt');
+      expect(panelCount()).toBe('1/3 ready');
+
+      appEvents.events.next({
+        id: 'event-1',
+        type: 'document-version-status-changed',
+        topic: `notebook:${NOTEBOOK_ID}`,
+        occurredAt: '2026-01-01T00:00:01.000Z',
+        data: { documentId: 'doc-b.txt', versionId: 'v-b.txt-1', status: 'ready' },
+      });
+
+      await waitFor(() => expect(panelCount()).toBe('2/3 ready'));
+      expect(listDocuments).toHaveBeenCalledTimes(1);
+    });
+
+    it('"Show Documents" reads the same count as the panel header', async () => {
+      await renderWithUpload(vi.fn(), [
+        documentFor('a.txt', { status: 'ready' }),
+        documentFor('b.txt', { status: 'queued' }),
+      ]);
+      const count = panelCount();
+
+      fireEvent.click(within(documentsPanel()).getByRole('button', { name: 'Hide Documents' }));
+
+      const show = screen.getByRole('button', { name: 'Show Documents' });
+      expect(count).toBe('1/2 ready');
+      expect(within(show).getByText('1/2 ready')).toBeTruthy();
+    });
+
+    const LIBRARY = [
+      documentFor('Thesis draft.pdf', { status: 'ready' }),
+      documentFor('thesis-notes.txt', { status: 'ready' }),
+      documentFor('budget.xlsx', { status: 'ready' }),
+    ];
+
+    function filterBox() {
+      return within(documentsPanel()).getByRole('searchbox', {
+        name: 'Filter Documents',
+      }) as HTMLInputElement;
+    }
+
+    function shownFilenames() {
+      const list = within(documentsPanel()).queryByRole('list', { name: 'Documents' });
+      if (!list) return [];
+      return within(list)
+        .getAllByRole('listitem')
+        .map((row) =>
+          LIBRARY.map((d) => d.filename).find((name) => row.textContent?.includes(name)),
+        );
+    }
+
+    it('"Filter Documents" narrows the rows to filenames containing the text, ignoring case', async () => {
+      await renderWithUpload(vi.fn(), LIBRARY);
+
+      fireEvent.input(filterBox(), { target: { value: 'THESIS' } });
+
+      expect(shownFilenames()).toEqual(['Thesis draft.pdf', 'thesis-notes.txt']);
+      // The header still counts the Notebook, not the filtered rows.
+      expect(panelCount()).toBe('3 Documents');
+    });
+
+    it('the clear control empties the filter and restores the full list', async () => {
+      await renderWithUpload(vi.fn(), LIBRARY);
+      expect(within(documentsPanel()).queryByRole('button', { name: 'Clear filter' })).toBeNull();
+      fireEvent.input(filterBox(), { target: { value: 'budget' } });
+      expect(shownFilenames()).toEqual(['budget.xlsx']);
+
+      fireEvent.click(within(documentsPanel()).getByRole('button', { name: 'Clear filter' }));
+
+      expect(filterBox().value).toBe('');
+      expect(shownFilenames()).toEqual(['Thesis draft.pdf', 'thesis-notes.txt', 'budget.xlsx']);
+    });
+
+    it('says "No Documents match" when nothing matches', async () => {
+      await renderWithUpload(vi.fn(), LIBRARY);
+
+      fireEvent.input(filterBox(), { target: { value: 'invoice' } });
+
+      expect(shownFilenames()).toEqual([]);
+      expect(within(documentsPanel()).getByText('No Documents match')).toBeTruthy();
+    });
+
+    it('filters without any request: the list fetched on arrival is all it reads', async () => {
+      const listDocuments = vi.fn().mockResolvedValue(LIBRARY);
+      // Only `listDocuments` exists on the stubbed clients, so any other call —
+      // a search, a refetch per keystroke — would throw or be counted here.
+      await render(NotebookDetailPage, {
+        providers: pageProviders({ documents: { listDocuments } }),
+      });
+      await screen.findByText('budget.xlsx');
+
+      fireEvent.input(filterBox(), { target: { value: 'b' } });
+      fireEvent.input(filterBox(), { target: { value: 'bu' } });
+
+      expect(shownFilenames()).toEqual(['budget.xlsx']);
+      expect(listDocuments).toHaveBeenCalledTimes(1);
     });
   });
 });
