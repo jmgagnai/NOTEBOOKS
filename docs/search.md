@@ -85,6 +85,34 @@ Cosine wins twice:
   `OPENROUTER_MODEL_EMBEDDING` override) returns vectors that are not
   normalised, where inner product would silently start ranking by length.
 
+## Chat Threads, by keyword (NBK-97)
+
+```
+GET /notebooks/:notebookId/search/threads?q=<keywords>
+```
+
+The Search page also searches the Notebook's Chat Threads, with a different
+tool for a different kind of text. Messages are short and full of the exact
+names people look for, so they are matched **by keyword**. Postgres full-text
+search runs over every question and answer, with no embedding and no
+OpenRouter call: it works without a key and on every existing message. The
+`simple` configuration is deliberate, because Notebooks mix French and
+English and a language's stemmer would mangle the other's words. Migration
+0014 indexes exactly `to_tsvector('simple', content)`, which the query
+matches on.
+
+A result is an **Exchange** (GLOSSARY.md): a hit on a question pairs with the
+answer after it, and a hit on an answer pairs with the question before it.
+An Exchange whose two halves both match is one result, ranked by the two
+together. There are at most 20 results, best first. Deleted Chat Threads
+(NBK-95) and Notebooks are left out.
+
+The question comes back whole and the answer as up to two excerpts around
+its matches (`ts_headline`). Both are **segments** (`{ text, match }`), not
+markup: the matches are delimited with private-use characters that message
+text never contains, then split apart, so the client renders text and bold
+and never parses HTML from a message.
+
 ## The index decision
 
 Migration `0007` left this open on purpose: "a decision for the retrieval
