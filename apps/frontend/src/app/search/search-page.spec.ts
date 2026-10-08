@@ -1,8 +1,9 @@
 import { ActivatedRoute, convertToParamMap } from '@angular/router';
-import { fireEvent, render, screen } from '@testing-library/angular';
+import { fireEvent, render, screen, waitFor } from '@testing-library/angular';
 import { SearchPage } from './search-page';
 import { NotebooksService } from '../api/services/notebooks.service';
 import { SearchService } from '../api/services/search.service';
+import { APP_NAME } from '../shared/app-name';
 
 const NOTEBOOK_ID = '11111111-1111-1111-1111-111111111111';
 
@@ -140,5 +141,31 @@ describe('SearchPage', () => {
 
     const open = await screen.findByLabelText('Open mars.pdf');
     expect(open.getAttribute('href')).toBe(`/notebooks/${NOTEBOOK_ID}/documents/doc-1`);
+  });
+
+  // NBK-61: the tab names the Notebook being searched, like the Notebook page.
+  it('puts the Notebook title in the browser tab, and the default back on leaving', async () => {
+    document.title = 'A stale title';
+    const { fixture } = await render(SearchPage, {
+      providers: [
+        activatedRouteFor(NOTEBOOK_ID),
+        {
+          provide: NotebooksService,
+          useValue: {
+            listNotebooks: vi
+              .fn()
+              .mockResolvedValue([
+                { id: NOTEBOOK_ID, title: 'Research', createdAt: '2026-01-01T00:00:00.000Z' },
+              ]),
+          },
+        },
+        { provide: SearchService, useValue: { searchNotebook: vi.fn() } },
+      ],
+    });
+
+    await waitFor(() => expect(document.title).toBe(`Research – ${APP_NAME}`));
+
+    fixture.destroy();
+    expect(document.title).toBe(APP_NAME);
   });
 });

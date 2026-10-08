@@ -5,6 +5,7 @@ import { MatCardModule } from '@angular/material/card';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { NotebooksStore } from '../notebooks/notebooks.store';
 import { SearchStore } from './search.store';
+import { showPageTitle } from '../shared/page-title';
 
 /**
  * Searching one Notebook's Documents (NBK-9).
@@ -37,6 +38,9 @@ export class SearchPage implements OnDestroy {
   protected readonly notebook = computed(
     () => this.notebooksStore.notebooks().find((n) => n.id === this.notebookId) ?? null,
   );
+
+  // NBK-61: the tab names the Notebook being searched, as its own page does.
+  private readonly tabTitle = showPageTitle(() => this.notebook()?.title);
 
   /**
    * What is in the search box right now — component state, not store state:

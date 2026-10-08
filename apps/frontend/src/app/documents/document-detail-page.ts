@@ -6,6 +6,7 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { DocumentsStore } from './documents.store';
 import { StatusBadge } from '../shared/status-badge';
 import { MarkdownView } from './markdown-view';
+import { showPageTitle } from '../shared/page-title';
 
 /**
  * One Document, opened (NBK-7).
@@ -64,6 +65,9 @@ export class DocumentDetailPage implements OnInit, OnDestroy {
 
   protected readonly notebookId = this.route.snapshot.paramMap.get('notebookId')!;
   protected readonly documentId = this.route.snapshot.paramMap.get('documentId')!;
+
+  // NBK-61: the tab names the open Document, so several are distinguishable.
+  private readonly tabTitle = showPageTitle(() => this.store.openDocument()?.filename);
 
   private readonly query = this.route.snapshot.queryParamMap;
 

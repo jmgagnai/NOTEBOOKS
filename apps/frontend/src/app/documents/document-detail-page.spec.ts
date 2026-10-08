@@ -1,7 +1,8 @@
 import { ActivatedRoute, convertToParamMap } from '@angular/router';
-import { fireEvent, render, screen } from '@testing-library/angular';
+import { fireEvent, render, screen, waitFor } from '@testing-library/angular';
 import { DocumentDetailPage } from './document-detail-page';
 import { DocumentsService } from '../api/services/documents.service';
+import { APP_NAME } from '../shared/app-name';
 
 const NOTEBOOK_ID = '11111111-1111-1111-1111-111111111111';
 const DOCUMENT_ID = '22222222-2222-2222-2222-222222222222';
@@ -129,6 +130,20 @@ describe('DocumentDetailPage', () => {
     expect(table).not.toBeNull();
     expect(table!.querySelectorAll('th')).toHaveLength(2);
     expect(table!.textContent).toContain('12.4M');
+  });
+
+  // NBK-61: the tab names the open Document, so several are distinguishable.
+  it('puts the filename in the browser tab, and the default back on leaving', async () => {
+    document.title = 'A stale title';
+    const getDocument = vi.fn().mockResolvedValue(SUMMARIZED_DETAIL);
+    const { fixture } = await render(DocumentDetailPage, {
+      providers: [activatedRoute(), { provide: DocumentsService, useValue: { getDocument } }],
+    });
+
+    await waitFor(() => expect(document.title).toBe(`quarterly.pdf – ${APP_NAME}`));
+
+    fixture.destroy();
+    expect(document.title).toBe(APP_NAME);
   });
 
   it('collapses back to the Executive Summary without re-fetching the content', async () => {
