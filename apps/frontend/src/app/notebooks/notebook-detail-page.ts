@@ -20,6 +20,7 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { ThreadNavigator } from '../chat/thread-navigator';
 import { ThreadView } from '../chat/thread-view';
+import { DocumentFilter } from '../documents/document-filter';
 import { DocumentList } from '../documents/document-list';
 import { ConflictChoice, Document, DocumentsStore } from '../documents/documents.store';
 import { UPLOAD_ACCEPT } from '../documents/upload-rules';
@@ -100,6 +101,7 @@ function droppedEntries(dataTransfer: DataTransfer | null): {
     MatIconModule,
     MatProgressSpinnerModule,
     MatTooltipModule,
+    DocumentFilter,
     DocumentList,
     RouterLink,
     StatusBadge,
@@ -200,6 +202,36 @@ export class NotebookDetailPage implements OnInit, OnDestroy {
       injector: this.injector,
     });
   }
+
+  /**
+   * The Notebook's size and how much of it is ready (NBK-48): "25 Documents",
+   * or "23/25 ready" while some are still ingesting or failed. One line read
+   * by both the panel header and "Show Documents", so the two never disagree;
+   * it follows the store, so App Events move it without a refetch.
+   */
+  protected readonly documentCount = computed(() => {
+    const documents = this.store.documents();
+    const ready = documents.filter((d) => d.status === 'ready').length;
+    if (ready < documents.length) return `${ready}/${documents.length} ready`;
+    return documents.length === 1 ? '1 Document' : `${documents.length} Documents`;
+  });
+
+  /** What the user typed in "Filter Documents" (NBK-48). */
+  protected readonly documentFilter = signal('');
+
+  /**
+   * The rows the panel lists (NBK-48): the store's Documents whose filename
+   * contains the filter text, ignoring case. Client-side on purpose — the
+   * list is already here, and the API's search is semantic, which is "Search
+   * this Notebook", not this. Surrounding blanks are ignored so a stray
+   * space does not empty the list.
+   */
+  protected readonly filteredDocuments = computed(() => {
+    const documents = this.store.documents();
+    const text = this.documentFilter().trim().toLocaleLowerCase();
+    if (!text) return documents;
+    return documents.filter((d) => d.filename.toLocaleLowerCase().includes(text));
+  });
 
   /** The picker only offers the accepted document types (NBK-16). */
   protected readonly accept = UPLOAD_ACCEPT;

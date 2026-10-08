@@ -1,0 +1,46 @@
+// The quick filter (NBK-48): a row under the panel header, the box a 32 px
+// control with a leading search icon, like the composer's field — readable
+// as a search box without being mistaken for the page's semantic Search.
+:host {
+  flex: none;
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding: 8px 8px 0;
+}
+
+.document-filter__icon {
+  position: absolute;
+  left: 16px;
+  width: 16px;
+  height: 16px;
+  color: var(--mat-sys-on-surface-variant);
+  pointer-events: none;
+}
+
+.document-filter__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  box-sizing: border-box;
+  height: var(--app-control-height);
+  padding: 0 36px 0 30px;
+  border: 1px solid var(--mat-sys-outline-variant);
+  border-radius: var(--mat-sys-corner-extra-small);
+  background: var(--mat-sys-surface);
+  color: var(--mat-sys-on-surface);
+  font: var(--mat-sys-body-medium);
+
+  &:hover {
+    border-color: var(--app-outline-focus);
+  }
+
+  // The browser's own clear "×" would duplicate the named clear control.
+  &::-webkit-search-cancel-button {
+    appearance: none;
+  }
+}
+
+.document-filter__clear {
+  position: absolute;
+  right: 8px;
+}

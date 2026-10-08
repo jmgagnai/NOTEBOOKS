@@ -167,8 +167,20 @@
     @include workspace-card.title;
   }
 
+  // The count beside the title (NBK-48), secondary text: context, not a heading.
+  &__panel-count {
+    color: var(--mat-sys-on-surface-variant);
+    font: var(--mat-sys-body-small);
+    white-space: nowrap;
+  }
+
   &__panel-body {
     @include workspace-card.body;
+  }
+
+  // The filter's empty result (NBK-48): a note, not an error.
+  &__no-match {
+    color: var(--mat-sys-on-surface-variant);
   }
 
   &__error {

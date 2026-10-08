@@ -60,7 +60,8 @@
     <!--
       Only while the Documents panel is hidden (NBK-37): the way back, named
       for what it does, reading the count so the user knows what they are
-      bringing back.
+      bringing back. The count is the panel header's own line (NBK-48) —
+      "25 Documents" or "23/25 ready" — so the two cannot disagree.
     -->
     @if (documentsHidden()) {
       <button
@@ -71,7 +72,7 @@
         (click)="showDocuments()"
       >
         <mat-icon svgIcon="panel-right-expand" />
-        Documents <span class="notebook-detail-page__count">{{ store.documents().length }}</span>
+        <span class="notebook-detail-page__count">{{ documentCount() }}</span>
       </button>
     }
     <!--
@@ -139,6 +140,9 @@
       }
       <div class="notebook-detail-page__panel-head">
         <h2 class="notebook-detail-page__panel-title">Documents</h2>
+        <span class="notebook-detail-page__panel-count" data-testid="documents-count">{{
+          documentCount()
+        }}</span>
         <span class="notebook-detail-page__spacer"></span>
         <button
           #hideDocumentsButton
@@ -151,6 +155,14 @@
           <mat-icon svgIcon="panel-right-contract" />
         </button>
       </div>
+      <!--
+        The quick filter (NBK-48): under the header rather than in the
+        scrolling body, so it stays put while the rows move. Only once there
+        is something to filter.
+      -->
+      @if (store.documents().length > 0) {
+        <app-document-filter [(query)]="documentFilter" />
+      }
       <div class="notebook-detail-page__panel-body">
         <!--
         The progress panel (NBK-16): every file of the batch with its status and,
@@ -244,12 +256,16 @@
           so the whole Notebook fits the panel. Delete stays the page's, so
           the undo snack bar (NBK-33) is offered from here as before.
         -->
-          <app-document-list
-            [notebookId]="notebookId"
-            [documents]="store.documents()"
-            (download)="download($event)"
-            (delete)="delete($event)"
-          />
+          @if (filteredDocuments().length === 0) {
+            <p class="notebook-detail-page__no-match">No Documents match</p>
+          } @else {
+            <app-document-list
+              [notebookId]="notebookId"
+              [documents]="filteredDocuments()"
+              (download)="download($event)"
+              (delete)="delete($event)"
+            />
+          }
         }
       </div>
     </aside>
