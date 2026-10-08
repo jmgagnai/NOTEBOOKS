@@ -1,13 +1,17 @@
 import { DatePipe, NgTemplateOutlet } from '@angular/common';
 import {
+  afterNextRender,
   Component,
   computed,
   effect,
+  ElementRef,
   inject,
+  Injector,
   OnInit,
   signal,
   untracked,
   viewChild,
+  viewChildren,
 } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
@@ -21,7 +25,8 @@ import { NotebooksStore } from './notebooks.store';
 /**
  * What "Create Notebook" names a new Notebook (spec 05 "Create"): the create
  * request needs a non-empty title, and the user renames it in place in the
- * Notebook header it opens on.
+ * Notebook header it opens on, which the navigation's `editTitle` state
+ * opens for editing (spec 05 story 3).
  */
 const UNTITLED_NOTEBOOK = 'Untitled Notebook';
 
@@ -76,8 +81,29 @@ export class NotebooksPage implements OnInit {
     if (title) untracked(() => title.edit());
   });
 
+  private readonly cardLinks = viewChildren<ElementRef<HTMLElement>>('cardLink');
+  private readonly injector = inject(Injector);
+
   ngOnInit(): void {
     void this.store.loadNotebooks();
+  }
+
+  /**
+   * Puts the card's link back in place of the rename box. When the box
+   * closed on Enter or Escape it took the focus with it, so the focus goes
+   * to that card's link, the control the rename belongs to, once it is
+   * rendered again.
+   */
+  protected closeRename(id: string, refocus: boolean): void {
+    this.renamingId.set(null);
+    if (!refocus) return;
+    afterNextRender(
+      () =>
+        this.cardLinks()
+          .find((link) => link.nativeElement.dataset['notebookId'] === id)
+          ?.nativeElement.focus(),
+      { injector: this.injector },
+    );
   }
 
   protected async create(): Promise<void> {
@@ -85,7 +111,7 @@ export class NotebooksPage implements OnInit {
     this.creating.set(true);
     try {
       const id = await this.store.createNotebook(UNTITLED_NOTEBOOK);
-      if (id) await this.router.navigate(['/notebooks', id]);
+      if (id) await this.router.navigate(['/notebooks', id], { state: { editTitle: true } });
     } finally {
       this.creating.set(false);
     }

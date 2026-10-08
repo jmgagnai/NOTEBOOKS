@@ -12,7 +12,7 @@ import {
   viewChild,
 } from '@angular/core';
 import { Title } from '@angular/platform-browser';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
@@ -161,6 +161,27 @@ export class NotebookDetailPage implements OnInit, OnDestroy {
     this.store.stopWatching();
     this.title.setTitle(this.titleOnArrival);
   }
+
+  /**
+   * Whether the navigation here asked for the title to open for editing:
+   * "Create Notebook" does (spec 05 story 3), because the title it gave the
+   * new Notebook is a placeholder. Read while the router is still
+   * activating this page, the only moment the navigation's state is at hand.
+   */
+  private editTitleOnArrival =
+    inject(Router).currentNavigation()?.extras.state?.['editTitle'] === true;
+
+  private readonly headerTitle = viewChild(EditableTitle);
+
+  // Once the Notebook has loaded and the header has rendered its title, so
+  // the box opens on the real title rather than the "Notebook" placeholder;
+  // once only, so a later rename or list reload does not reopen it.
+  private readonly openTitleOnArrival = effect(() => {
+    const header = this.headerTitle();
+    if (!this.editTitleOnArrival || !header || !this.notebook()) return;
+    this.editTitleOnArrival = false;
+    afterNextRender(() => header.edit(), { injector: this.injector });
+  });
 
   /**
    * Renaming in place (NBK-35): the header title is an `app-editable-title`

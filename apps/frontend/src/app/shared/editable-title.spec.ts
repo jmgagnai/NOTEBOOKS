@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/angular';
+import { fireEvent, render, screen, waitFor } from '@testing-library/angular';
 import { EditableTitle } from './editable-title';
 
 // NBK-41: the control is the seam — its inputs, its output and the
@@ -108,6 +108,39 @@ describe('EditableTitle', () => {
 
     const input = screen.getByLabelText('Notebook title') as HTMLInputElement;
     expect(input.value).toBe('Research');
+  });
+
+  // Enter and Escape remove the focused box; without this the keyboard
+  // would fall back to the start of the page.
+  it.each([
+    ['committed', 'Enter'],
+    ['discarded', 'Escape'],
+  ])('returns the focus to the title when the edit is %s', async (_case, key) => {
+    await renderTitle();
+
+    fireEvent.keyDown(typeTitle('Archive'), { key });
+
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Research' })),
+    );
+  });
+
+  // Leaving the box for another control commits, and the focus stays
+  // where the user put it.
+  it('leaves the focus where it went when the box is left', async () => {
+    await render(
+      `<app-editable-title title="Research" editLabel="Notebook title" />
+       <button type="button">Elsewhere</button>`,
+      { imports: [EditableTitle] },
+    );
+    const input = typeTitle('Archive');
+    const elsewhere = screen.getByRole('button', { name: 'Elsewhere' });
+    input.focus();
+
+    elsewhere.focus();
+
+    await screen.findByRole('button', { name: 'Research' });
+    expect(document.activeElement).toBe(elsewhere);
   });
 
   it.each([

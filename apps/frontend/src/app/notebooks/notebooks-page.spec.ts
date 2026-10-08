@@ -77,7 +77,7 @@ describe('NotebooksPage', () => {
 
   // NBK-55 (spec 05 "Create"): no title is asked for up front — the new
   // Notebook opens straight away, where its header title is editable.
-  it('creates an "Untitled Notebook" and opens it', async () => {
+  it('creates an "Untitled Notebook" and opens it with its title ready to type over', async () => {
     const listNotebooks = vi
       .fn()
       .mockResolvedValue([
@@ -100,6 +100,9 @@ describe('NotebooksPage', () => {
     expect(createNotebook).toHaveBeenCalledWith({ body: { title: 'Untitled Notebook' } });
     const router = TestBed.inject(Router);
     await vi.waitFor(() => expect(router.url).toBe('/notebooks/7'));
+    // The Notebook page's cue to open its title for editing (spec 05 story
+    // 3); that page's own spec covers what it does with it.
+    expect(router.lastSuccessfulNavigation()?.extras.state).toEqual({ editTitle: true });
   });
 
   it('stays on the page and says why when creating fails', async () => {
@@ -166,8 +169,10 @@ describe('NotebooksPage', () => {
     fireEvent.keyDown(box, { key: 'Enter' });
 
     expect(renameNotebook).toHaveBeenCalledWith({ id: '1', body: { title: 'Q4 Contracts' } });
-    expect(await screen.findByRole('link', { name: /Q4 Contracts/ })).toBeTruthy();
+    const card = await screen.findByRole('link', { name: /Q4 Contracts/ });
     expect(screen.queryByLabelText('Notebook title')).toBeNull();
+    // The keyboard is back on the card it renamed, not dropped on the page.
+    await waitFor(() => expect(document.activeElement).toBe(card));
   });
 
   it('puts the title back when the rename is abandoned with Escape', async () => {
@@ -189,8 +194,9 @@ describe('NotebooksPage', () => {
     fireEvent.keyDown(box, { key: 'Escape' });
 
     expect(renameNotebook).not.toHaveBeenCalled();
-    expect(await screen.findByRole('link', { name: /Q3 Contracts/ })).toBeTruthy();
+    const card = await screen.findByRole('link', { name: /Q3 Contracts/ });
     expect(screen.queryByLabelText('Notebook title')).toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(card));
   });
 
   it('deletes a Notebook, removing it from the list', async () => {

@@ -1,8 +1,11 @@
 import {
+  afterNextRender,
   ChangeDetectionStrategy,
   Component,
   effect,
   ElementRef,
+  inject,
+  Injector,
   input,
   output,
   signal,
@@ -49,6 +52,7 @@ export type EditableTitleSize = 'large' | 'medium' | 'small';
       />
     } @else {
       <button
+        #button
         type="button"
         class="editable-title__button"
         [matTooltip]="tooltip()"
@@ -84,18 +88,28 @@ export class EditableTitle {
   /**
    * The box closed, whether committed or discarded (NBK-56): an owner that
    * shows the control only while renaming, like a Notebook card, puts its
-   * own title back on this.
+   * own title back on this. `refocus` says the box still had the focus
+   * (Enter or Escape), so an owner that removes this control has to give the
+   * focus a new home; when the box was left for another control it is false,
+   * and the focus is already where the user put it.
    */
-  readonly editClosed = output<void>();
+  readonly editClosed = output<{ refocus: boolean }>();
 
   protected readonly editing = signal(false);
   protected readonly draft = signal('');
   private readonly box = viewChild<ElementRef<HTMLInputElement>>('box');
+  private readonly button = viewChild<ElementRef<HTMLButtonElement>>('button');
+  private readonly injector = inject(Injector);
 
   // The box appears on demand, so it is focused when it does — otherwise a
   // click on the title would leave the keyboard nowhere.
+  // `focus()` as well as `select()`: browsers differ on whether selecting
+  // the text also moves the focus, and closing hands the focus back only
+  // from a box that had it.
   private readonly focusBox = effect(() => {
-    this.box()?.nativeElement.select();
+    const box = this.box()?.nativeElement;
+    box?.focus();
+    box?.select();
   });
 
   /**
@@ -114,8 +128,7 @@ export class EditableTitle {
    */
   protected commit(): void {
     if (!this.editing()) return;
-    this.editing.set(false);
-    this.editClosed.emit();
+    this.close();
     const title = this.draft().trim();
     if (!title || title === this.title()) return;
     this.titleChange.emit(title);
@@ -123,7 +136,21 @@ export class EditableTitle {
 
   protected cancel(): void {
     if (!this.editing()) return;
+    this.close();
+  }
+
+  /**
+   * Swaps the box back for the title. Enter and Escape remove the focused
+   * box, which would drop the keyboard at the start of the page, so the
+   * focus goes back to the title it came from (NBK-41, spec 02); a box left
+   * for another control leaves the focus there.
+   */
+  private close(): void {
+    const refocus = this.box()?.nativeElement === document.activeElement;
     this.editing.set(false);
-    this.editClosed.emit();
+    this.editClosed.emit({ refocus });
+    if (refocus) {
+      afterNextRender(() => this.button()?.nativeElement.focus(), { injector: this.injector });
+    }
   }
 }

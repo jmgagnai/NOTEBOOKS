@@ -30,14 +30,19 @@
                 editLabel="Notebook title"
                 [title]="notebook.title"
                 (titleChange)="rename(notebook.id, $event)"
-                (editClosed)="renamingId.set(null)"
+                (editClosed)="closeRename(notebook.id, $event.refocus)"
               />
               <span class="notebooks-page__card-created">
                 Created {{ notebook.createdAt | date: 'mediumDate' }}
               </span>
             </div>
           } @else {
-            <a class="notebooks-page__card-link" [routerLink]="['/notebooks', notebook.id]">
+            <a
+              #cardLink
+              class="notebooks-page__card-link"
+              [attr.data-notebook-id]="notebook.id"
+              [routerLink]="['/notebooks', notebook.id]"
+            >
               <mat-icon class="notebooks-page__card-icon" svgIcon="notebook" />
               <span class="notebooks-page__card-title">{{ notebook.title }}</span>
               <span class="notebooks-page__card-created">

@@ -1,5 +1,6 @@
 import { Component } from '@angular/core';
-import { convertToParamMap, ActivatedRoute, RouterOutlet } from '@angular/router';
+import { TestBed } from '@angular/core/testing';
+import { convertToParamMap, ActivatedRoute, Router, RouterOutlet } from '@angular/router';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/angular';
 import { Subject } from 'rxjs';
 import { NotebookDetailPage } from './notebook-detail-page';
@@ -1972,6 +1973,28 @@ describe('NotebookDetailPage', () => {
       });
       expect(await screen.findByRole('button', { name: 'Research 2026' })).toBeTruthy();
       expect(screen.queryByLabelText('Notebook title')).toBeNull();
+    });
+
+    // Spec 05 story 3: "Create Notebook" names the Notebook "Untitled
+    // Notebook" and lands here, so the title it just made up is ready to type
+    // over. The Notebooks page says so in the navigation's state.
+    it('opens the title for editing when the navigation asks for it', async () => {
+      await render(RouterShell, {
+        routes: [{ path: 'notebooks/:notebookId', component: NotebookDetailPage }],
+        providers: pageProviders({
+          notebooks: { listNotebooks: vi.fn().mockResolvedValue([RESEARCH]) },
+          documents: { listDocuments: vi.fn().mockResolvedValue([]) },
+          inRouterShell: true,
+        }),
+      });
+
+      await TestBed.inject(Router).navigate(['/notebooks', NOTEBOOK_ID], {
+        state: { editTitle: true },
+      });
+
+      const box = (await screen.findByLabelText('Notebook title')) as HTMLInputElement;
+      expect(box.value).toBe('Research');
+      expect(document.activeElement).toBe(box);
     });
 
     it('commits the rename when the title box loses focus', async () => {
