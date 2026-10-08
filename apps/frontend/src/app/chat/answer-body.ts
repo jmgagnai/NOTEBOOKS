@@ -18,7 +18,7 @@ function escapeAttribute(value: string): string {
 
 /**
  * The prose of one answer — or of one streamed block of it — rendered as
- * Markdown with its source markers as Citation chips (NBK-52, spec 04
+ * Markdown with its Citation markers as chips (NBK-52, spec 04
  * "Markdown with Citations").
  *
  * Each marker that has a Citation is swapped for a link *before* parsing,

@@ -33,7 +33,7 @@ export function initials(email: string): string {
       justify-content: center;
       width: 28px;
       height: 28px;
-      border-radius: 50%;
+      border-radius: var(--app-corner-round);
       background: var(--mat-sys-primary);
       color: var(--mat-sys-on-primary);
       font: var(--mat-sys-label-medium);

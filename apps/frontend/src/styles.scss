@@ -62,6 +62,14 @@ $type-scale: (
     12px,
     16px,
   ),
+  // Not one of spec 01's four steps: the number in a Citation chip
+  // (spec 04, NBK-52), which has to fit an 18 px chip inside a line of
+  // body text. Material's own default size, with Fluent's weight and tracking.
+  label-small: (
+      600,
+      11px,
+      16px,
+    ),
 );
 
 html {
@@ -135,6 +143,10 @@ html {
   --mat-sys-corner-medium: 8px;
   --mat-sys-corner-large: 8px;
   --mat-sys-corner-extra-large: 12px;
+  // Fully round, for what spec 01 and spec 04 draw as circles (avatars) and
+  // round chips (Citation chips). `corner-full` cannot serve: it is pinned
+  // at 4 px above so that buttons stay square-ish.
+  --app-corner-round: 9999px;
 
   // Elevation off: surfaces are separated by 1 px borders. Only floating
   // overlays (menus, dialogs) keep a soft shadow at level 3 and above.
@@ -166,6 +178,9 @@ html {
   --app-outline-focus: #8a8a8a;
   --app-title-bar-height: 48px;
   --app-control-height: 32px;
+  // A glyph inside a 24 px avatar (the assistant's sparkle, NBK-44): the
+  // global 20 px icon would fill the circle edge to edge.
+  --app-icon-size-small: 14px;
   // The Copilot sparkle gradient. Spec 01 allows it in exactly one place —
   // the assistant's avatar in chat (NBK-44) — so it is a token here rather
   // than a colour a second component could quietly copy.

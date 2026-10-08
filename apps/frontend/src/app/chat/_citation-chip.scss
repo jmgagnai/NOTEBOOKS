@@ -10,11 +10,13 @@
   height: 18px;
   padding: 0 4px;
   box-sizing: border-box;
-  border-radius: 9px;
+  border-radius: var(--app-corner-round);
   background: var(--mat-sys-primary-container);
   color: var(--mat-sys-primary);
-  font-size: 11px;
-  font-weight: 600;
+  font-size: var(--mat-sys-label-small-size);
+  font-weight: var(--mat-sys-label-small-weight);
+  // 1, not the role's 16 px: the chip's height is fixed at 18 px and the
+  // number is centred in it by flex.
   line-height: 1;
   text-decoration: none;
   vertical-align: text-top;

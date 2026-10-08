@@ -37,7 +37,7 @@ export const STARTER_PROMPTS = [
             -->
             <button
               type="button"
-              class="thread-empty-state__prompt"
+              class="thread-empty-state__prompt app-button app-button--secondary"
               [disabled]="disabled()"
               (click)="ask.emit(prompt)"
             >

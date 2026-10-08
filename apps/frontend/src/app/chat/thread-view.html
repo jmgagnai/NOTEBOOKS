@@ -54,7 +54,7 @@
               }}</span>
               @if (message.role === 'assistant') {
                 <!--
-                  The answer as Markdown, each source marker a Citation chip
+                  The answer as Markdown, each Citation marker a chip
                   linking to the exact Document Version and chunk it cites
                   (NBK-12, NBK-52). A question stays plain text: it is what
                   was typed, not Markdown.
@@ -72,7 +72,7 @@
               @if (message.citations.length > 0) {
                 <!--
                   And the same Citations grouped by Document Version, so the
-                  sources are readable without hunting through the prose.
+                  cited Documents are readable without hunting through the prose.
                 -->
                 <app-citation-groups [notebookId]="notebookId()" [citations]="message.citations" />
               }

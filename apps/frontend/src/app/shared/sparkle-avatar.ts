@@ -25,15 +25,14 @@ import { MatIconModule } from '@angular/material/icon';
       justify-content: center;
       width: 24px;
       height: 24px;
-      border-radius: 50%;
+      border-radius: var(--app-corner-round);
       background: var(--app-copilot-gradient);
       color: var(--mat-sys-on-primary);
     }
 
     mat-icon {
-      width: 14px;
-      height: 14px;
-      font-size: 14px;
+      width: var(--app-icon-size-small);
+      height: var(--app-icon-size-small);
     }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,

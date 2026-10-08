@@ -34,25 +34,16 @@
     gap: 8px;
   }
 
+  // The shared secondary button (`.app-button--secondary`) draws the prompt;
+  // this only lets it span the column and wrap, since a prompt is a sentence
+  // and the Thread card can be narrow.
   &__prompt {
     width: 100%;
+    height: auto;
     min-height: var(--app-control-height);
-    padding: 6px 12px;
-    font: var(--mat-sys-body-medium);
+    padding-block: 6px;
+    justify-content: flex-start;
     text-align: left;
-    color: var(--mat-sys-on-surface);
-    background: var(--mat-sys-surface);
-    border: 1px solid var(--mat-sys-outline-variant);
-    border-radius: var(--mat-sys-corner-extra-small);
-    cursor: pointer;
-
-    &:hover:not(:disabled) {
-      background: var(--mat-sys-surface-container);
-    }
-
-    &:disabled {
-      color: var(--app-text-disabled);
-      cursor: default;
-    }
+    white-space: normal;
   }
 }

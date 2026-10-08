@@ -9,7 +9,6 @@ interface CitationGroup {
   documentVersionId: string;
   filename: string;
   versionNumber: number;
-  /** Ascending by marker. */
   citations: Citation[];
 }
 

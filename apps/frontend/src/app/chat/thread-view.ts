@@ -44,7 +44,7 @@ interface AnswerBlock {
  * complete — which is why it renders beside `messages` rather than inside it.
  *
  * Every answer also carries its Citations (NBK-12), rendered twice over: as a
- * chip on each source marker in the Markdown prose (`AnswerBody`), and as
+ * chip on each Citation marker in the Markdown prose (`AnswerBody`), and as
  * rows grouped by Document Version under it (`CitationGroups`, NBK-52). Both
  * links carry the Citation's pinned Document Version and chunk, so
  * following one opens the Version the answer was actually grounded in rather

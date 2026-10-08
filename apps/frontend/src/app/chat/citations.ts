@@ -1,8 +1,8 @@
 import { Citation } from './chat.store';
 
 /**
- * One piece of an answer's prose: either plain text, or a source marker that
- * resolved to a Citation.
+ * One piece of an answer's prose: either plain text, or a Citation marker
+ * that resolved to a Citation.
  *
  * Splitting the answer rather than rewriting it is what keeps the prose
  * exactly as the model wrote it — a marker the backend dropped (because it
@@ -19,7 +19,7 @@ export interface AnswerSegment {
 const MARKER = /\[(\d{1,3})\]/g;
 
 /**
- * Splits prose on its source markers, pairing each marker with the Citation
+ * Splits prose on its Citation markers, pairing each marker with the Citation
  * it refers to.
  *
  * A marker with no Citation stays a plain-text segment: the backend only
@@ -55,9 +55,9 @@ export function answerSegments(content: string, citations: Citation[]): AnswerSe
 }
 
 /**
- * What a reader sees a source called. Per NBK-12 the name derives from the
- * chunk's heading path — the Document says *which* file, the path says where
- * in it — so no label is stored or sent.
+ * What a reader hears a Citation called. Per NBK-12 the name derives from
+ * the chunk's heading path — the Document's filename says *which* Document,
+ * the path says where in it — so no label is stored or sent.
  */
 export function citationName(citation: Citation): string {
   return citation.headingPath.length > 0
@@ -65,9 +65,13 @@ export function citationName(citation: Citation): string {
     : citation.filename;
 }
 
-/** A marker chip's tooltip: which Document, where in it, and which Version. */
+/**
+ * A Citation chip's tooltip: which Document and which Version, exactly as
+ * spec 04 "Citation chips" words it. The heading path is left to the chip's
+ * accessible name (`citationName`), where it does not crowd a hover.
+ */
 export function citationTitle(citation: Citation): string {
-  return `${citationName(citation)} (v${citation.versionNumber})`;
+  return `${citation.filename} (v${citation.versionNumber})`;
 }
 
 /**

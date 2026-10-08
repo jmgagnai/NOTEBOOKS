@@ -79,6 +79,59 @@ async function tooltipOf(element: HTMLElement): Promise<string | undefined> {
   return document.getElementById(element.getAttribute('aria-describedby')!)?.textContent?.trim();
 }
 
+/** The question box, however it is currently rendered (enabled or not). */
+const questionBox = () => screen.getByLabelText('Ask a question') as HTMLTextAreaElement;
+
+/** The message row (`li`) a message's text sits in. */
+function rowOf(text: string): HTMLElement {
+  return screen.getByText(text).closest('li')!;
+}
+
+/** The scrolling message list a message's text sits in. */
+const listOf = (text: string) => screen.getByText(text).closest('ol')!;
+
+/**
+ * A `sendChatMessage` whose ask stays in flight until `settle` is called
+ * with the recorded exchange, so a test can look at the panel mid-answer.
+ */
+function heldSend() {
+  let settle!: (exchange: unknown) => void;
+  const sendChatMessage = vi.fn().mockReturnValue(
+    new Promise((resolve) => {
+      settle = resolve;
+    }),
+  );
+  return { sendChatMessage, settle: (exchange: unknown) => settle(exchange) };
+}
+
+// A streamed answer's App Events (NBK-11), as the notebook topic carries
+// them for thread-1.
+const STREAM_ID = '77777777-7777-7777-7777-777777777777';
+
+function appEvent(type: string, data: Record<string, unknown>): AppEvent {
+  return {
+    id: `event-${type}-${String(data['index'] ?? 'end')}`,
+    type,
+    topic: `notebook:${NOTEBOOK_ID}`,
+    occurredAt: '2026-01-01T00:00:02.000Z',
+    data: { notebookId: NOTEBOOK_ID, threadId: 'thread-1', streamId: STREAM_ID, ...data },
+  };
+}
+
+const chunk = (index: number, text: string, overrides: Record<string, unknown> = {}): AppEvent =>
+  appEvent('chat-answer-chunk', { index, text, ...overrides });
+
+const completed = (data: Record<string, unknown> = {}): AppEvent =>
+  appEvent('chat-answer-completed', {
+    messageId: 'a1',
+    questionId: 'q1',
+    citations: [],
+    ...data,
+  });
+
+const failed = (data: Record<string, unknown> = {}): AppEvent =>
+  appEvent('chat-answer-failed', { reason: 'the provider hung up', ...data });
+
 /**
  * The chat panel as the Notebook page composes it: the Thread navigator and
  * the Thread view side by side, sharing the root-provided ChatStore.
@@ -156,6 +209,24 @@ describe('Chat panel (ThreadNavigator + ThreadView)', () => {
         appEvents.provider,
       ],
     });
+  }
+
+  /**
+   * Renders the panel on the one Thread, "Revenue questions", holding
+   * `messages`, and opens it from the navigator. `overrides` replaces any
+   * ChatService call, including the two this sets up.
+   */
+  async function openRevenueQuestions(
+    messages: unknown[] = [],
+    overrides: Partial<Record<keyof ChatService, unknown>> = {},
+  ) {
+    const rendered = await renderPanel({
+      listChatThreads: vi.fn().mockResolvedValue([thread()]) as never,
+      listChatMessages: vi.fn().mockResolvedValue(messages) as never,
+      ...(overrides as Partial<ChatService>),
+    });
+    fireEvent.click(await screen.findByRole('button', { name: 'Open Revenue questions' }));
+    return rendered;
   }
 
   it('shows an empty state when the Notebook has no Chat Threads', async () => {
@@ -386,17 +457,6 @@ describe('Chat panel (ThreadNavigator + ThreadView)', () => {
     };
   }
 
-  async function openThreadWithAnswer(messages: unknown[]) {
-    const listChatThreads = vi.fn().mockResolvedValue([thread()]);
-    const listChatMessages = vi.fn().mockResolvedValue(messages);
-    const rendered = await renderPanel({
-      listChatThreads: listChatThreads as never,
-      listChatMessages: listChatMessages as never,
-    });
-    fireEvent.click(await screen.findByRole('button', { name: 'Open Revenue questions' }));
-    return rendered;
-  }
-
   // NBK-12: "clicking a Citation in the Angular UI opens that exact Document
   // Version, scrolled to that chunk's location". What this panel is
   // responsible for is the *link*: it has to carry the pinned Version and
@@ -404,7 +464,7 @@ describe('Chat panel (ThreadNavigator + ThreadView)', () => {
   // latest — the exact failure GLOSSARY.md's Citation definition rules out.
   describe('Citations', () => {
     it("links each of an answer's Citations to the exact Document Version and chunk it cites", async () => {
-      await openThreadWithAnswer([
+      await openRevenueQuestions([
         message({
           id: 'a1',
           role: 'assistant',
@@ -453,7 +513,7 @@ describe('Chat panel (ThreadNavigator + ThreadView)', () => {
     });
 
     it('turns each source marker in the prose into a link to the Chunk it cites', async () => {
-      await openThreadWithAnswer([
+      await openRevenueQuestions([
         message({
           id: 'a1',
           role: 'assistant',
@@ -477,7 +537,7 @@ describe('Chat panel (ThreadNavigator + ThreadView)', () => {
     });
 
     it('leaves a marker the answer has no Citation for as plain text', async () => {
-      await openThreadWithAnswer([
+      await openRevenueQuestions([
         message({
           id: 'a1',
           role: 'assistant',
@@ -496,7 +556,7 @@ describe('Chat panel (ThreadNavigator + ThreadView)', () => {
     });
 
     it('shows no sources for a question, or for an answer that cited nothing', async () => {
-      await openThreadWithAnswer([
+      await openRevenueQuestions([
         message({ id: 'q1', role: 'user', content: 'How long are lead times?' }),
         message({
           id: 'a1',
@@ -516,35 +576,6 @@ describe('Chat panel (ThreadNavigator + ThreadView)', () => {
   // same generic SSE stream a Document's status changes arrive on (NBK-6),
   // because per ADR-0004 that channel was built generic for exactly this.
   describe('a streamed answer (NBK-11)', () => {
-    const STREAM_ID = '77777777-7777-7777-7777-777777777777';
-
-    function appEvent(type: string, data: Record<string, unknown>): AppEvent {
-      return {
-        id: `event-${type}-${String(data['index'] ?? 'end')}`,
-        type,
-        topic: `notebook:${NOTEBOOK_ID}`,
-        occurredAt: '2026-01-01T00:00:02.000Z',
-        data: { notebookId: NOTEBOOK_ID, threadId: 'thread-1', streamId: STREAM_ID, ...data },
-      };
-    }
-
-    const chunk = (
-      index: number,
-      text: string,
-      overrides: Record<string, unknown> = {},
-    ): AppEvent => appEvent('chat-answer-chunk', { index, text, ...overrides });
-
-    const completed = (data: Record<string, unknown> = {}): AppEvent =>
-      appEvent('chat-answer-completed', {
-        messageId: 'a1',
-        questionId: 'q1',
-        citations: [],
-        ...data,
-      });
-
-    const failed = (data: Record<string, unknown> = {}): AppEvent =>
-      appEvent('chat-answer-failed', { reason: 'the provider hung up', ...data });
-
     /**
      * Opens a Thread with an ask in flight, handing back the resolver for the
      * `POST .../messages` call.
@@ -554,30 +585,13 @@ describe('Chat panel (ThreadNavigator + ThreadView)', () => {
      * so every assertion about progressive rendering has to be made while
      * the request that produces the answer is still outstanding.
      */
-    async function askWithoutAnswering(overrides: Partial<ChatService> = {}) {
-      let settle!: (exchange: unknown) => void;
-      const sendChatMessage = vi.fn().mockReturnValue(
-        new Promise((resolve) => {
-          settle = resolve;
-        }),
-      );
-      const listChatMessages = vi.fn().mockResolvedValue([]);
-
-      await renderPanel({
-        listChatThreads: vi.fn().mockResolvedValue([thread()]) as never,
-        listChatMessages: listChatMessages as never,
-        sendChatMessage: sendChatMessage as never,
-        ...overrides,
-      });
-
-      fireEvent.click(await screen.findByRole('button', { name: 'Open Revenue questions' }));
+    async function askWithoutAnswering() {
+      const { sendChatMessage, settle } = heldSend();
+      await openRevenueQuestions([], { sendChatMessage });
       await screen.findByText('Ask anything about the Documents in this Notebook');
-      fireEvent.input(screen.getByLabelText('Ask a question'), {
-        target: { value: 'What was revenue in Q3?' },
-      });
+      fireEvent.input(questionBox(), { target: { value: 'What was revenue in Q3?' } });
       fireEvent.click(screen.getByRole('button', { name: 'Send' }));
-
-      return { settle, listChatMessages };
+      return { settle };
     }
 
     it('renders each chunk as it arrives, and replaces the preview with the recorded answer', async () => {
@@ -670,11 +684,7 @@ describe('Chat panel (ThreadNavigator + ThreadView)', () => {
           message({ id: 'a1', role: 'assistant', content: 'Revenue reached 12.4M in Q3.' }),
         ]);
 
-      await renderPanel({
-        listChatThreads: vi.fn().mockResolvedValue([thread()]) as never,
-        listChatMessages: listChatMessages as never,
-      });
-      fireEvent.click(await screen.findByRole('button', { name: 'Open Revenue questions' }));
+      await openRevenueQuestions([], { listChatMessages });
       await screen.findByText('Ask anything about the Documents in this Notebook');
 
       // The first chunk this client sees is the third one of the answer.
@@ -704,30 +714,23 @@ describe('Chat panel (ThreadNavigator + ThreadView)', () => {
   // page's prose. The tests check the parts a reader relies on to tell the
   // two apart and to know who asked — never the colours or alignment.
   describe('NBK-44: message rendering', () => {
+    /** Opens one question and its answer, both asked by Jane Doe. */
     async function openExchange() {
-      await renderPanel({
-        listChatThreads: vi.fn().mockResolvedValue([thread()]) as never,
-        listChatMessages: vi.fn().mockResolvedValue([
-          message({
-            id: 'q1',
-            role: 'user',
-            content: 'What was revenue in Q3?',
-            askedBy: participant('jane.doe@example.com'),
-          }),
-          message({
-            id: 'a1',
-            role: 'assistant',
-            content: 'Revenue in Q3 was 12.4M.',
-            askedBy: participant('jane.doe@example.com'),
-          }),
-        ]) as never,
-      });
-      fireEvent.click(await screen.findByRole('button', { name: 'Open Revenue questions' }));
+      await openRevenueQuestions([
+        message({
+          id: 'q1',
+          role: 'user',
+          content: 'What was revenue in Q3?',
+          askedBy: participant('jane.doe@example.com'),
+        }),
+        message({
+          id: 'a1',
+          role: 'assistant',
+          content: 'Revenue in Q3 was 12.4M.',
+          askedBy: participant('jane.doe@example.com'),
+        }),
+      ]);
       await screen.findByText('Revenue in Q3 was 12.4M.');
-    }
-
-    function rowOf(text: string): HTMLElement {
-      return screen.getByText(text).closest('li')!;
     }
 
     it("shows a question beside the asker's initials avatar and an answer beside the sparkle avatar", async () => {
@@ -852,9 +855,6 @@ describe('Chat panel (ThreadNavigator + ThreadView)', () => {
   describe('NBK-45: composer', () => {
     const ASK = 'What was revenue in Q3?';
 
-    /** The question box, however it is currently rendered (enabled or not). */
-    const questionBox = () => screen.getByLabelText('Ask a question') as HTMLTextAreaElement;
-
     /**
      * Opens the Thread with no messages and types a question, so each test
      * below starts from a draft ready to send. Waits on the box itself
@@ -865,13 +865,7 @@ describe('Chat panel (ThreadNavigator + ThreadView)', () => {
         question: message({ id: 'q1', role: 'user', content: ASK }),
         answer: message({ id: 'a1', role: 'assistant', content: 'Revenue in Q3 was 12.4M.' }),
       });
-      await renderPanel({
-        listChatThreads: vi.fn().mockResolvedValue([thread()]) as never,
-        listChatMessages: vi.fn().mockResolvedValue([]) as never,
-        sendChatMessage: sendChatMessage as never,
-        ...overrides,
-      });
-      fireEvent.click(await screen.findByRole('button', { name: 'Open Revenue questions' }));
+      await openRevenueQuestions([], { sendChatMessage, ...overrides });
       await waitFor(() => expect(questionBox().disabled).toBe(false));
       fireEvent.input(questionBox(), { target: { value: ASK } });
       return { sendChatMessage };
@@ -989,24 +983,8 @@ describe('Chat panel (ThreadNavigator + ThreadView)', () => {
       HTMLElement.prototype.scrollIntoView = originals.scrollIntoView;
     });
 
-    /** The scrolling message list a message's text sits in. */
-    const listOf = (text: string) => screen.getByText(text).closest('ol')!;
-
     /** Every element a scroll call was made on, in call order. */
     const scrolled = (spy: ReturnType<typeof vi.fn>) => spy.mock.contexts as HTMLElement[];
-
-    /**
-     * A chunk of the answer streaming into thread-1. Copied from the NBK-11
-     * block's `chunk` so this ticket merges cleanly beside the other chat
-     * tickets (CODING_STANDARDS.md); the merge that joins them hoists it.
-     */
-    const answerChunk = (index: number, text: string): AppEvent => ({
-      id: `event-chunk-${index}`,
-      type: 'chat-answer-chunk',
-      topic: `notebook:${NOTEBOOK_ID}`,
-      occurredAt: '2026-01-01T00:00:02.000Z',
-      data: { notebookId: NOTEBOOK_ID, threadId: 'thread-1', streamId: 'stream-1', index, text },
-    });
 
     /**
      * Opens thread-1 on one earlier exchange and sends a question whose ask
@@ -1014,22 +992,15 @@ describe('Chat panel (ThreadNavigator + ThreadView)', () => {
      * opening the Thread are cleared, so each test sees only what follows.
      */
     async function askInFlight() {
-      let settle!: (exchange: unknown) => void;
-      await renderPanel({
-        listChatThreads: vi.fn().mockResolvedValue([thread()]) as never,
-        listChatMessages: vi
-          .fn()
-          .mockResolvedValue([
-            message({ id: 'q0', content: 'What was revenue in Q2?' }),
-            message({ id: 'a0', role: 'assistant', content: 'Revenue in Q2 was 11.9M.' }),
-          ]) as never,
-        sendChatMessage: vi.fn().mockReturnValue(
-          new Promise((resolve) => {
-            settle = resolve;
-          }),
-        ) as never,
-      });
-      const box = screen.getByLabelText('Ask a question') as HTMLTextAreaElement;
+      const { sendChatMessage, settle } = heldSend();
+      await openRevenueQuestions(
+        [
+          message({ id: 'q0', content: 'What was revenue in Q2?' }),
+          message({ id: 'a0', role: 'assistant', content: 'Revenue in Q2 was 11.9M.' }),
+        ],
+        { sendChatMessage },
+      );
+      const box = questionBox();
       await waitFor(() => expect(box.disabled).toBe(false));
       await waitFor(() => expect(scrollTo).toHaveBeenCalled());
       scrollTo.mockClear();
@@ -1109,13 +1080,13 @@ describe('Chat panel (ThreadNavigator + ThreadView)', () => {
     it("brings the answer's start to the top on its first block, and then leaves the view alone", async () => {
       const { settle } = await askInFlight();
 
-      appEvents.events.next(answerChunk(0, '## Revenue'));
+      appEvents.events.next(chunk(0, '## Revenue'));
 
       const answer = await screen.findByTestId('chat-streaming-answer');
       await waitFor(() => expect(scrolled(scrollIntoView)).toEqual([answer]));
       expect(scrollIntoView).toHaveBeenCalledWith(expect.objectContaining({ block: 'start' }));
 
-      appEvents.events.next(answerChunk(1, 'Revenue in Q3 was 12.4M.'));
+      appEvents.events.next(chunk(1, 'Revenue in Q3 was 12.4M.'));
       await screen.findByText('Revenue in Q3 was 12.4M.');
       settle(q3Exchange());
       await waitFor(() => expect(screen.queryByTestId('chat-streaming-answer')).toBeNull());
@@ -1222,7 +1193,7 @@ describe('Chat panel (ThreadNavigator + ThreadView)', () => {
       expect(screen.queryByText('Open a Chat Thread, or start one, to ask a question.')).toBeNull();
     });
 
-    it('gives way to the conversation once the open Thread has messages', async () => {
+    it('gives way to the Chat Thread once the open Thread has messages', async () => {
       await renderPanel({
         listChatThreads: vi.fn().mockResolvedValue([thread()]) as never,
         listChatMessages: vi.fn().mockResolvedValue([message()]) as never,
@@ -1318,7 +1289,7 @@ describe('Chat panel (ThreadNavigator + ThreadView)', () => {
     ].join('\n');
 
     it('renders an answer as Markdown, with a marker in a table cell still a Citation link', async () => {
-      await openThreadWithAnswer([
+      await openRevenueQuestions([
         message({ id: 'a1', role: 'assistant', content: TABLE_ANSWER, citations: [citation()] }),
       ]);
 
@@ -1333,7 +1304,7 @@ describe('Chat panel (ThreadNavigator + ThreadView)', () => {
     // The rendered marker is a plain `<a href>` from `[innerHTML]`, not a
     // `routerLink`: left to the browser, following it would reload the app.
     it('follows a chip in the rendered Markdown through the router', async () => {
-      await openThreadWithAnswer([
+      await openRevenueQuestions([
         message({ id: 'a1', role: 'assistant', content: TABLE_ANSWER, citations: [citation()] }),
       ]);
       const router = TestBed.inject(Router);
@@ -1351,6 +1322,24 @@ describe('Chat panel (ThreadNavigator + ThreadView)', () => {
         from: '120',
         to: '167',
       });
+    });
+
+    // Spec 04 "Citation chips": the tooltip says which Document and which
+    // Version, nothing more; the heading path stays in the group chip's
+    // accessible name, where a screen reader still gets it.
+    it('titles every chip "<filename> (v<n>)", in the prose and in the groups', async () => {
+      await openRevenueQuestions([
+        message({ id: 'a1', role: 'assistant', content: TABLE_ANSWER, citations: [citation()] }),
+      ]);
+
+      const cell = await screen.findByRole('cell', { name: /14/ });
+      const inProse = within(cell).getByRole('link', { name: 'Citation 1' });
+      const inGroup = screen.getByTestId('chat-citation');
+      expect(inProse.getAttribute('title')).toBe('logistics.md (v1)');
+      expect(inGroup.getAttribute('title')).toBe('logistics.md (v1)');
+      expect(inGroup.getAttribute('aria-label')).toBe(
+        'Citation 1: logistics.md — FY26 > Lead times',
+      );
     });
 
     // Story 12: four Citations into one Document are one line, not four.
@@ -1371,7 +1360,7 @@ describe('Chat panel (ThreadNavigator + ThreadView)', () => {
       within(screen.getByRole('list', { name: 'Citations' })).getAllByRole('listitem');
 
     it('groups the Citations into one Document Version on one row, chips ascending', async () => {
-      await openThreadWithAnswer([
+      await openRevenueQuestions([
         message({
           id: 'a1',
           role: 'assistant',
@@ -1401,7 +1390,7 @@ describe('Chat panel (ThreadNavigator + ThreadView)', () => {
     // Story 13: a Citation into a superseded Version is its own row, so the
     // reader sees the answer was grounded in the older text.
     it('gives each cited Version of a Document its own row, named by its number', async () => {
-      await openThreadWithAnswer([
+      await openRevenueQuestions([
         message({
           id: 'a1',
           role: 'assistant',
