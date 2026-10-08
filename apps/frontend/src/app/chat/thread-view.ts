@@ -3,6 +3,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { RouterLink } from '@angular/router';
 import { Citation, ChatMessage, ChatStore, ChatThread } from './chat.store';
+import { Composer } from './composer';
 
 /** One rendered block of a streamed answer: a chunk, split on its markers. */
 interface AnswerBlock {
@@ -32,7 +33,7 @@ const MARKER = /\[(\d{1,3})\]/g;
 /**
  * The open Chat Thread of a Notebook (NBK-10, split out in NBK-34): its
  * title and rename box, its messages, the answer being streamed into it,
- * and the composer.
+ * and, through `Composer` (NBK-45), the question box.
  *
  * Every message names who asked it (GLOSSARY.md): a Thread is shared, so a
  * Chat Thread is unreadable without the attribution.
@@ -59,7 +60,7 @@ const MARKER = /\[(\d{1,3})\]/g;
 @Component({
   selector: 'app-thread-view',
   standalone: true,
-  imports: [MatButtonModule, MatProgressSpinnerModule, RouterLink],
+  imports: [Composer, MatButtonModule, MatProgressSpinnerModule, RouterLink],
   templateUrl: './thread-view.html',
   styleUrl: './thread-view.scss',
 })
@@ -87,15 +88,6 @@ export class ThreadView {
     source: () => this.store.activeThreadId(),
     computation: (id) =>
       untracked(() => this.store.threads().find((t) => t.id === id)?.title ?? ''),
-  });
-
-  /**
-   * The question being typed. Survives a failed send so asking again works,
-   * and is dropped when another Thread is opened: it was asked of this one.
-   */
-  protected readonly draft = linkedSignal<string | null, string>({
-    source: () => this.store.activeThreadId(),
-    computation: () => '',
   });
 
   /**
@@ -202,16 +194,5 @@ export class ThreadView {
     const title = this.renameTitle().trim();
     if (!thread || !title || title === thread.title) return;
     void this.store.renameThread(this.notebookId(), thread.id, title);
-  }
-
-  protected async send(): Promise<void> {
-    const thread = this.activeThread();
-    const content = this.draft().trim();
-    if (!thread || !content || this.store.sending()) return;
-    // Cleared only on success: a failed ask records nothing on the server,
-    // so re-sending is the retry and the text has to still be here.
-    if (await this.store.sendMessage(this.notebookId(), thread.id, content)) {
-      this.draft.set('');
-    }
   }
 }

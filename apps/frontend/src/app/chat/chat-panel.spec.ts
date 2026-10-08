@@ -6,6 +6,7 @@ import { ThreadNavigator } from './thread-navigator';
 import { ThreadView } from './thread-view';
 import { ChatService } from '../api/services/chat.service';
 import { AppEvent, AppEventsService } from '../events/app-events.service';
+import { provideAppIcons } from '../shared/fluent-icons';
 
 const NOTEBOOK_ID = '11111111-1111-1111-1111-111111111111';
 const DOCUMENT_ID = '22222222-2222-2222-2222-222222222222';
@@ -129,6 +130,7 @@ describe('Chat panel (ThreadNavigator + ThreadView)', () => {
       // client, never Angular's own services).
       providers: [
         provideRouter([]),
+        provideAppIcons(),
         { provide: ChatService, useValue: chatService },
         appEvents.provider,
       ],
@@ -658,6 +660,123 @@ describe('Chat panel (ThreadNavigator + ThreadView)', () => {
       await waitFor(() => {
         expect(screen.queryByText('An answer in some other Thread.')).toBeNull();
       });
+    });
+  });
+
+  // NBK-45 (spec 04 "Composer" / "Answering state"): the question box as a
+  // chat composer — Enter sends, the box closes while the backend answers
+  // and reopens focused, and an error is a dismissible row above it.
+  describe('NBK-45: composer', () => {
+    const ASK = 'What was revenue in Q3?';
+
+    /** The question box, however it is currently rendered (enabled or not). */
+    const questionBox = () => screen.getByLabelText('Ask a question') as HTMLTextAreaElement;
+
+    /**
+     * Opens the Thread with no messages and types a question, so each test
+     * below starts from a draft ready to send. Waits on the box itself
+     * rather than on the empty-state copy, which another ticket rewrites.
+     */
+    async function draftAQuestion(overrides: Partial<ChatService> = {}) {
+      const sendChatMessage = vi.fn().mockResolvedValue({
+        question: message({ id: 'q1', role: 'user', content: ASK }),
+        answer: message({ id: 'a1', role: 'assistant', content: 'Revenue in Q3 was 12.4M.' }),
+      });
+      await renderPanel({
+        listChatThreads: vi.fn().mockResolvedValue([thread()]) as never,
+        listChatMessages: vi.fn().mockResolvedValue([]) as never,
+        sendChatMessage: sendChatMessage as never,
+        ...overrides,
+      });
+      fireEvent.click(await screen.findByRole('button', { name: 'Open Revenue questions' }));
+      await waitFor(() => expect(questionBox().disabled).toBe(false));
+      fireEvent.input(questionBox(), { target: { value: ASK } });
+      return { sendChatMessage };
+    }
+
+    it('cannot send an empty draft', async () => {
+      await draftAQuestion();
+      const send = () => screen.getByRole('button', { name: 'Send' }) as HTMLButtonElement;
+      expect(send().disabled).toBe(false);
+
+      fireEvent.input(questionBox(), { target: { value: '   ' } });
+
+      // Whitespace is nothing to ask: the same rule `send` applies, shown
+      // on the button rather than discovered on click.
+      expect(send().disabled).toBe(true);
+    });
+
+    it('sends on Enter, while Shift+Enter is left to add a line', async () => {
+      const { sendChatMessage } = await draftAQuestion();
+
+      // Not prevented, so the browser goes on to insert the newline.
+      expect(fireEvent.keyDown(questionBox(), { key: 'Enter', shiftKey: true })).toBe(true);
+      expect(sendChatMessage).not.toHaveBeenCalled();
+
+      expect(fireEvent.keyDown(questionBox(), { key: 'Enter' })).toBe(false);
+      expect(sendChatMessage).toHaveBeenCalledWith({
+        notebookId: NOTEBOOK_ID,
+        threadId: 'thread-1',
+        body: { content: ASK },
+      });
+    });
+
+    // Story 15: the box is closed from the send until the recorded answer is
+    // back (`sending` in the store), so a second question cannot be asked
+    // into an answer still being written — and it reopens focused, so the
+    // next one can be typed straight away.
+    it('closes the box while answering, then reopens it focused and empty', async () => {
+      let settle!: (exchange: unknown) => void;
+      const sendChatMessage = vi.fn().mockReturnValue(
+        new Promise((resolve) => {
+          settle = resolve;
+        }),
+      );
+      await draftAQuestion({ sendChatMessage: sendChatMessage as never });
+
+      fireEvent.keyDown(questionBox(), { key: 'Enter' });
+
+      expect(await screen.findByRole('status', { name: 'Answering' })).toBeTruthy();
+      expect(questionBox().disabled).toBe(true);
+      expect(screen.queryByRole('button', { name: 'Send' })).toBeNull();
+      expect(screen.getByText('Answering… the box reopens when the answer is in')).toBeTruthy();
+      // Enter while closed is nothing: no second ask goes out.
+      fireEvent.keyDown(questionBox(), { key: 'Enter' });
+      expect(sendChatMessage).toHaveBeenCalledTimes(1);
+
+      settle({
+        question: message({ id: 'q1', role: 'user', content: ASK }),
+        answer: message({ id: 'a1', role: 'assistant', content: 'Revenue in Q3 was 12.4M.' }),
+      });
+
+      await waitFor(() => expect(questionBox().disabled).toBe(false));
+      expect(screen.queryByRole('status', { name: 'Answering' })).toBeNull();
+      expect(screen.getByRole('button', { name: 'Send' })).toBeTruthy();
+      expect(screen.getByText('Enter to send · Shift+Enter for a new line')).toBeTruthy();
+      expect(questionBox().value).toBe('');
+      await waitFor(() => expect(document.activeElement).toBe(questionBox()));
+    });
+
+    // Story 23: the 503 when the LLM is unavailable is the case to design
+    // for — it is not the user's fault, and it must not take the draft.
+    it('shows a failed ask as an error row above the box, dismissible, with the draft kept', async () => {
+      await draftAQuestion({
+        sendChatMessage: vi
+          .fn()
+          .mockRejectedValue({ error: { message: 'The language model is unavailable.' } }) as never,
+      });
+
+      fireEvent.keyDown(questionBox(), { key: 'Enter' });
+
+      const row = await screen.findByRole('alert');
+      expect(within(row).getByText('The language model is unavailable.')).toBeTruthy();
+      expect(questionBox().disabled).toBe(false);
+      expect(questionBox().value).toBe(ASK);
+
+      fireEvent.click(within(row).getByRole('button', { name: 'Dismiss' }));
+
+      await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+      expect(questionBox().value).toBe(ASK);
     });
   });
 });

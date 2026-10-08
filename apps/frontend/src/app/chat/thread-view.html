@@ -157,32 +157,10 @@
         }
       </ol>
     }
-
-    <div class="thread-view__composer">
-      <label class="thread-view__field">
-        <span class="thread-view__field-label">Ask a question</span>
-        <textarea
-          aria-label="Ask a question"
-          rows="3"
-          [value]="draft()"
-          (input)="draft.set($any($event.target).value)"
-        ></textarea>
-      </label>
-      <button mat-button type="button" [disabled]="store.sending()" (click)="send()">Send</button>
-      @if (store.sending() && streamingBlocks().length === 0) {
-        <!--
-          Only until the first chunk lands: once the answer is visibly
-          arriving, the answer itself is the progress indicator, and a
-          spinner next to it would say nothing.
-        -->
-        <mat-progress-spinner mode="indeterminate" diameter="24" />
-      }
-    </div>
   } @else {
     <p class="thread-view__empty">Open a Chat Thread, or start one, to ask a question.</p>
   }
 
-  @if (store.error(); as error) {
-    <p class="thread-view__error">{{ error }}</p>
-  }
+  <!-- Pinned under the messages whatever is open (NBK-45): it also carries the error row. -->
+  <app-composer [notebookId]="notebookId()" />
 </div>

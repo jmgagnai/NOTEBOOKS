@@ -34,6 +34,7 @@ form fields. Material hides the floating label at this density only for the
 | Text / secondary text | `--mat-sys-on-surface` / `--mat-sys-on-surface-variant` | `#242424` / `#616161` |
 | Disabled text | `--app-text-disabled` | `#BDBDBD` |
 | Border / strong border | `--mat-sys-outline-variant` / `--mat-sys-outline` | `#E0E0E0` / `#D1D1D1` |
+| Chat composer's focused border (in place of a focus ring) | `--app-outline-focus` | `#8A8A8A` |
 | Error | `--mat-sys-error`, `--mat-sys-error-container` / `--mat-sys-on-error-container` | `#C50F1F`, `#FDE7E9` / `#C50F1F` |
 | Success (`ready`) | `--mat-sys-tertiary-container` / `--mat-sys-on-tertiary-container` (`--mat-sys-tertiary`) | `#E7F5E7` / `#0E700E` |
 | Dark overlays (tooltip, snack bar) | `--mat-sys-inverse-surface` / `--mat-sys-inverse-on-surface` / `--mat-sys-inverse-primary` | `#242424` / `#FFFFFF` / `#8AB9EA` |
@@ -102,7 +103,8 @@ invisible over the box it draws, so there the ring goes on
 `.mdc-checkbox__background` (through `:has(:focus-visible)`) instead. The
 chat composer (spec 04) is the intended
 exception and opts out with its own `.<class>:focus-visible { outline: none }`
-rule, darkening its border instead.
+rule, darkening its border to `--app-outline-focus` through `:focus-within`
+instead (`chat/composer.scss`, NBK-45).
 
 ## Button variants
 
