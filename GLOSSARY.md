@@ -26,6 +26,10 @@ _Avoid_: source, reference.
 A named sequence of messages asked against a Notebook's Documents, started by one user (its author) but visible to every user who opens the Notebook, the same as Documents. Every message in it records which user asked it — this is attribution, not an access restriction: any user may read or continue any Chat Thread regardless of who started it or who asked a given message. Only its author may delete it.
 _Avoid_: conversation, session.
 
+**Exchange**:
+A question in a Chat Thread together with the answer it produced, recorded as one. The unit Chat Thread search returns.
+_Avoid_: turn, round, Q&A.
+
 **Administrator**:
 A user named in the backend's configuration who may do what the app offers no one in its UI, such as restoring a deleted Chat Thread. Otherwise a user like any other.
 _Avoid_: admin user, superuser, owner.
