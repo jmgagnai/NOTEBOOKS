@@ -1794,9 +1794,10 @@ describe('NotebookDetailPage', () => {
       });
 
       expect(await screen.findByText('quarterly.pdf')).toBeTruthy();
-      // The Abstract is no longer on the row (NBK-42).
+      // The Abstract is no longer on the row (NBK-42); it is the row's
+      // popover and description now (NBK-47), which live outside the list.
       expect(
-        screen.queryByText(
+        within(screen.getByRole('list', { name: 'Documents' })).queryByText(
           'A quarterly report covering revenue growth and supply-chain risk across three regions.',
         ),
       ).toBeNull();
@@ -2239,6 +2240,115 @@ describe('NotebookDetailPage', () => {
 
       expect(shownFilenames()).toEqual(['budget.xlsx']);
       expect(listDocuments).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // NBK-47 (spec 03 "Abstract popover"): the Abstract NBK-42 took off the
+  // row comes back one gesture away, on hover of the filename or keyboard
+  // focus of the row, without the row growing.
+  describe('NBK-47: Abstract popover', () => {
+    const ABSTRACT = 'A quarterly report covering revenue growth across three regions.';
+
+    /** The row's link, the one element of a row that takes the focus. */
+    function rowLink(filename: string) {
+      return within(documentRow(filename)).getByRole('link');
+    }
+
+    /** What the popover on screen says, or null when none is showing. */
+    function popoverText() {
+      return document.querySelector('mat-tooltip-component')?.textContent?.trim() ?? null;
+    }
+
+    /** Focuses `link` the way Tab does, so the focus counts as the keyboard's. */
+    function tabTo(link: HTMLElement) {
+      fireEvent.keyDown(document.body, { key: 'Tab' });
+      link.focus();
+    }
+
+    it('shows the Abstract when the row takes keyboard focus, and leaves the focus on the row', async () => {
+      await renderWithUpload(vi.fn(), [
+        documentFor('report.txt', { status: 'ready', abstract: ABSTRACT }),
+      ]);
+
+      const link = rowLink('report.txt');
+      tabTo(link);
+
+      await waitFor(() => expect(popoverText()).toBe(ABSTRACT));
+      expect(document.activeElement).toBe(link);
+    });
+
+    it('hides the popover when the row loses the focus', async () => {
+      await renderWithUpload(vi.fn(), [
+        documentFor('report.txt', { status: 'ready', abstract: ABSTRACT }),
+      ]);
+      const link = rowLink('report.txt');
+      tabTo(link);
+      await waitFor(() => expect(popoverText()).toBe(ABSTRACT));
+
+      link.blur();
+
+      await waitFor(() => expect(popoverText()).toBeNull());
+    });
+
+    it('hides the popover on Escape, leaving the focus on the row', async () => {
+      await renderWithUpload(vi.fn(), [
+        documentFor('report.txt', { status: 'ready', abstract: ABSTRACT }),
+      ]);
+      const link = rowLink('report.txt');
+      tabTo(link);
+      await waitFor(() => expect(popoverText()).toBe(ABSTRACT));
+      // Material counts the popover as open one task after it is drawn, and
+      // only an open one answers Escape; no person presses it sooner.
+      await new Promise((resolve) => setTimeout(resolve));
+
+      fireEvent.keyDown(link, { key: 'Escape', keyCode: 27 });
+
+      await waitFor(() => expect(popoverText()).toBeNull());
+      expect(document.activeElement).toBe(link);
+    });
+
+    // `mouseenter` does not bubble: a pointer reaching the filename enters
+    // the row's link around it too, which is where the event is sent.
+    it('shows the Abstract while the pointer is on the row, and hides it when it leaves', async () => {
+      await renderWithUpload(vi.fn(), [
+        documentFor('report.txt', { status: 'ready', abstract: ABSTRACT }),
+      ]);
+      const link = rowLink('report.txt');
+
+      fireEvent.mouseEnter(link);
+      await waitFor(() => expect(popoverText()).toBe(ABSTRACT));
+
+      fireEvent.mouseLeave(link);
+      await waitFor(() => expect(popoverText()).toBeNull());
+    });
+
+    it('says the Abstract is not generated yet when the Document has none', async () => {
+      await renderWithUpload(vi.fn(), [documentFor('draft.txt', { abstract: null })]);
+
+      tabTo(rowLink('draft.txt'));
+
+      await waitFor(() => expect(popoverText()).toBe('Abstract not generated yet.'));
+    });
+
+    // A screen reader gets the Abstract with the row, without any hover.
+    it("makes the Abstract the row's accessible description", async () => {
+      await renderWithUpload(vi.fn(), [
+        documentFor('report.txt', { status: 'ready', abstract: ABSTRACT }),
+      ]);
+
+      const link = rowLink('report.txt');
+      await waitFor(() => expect(link.getAttribute('aria-describedby')).toBeTruthy());
+      expect(document.getElementById(link.getAttribute('aria-describedby')!)?.textContent).toBe(
+        ABSTRACT,
+      );
+    });
+
+    it('keeps each row to its filename and secondary line', async () => {
+      await renderWithUpload(vi.fn(), [
+        documentFor('report.txt', { status: 'ready', abstract: ABSTRACT }),
+      ]);
+
+      expect(documentRow('report.txt').textContent).not.toContain(ABSTRACT);
     });
   });
 });

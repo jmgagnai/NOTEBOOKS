@@ -120,3 +120,18 @@
     );
   }
 }
+
+// The Abstract popover (NBK-47). Material draws tooltips in an overlay at the
+// end of <body>, outside this component's emulated encapsulation, so these
+// rules reach it through `::ng-deep`; the `document-abstract` class keeps
+// them off every other tooltip. An Abstract is 50-100 words: wider than a
+// one-line tooltip and left-aligned so it reads as a paragraph.
+::ng-deep .document-abstract .mat-mdc-tooltip-surface {
+  max-width: 320px;
+  text-align: start;
+}
+
+// No Abstract yet: the placeholder is in italics, so it does not read as one.
+::ng-deep .document-abstract--missing .mat-mdc-tooltip-surface {
+  font-style: italic;
+}

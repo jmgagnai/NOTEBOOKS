@@ -11,6 +11,12 @@
         link, so click and Enter both open it and the browser's own
         open-in-new-tab works. Its name is the filename; the type icon adds
         what kind of Document it is.
+
+        The Abstract popover (NBK-47) hangs on the link rather than on the
+        filename: the link is what takes the keyboard focus, and Material's
+        tooltip makes its text the link's accessible description. It sits
+        beside the row so it never covers the rows above and below, and is
+        off on touch screens, where the Document page is the read.
       -->
       <a
         #rowLink
@@ -18,12 +24,17 @@
         [routerLink]="['/notebooks', notebookId(), 'documents', document.id]"
         [tabindex]="index === tabStop() ? 0 : -1"
         (focus)="activeIndex.set(index)"
+        [matTooltip]="document.abstract ?? noAbstract"
+        matTooltipPosition="right"
+        matTooltipTouchGestures="off"
+        [matTooltipClass]="
+          document.abstract ? 'document-abstract' : 'document-abstract document-abstract--missing'
+        "
       >
         <span class="document-row__type" role="img" [attr.aria-label]="kind(document).label">
           <mat-icon [svgIcon]="kind(document).icon" />
         </span>
         <span class="document-row__text">
-          <!-- NBK-47 hangs the Abstract popover on this element. -->
           <span class="document-row__name" [title]="document.filename">{{
             document.filename
           }}</span>
