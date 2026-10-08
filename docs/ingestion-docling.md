@@ -119,6 +119,8 @@ with 80 ruled tables: `accurate` took 331 s and peaked at 2.0 GB, `fast`
 table gone. `fast`'s Markdown was byte-identical to `accurate`'s. That is a
 best case for `fast` (clean grids, no merged or spanning cells); if real
 documents' tables come out mangled, `accurate` is the setting to try.
+`scripts/docling-bench/run.sh` reproduces the comparison: re-run it when
+bumping `DOCLING_IMAGE`, to check that `fast` still matches `accurate`.
 
 The mode only matters for PDFs: DOCX, XLSX, HTML, CSV and Markdown tables
 are read from their markup, with no model involved. And it applies to
