@@ -1,4 +1,16 @@
-import { Component, computed, inject, input, linkedSignal, untracked } from '@angular/core';
+import {
+  Component,
+  ElementRef,
+  Injector,
+  afterNextRender,
+  computed,
+  effect,
+  inject,
+  input,
+  linkedSignal,
+  untracked,
+  viewChild,
+} from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
@@ -79,6 +91,83 @@ export class ThreadView {
   readonly notebookId = input.required<string>();
 
   protected readonly store = inject(ChatStore);
+
+  private readonly injector = inject(Injector);
+
+  /** The Thread card's scrolling region (NBK-53); absent while loading or empty. */
+  private readonly messageList = viewChild<ElementRef<HTMLElement>>('messageList');
+
+  /** The row of the answer being streamed, while there is one. */
+  private readonly streamingRow = viewChild<ElementRef<HTMLElement>>('streamingAnswer');
+
+  constructor() {
+    // NBK-53, rule 1 (story 15b): opening or switching to a Thread lands at
+    // its end, once — after its messages are in, since scrolling the list
+    // of the Thread being left (or the spinner) would be lost on the swap.
+    let landedThread: string | null = null;
+    effect(() => {
+      const threadId = this.store.activeThreadId();
+      if (this.store.messagesLoading() || threadId === landedThread) return;
+      landedThread = threadId;
+      this.afterRender((list) => list.scrollTo({ top: list.scrollHeight }));
+    });
+
+    // Rule 3 (story 15d): an answer's first block brings its start to the
+    // top, and that is the only move it makes. Keyed on the stream, not on
+    // the chunk count, so later blocks — and the recorded answer replacing
+    // the preview — find the stream already seen. There is deliberately no
+    // "follow the bottom": the reader reads a long answer from its start.
+    let seenStream: string | null = null;
+    effect(() => {
+      const streamId = this.store.streamingAnswer()?.streamId ?? null;
+      if (streamId === null || streamId === seenStream) return;
+      seenStream = streamId;
+      this.afterRender(() =>
+        // Optional call: jsdom, for one, has no scrollIntoView.
+        this.streamingRow()?.nativeElement.scrollIntoView?.({ block: 'start', behavior: 'smooth' }),
+      );
+    });
+
+    // Rule 2 (story 15c): the question just sent comes into view at the
+    // bottom. The store renders nothing optimistically, so the question is
+    // on screen only once the exchange is recorded — and if its answer
+    // streamed meanwhile, rule 3 has already placed the view, which the
+    // recorded exchange must not move.
+    let askedAt: { streamSeen: string | null; messageCount: number } | null = null;
+    effect(() => {
+      const sending = this.store.sending();
+      const messageCount = this.store.messages().length;
+      if (sending) {
+        askedAt ??= { streamSeen: seenStream, messageCount };
+        return;
+      }
+      if (!askedAt) return;
+      const streamed = seenStream !== askedAt.streamSeen;
+      const recorded = messageCount > askedAt.messageCount;
+      askedAt = null;
+      if (streamed || !recorded) return;
+      this.afterRender((list) => {
+        const questions = list.querySelectorAll<HTMLElement>('.thread-view__message--user');
+        questions[questions.length - 1]?.scrollIntoView?.({ block: 'end', behavior: 'smooth' });
+      });
+    });
+  }
+
+  /**
+   * Runs a scroll once the change that called for it is on screen: the rows
+   * it measures or brings into view do not exist until the next render.
+   */
+  private afterRender(scroll: (list: HTMLElement) => void): void {
+    afterNextRender(
+      {
+        write: () => {
+          const list = this.messageList()?.nativeElement;
+          if (list) scroll(list);
+        },
+      },
+      { injector: this.injector },
+    );
+  }
 
   protected readonly activeThread = computed<ChatThread | null>(
     () => this.store.threads().find((t) => t.id === this.store.activeThreadId()) ?? null,

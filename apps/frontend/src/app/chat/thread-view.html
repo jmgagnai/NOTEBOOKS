@@ -26,7 +26,7 @@
     } @else if (store.messages().length === 0 && streamingBlocks().length === 0) {
       <p class="thread-view__empty">No messages yet.</p>
     } @else {
-      <ol class="thread-view__messages">
+      <ol #messageList class="thread-view__messages">
         @for (message of store.messages(); track message.id) {
           <!--
             Spec 04 (NBK-44): a question is a right-aligned bubble with the
@@ -129,6 +129,7 @@
             by that row rather than promoted into it.
           -->
           <li
+            #streamingAnswer
             class="thread-view__message thread-view__message--assistant thread-view__message--streaming"
             data-testid="chat-streaming-answer"
           >

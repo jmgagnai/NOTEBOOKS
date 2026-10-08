@@ -951,4 +951,167 @@ describe('Chat panel (ThreadNavigator + ThreadView)', () => {
       expect(questionBox().value).toBe(ASK);
     });
   });
+
+  // NBK-53 (spec 04 "Scrolling", stories 15b–15d): the message list follows
+  // three rules and nothing else. jsdom has no layout, so each rule is
+  // asserted through the scroll calls the list makes — on itself, or on the
+  // row it brings into view — never through a resulting position.
+  describe('NBK-53: scrolling', () => {
+    let scrollTo: ReturnType<typeof vi.fn>;
+    let scrollIntoView: ReturnType<typeof vi.fn>;
+    const originals = {
+      scrollTo: HTMLElement.prototype.scrollTo,
+      scrollIntoView: HTMLElement.prototype.scrollIntoView,
+    };
+
+    // jsdom leaves both unimplemented, so they are stood in for on the
+    // prototype; `mock.contexts` then says which element each call was on.
+    beforeEach(() => {
+      scrollTo = vi.fn();
+      scrollIntoView = vi.fn();
+      HTMLElement.prototype.scrollTo = scrollTo as never;
+      HTMLElement.prototype.scrollIntoView = scrollIntoView as never;
+    });
+
+    afterEach(() => {
+      HTMLElement.prototype.scrollTo = originals.scrollTo;
+      HTMLElement.prototype.scrollIntoView = originals.scrollIntoView;
+    });
+
+    /** The scrolling message list a message's text sits in. */
+    const listOf = (text: string) => screen.getByText(text).closest('ol')!;
+
+    /** Every element a scroll call was made on, in call order. */
+    const scrolled = (spy: ReturnType<typeof vi.fn>) => spy.mock.contexts as HTMLElement[];
+
+    /**
+     * A chunk of the answer streaming into thread-1. Copied from the NBK-11
+     * block's `chunk` so this ticket merges cleanly beside the other chat
+     * tickets (CODING_STANDARDS.md); the merge that joins them hoists it.
+     */
+    const answerChunk = (index: number, text: string): AppEvent => ({
+      id: `event-chunk-${index}`,
+      type: 'chat-answer-chunk',
+      topic: `notebook:${NOTEBOOK_ID}`,
+      occurredAt: '2026-01-01T00:00:02.000Z',
+      data: { notebookId: NOTEBOOK_ID, threadId: 'thread-1', streamId: 'stream-1', index, text },
+    });
+
+    /**
+     * Opens thread-1 on one earlier exchange and sends a question whose ask
+     * is left in flight, handing back its resolver. The scroll calls made by
+     * opening the Thread are cleared, so each test sees only what follows.
+     */
+    async function askInFlight() {
+      let settle!: (exchange: unknown) => void;
+      await renderPanel({
+        listChatThreads: vi.fn().mockResolvedValue([thread()]) as never,
+        listChatMessages: vi
+          .fn()
+          .mockResolvedValue([
+            message({ id: 'q0', content: 'What was revenue in Q2?' }),
+            message({ id: 'a0', role: 'assistant', content: 'Revenue in Q2 was 11.9M.' }),
+          ]) as never,
+        sendChatMessage: vi.fn().mockReturnValue(
+          new Promise((resolve) => {
+            settle = resolve;
+          }),
+        ) as never,
+      });
+      const box = screen.getByLabelText('Ask a question') as HTMLTextAreaElement;
+      await waitFor(() => expect(box.disabled).toBe(false));
+      await waitFor(() => expect(scrollTo).toHaveBeenCalled());
+      scrollTo.mockClear();
+      scrollIntoView.mockClear();
+
+      fireEvent.input(box, { target: { value: 'What was revenue in Q3?' } });
+      fireEvent.keyDown(box, { key: 'Enter' });
+      await screen.findByRole('status', { name: 'Answering' });
+      return { settle };
+    }
+
+    /** The exchange the in-flight ask resolves with. */
+    const q3Exchange = () => ({
+      question: message({ id: 'q1', content: 'What was revenue in Q3?' }),
+      answer: message({
+        id: 'a1',
+        role: 'assistant',
+        content: '## Revenue\n\nRevenue in Q3 was 12.4M.',
+      }),
+    });
+
+    it('lands at the end of the messages when a Thread is opened or switched to', async () => {
+      await renderPanel({
+        listChatThreads: vi.fn().mockResolvedValue([
+          thread({
+            id: 'thread-1',
+            title: 'Revenue questions',
+            createdAt: '2026-01-01T00:00:00.000Z',
+          }),
+          thread({
+            id: 'thread-2',
+            title: 'Supply chain',
+            createdAt: '2026-03-15T00:00:00.000Z',
+          }),
+        ]) as never,
+        listChatMessages: vi.fn(({ threadId }: { threadId: string }) =>
+          Promise.resolve([
+            message({ id: `${threadId}-q`, threadId, content: `Question in ${threadId}` }),
+          ]),
+        ) as never,
+      });
+
+      // The newest Thread opens by default (NBK-43): that is an open too.
+      await screen.findByText('Question in thread-2');
+      await waitFor(() => expect(scrolled(scrollTo)).toContain(listOf('Question in thread-2')));
+      expect(scrollTo).toHaveBeenLastCalledWith(
+        expect.objectContaining({ top: expect.any(Number) }),
+      );
+
+      scrollTo.mockClear();
+      fireEvent.click(screen.getByRole('button', { name: 'Open Revenue questions' }));
+
+      await screen.findByText('Question in thread-1');
+      await waitFor(() => expect(scrolled(scrollTo)).toContain(listOf('Question in thread-1')));
+      expect(scrollIntoView).not.toHaveBeenCalled();
+    });
+
+    // Story 15c. The store renders nothing optimistically — the question
+    // appears when the server has recorded it — so this is the moment it can
+    // be brought into view, at the bottom where the newest exchange sits.
+    it('brings the question just asked into view at the bottom when it lands', async () => {
+      const { settle } = await askInFlight();
+
+      settle(q3Exchange());
+
+      const question = (
+        await screen.findByText('What was revenue in Q3?', { selector: 'span' })
+      ).closest('li');
+      await waitFor(() => expect(scrolled(scrollIntoView)).toEqual([question]));
+      expect(scrollIntoView).toHaveBeenCalledWith(expect.objectContaining({ block: 'end' }));
+      expect(scrollTo).not.toHaveBeenCalled();
+    });
+
+    // Story 15d: the reader starts a long answer at its first line. Only the
+    // first block moves the view — no following the bottom as it grows, and
+    // the recorded answer taking the preview's place is not a move either.
+    it("brings the answer's start to the top on its first block, and then leaves the view alone", async () => {
+      const { settle } = await askInFlight();
+
+      appEvents.events.next(answerChunk(0, '## Revenue'));
+
+      const answer = await screen.findByTestId('chat-streaming-answer');
+      await waitFor(() => expect(scrolled(scrollIntoView)).toEqual([answer]));
+      expect(scrollIntoView).toHaveBeenCalledWith(expect.objectContaining({ block: 'start' }));
+
+      appEvents.events.next(answerChunk(1, 'Revenue in Q3 was 12.4M.'));
+      await screen.findByText('Revenue in Q3 was 12.4M.');
+      settle(q3Exchange());
+      await waitFor(() => expect(screen.queryByTestId('chat-streaming-answer')).toBeNull());
+      await screen.findByText('What was revenue in Q3?', { selector: 'span' });
+
+      expect(scrollIntoView).toHaveBeenCalledTimes(1);
+      expect(scrollTo).not.toHaveBeenCalled();
+    });
+  });
 });
