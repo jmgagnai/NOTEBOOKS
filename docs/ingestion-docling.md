@@ -74,6 +74,18 @@ never load a model, which is why the original smoke test — a `.md` file —
 passed while every PDF failed; the real-container test now converts a PDF
 too.
 
+The pinned CLI's options are the ones to plan around, not Docling's latest
+docs. Check a flag before designing a change on it:
+
+```bash
+docker run --rm -e COLUMNS=200 --entrypoint docling ghcr.io/docling-project/docling-serve-cpu:v1.1.0 --help
+```
+
+`COLUMNS=200` keeps each option on one line, so `grep` finds a flag with its
+description; without it the help wraps at 80 columns. NBK-72 began from a
+"disable table detection" flag that this CLI does not have (it offers only
+`--table-mode`).
+
 ### OCR is off, and scanned PDFs are refused
 
 Docling's PDF pipeline turns OCR on by default and initialises EasyOCR
