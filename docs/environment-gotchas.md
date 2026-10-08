@@ -84,8 +84,14 @@ commit.
 
 ## Test runs time out on an overloaded machine
 
-Five-second timeouts that land on the first test of a file, and move to a
-different file on every run, are load, not code. Several `ng test` runs at
+Each frontend spec file's first test pays a one-off warm-up of 3–4 s, so it
+runs at 3–5 s where the rest take about 1 s. Under Vitest's 5 s default that
+left no margin, and the frontend suite timed out on almost every loaded run
+until NBK-94 raised its limit to 15 s (`apps/frontend/vitest.config.mts`).
+What follows is why load did it, and still can at the new limit.
+
+Timeouts that land on the first test of a file, and move to a different file
+on every run, are load, not code. Several `ng test` runs at
 once (parallel implementer agents, each running the frontend suite) pushed
 the load average on an 8-core machine past 390, and the suite failed with 2 to
 19 such timeouts per run while every file passed on its own.
@@ -101,7 +107,9 @@ Virtualization framework's `VirtualMachine` process on top means Docker, and
 `docker ps` showing a `docling-serve` container means a conversion is under
 way. Run the spec file you changed on its own while working
 (`--include='**/<name>.spec.ts'`), the full suite once at the end, and re-run
-a red full suite alone before believing it. A merge is verified only by a run
+a red full suite alone before believing it. A frontend test that still hits
+15 s is either a real hang or load far beyond the 2026-10-08 peaks, so look
+at it before re-running. A merge is verified only by a run
 on a quiet machine: let the ingestion queue drain, or stop the backend, first.
 
 ## The agent's shell is zsh, and zsh splits nothing for you
