@@ -115,11 +115,23 @@ export class ThreadView {
     // NBK-53, rule 1 (story 15b): opening or switching to a Thread lands at
     // its end, once — after its messages are in, since scrolling the list
     // of the Thread being left (or the spinner) would be lost on the swap.
-    let landedThread: string | null = null;
+    // Opened at an Exchange by a search result instead (NBK-97), it lands
+    // with that Exchange's question at the top, where reading it starts.
+    let landed: string | null = null;
     effect(() => {
       const threadId = this.store.activeThreadId();
-      if (this.store.messagesLoading() || threadId === landedThread) return;
-      landedThread = threadId;
+      const found = this.foundExchange();
+      const landing = `${threadId}/${this.store.foundAnswerId()}`;
+      if (this.store.messagesLoading() || landing === landed) return;
+      landed = landing;
+      if (found) {
+        this.afterRender((list) =>
+          list
+            .querySelector<HTMLElement>(`[data-message-id="${found.questionId}"]`)
+            ?.scrollIntoView?.({ block: 'start' }),
+        );
+        return;
+      }
       // Optional call: jsdom has no scrollTo, and since NBK-81 an open
       // Thread with no messages renders its (empty) list too.
       this.afterRender((list) => list.scrollTo?.({ top: list.scrollHeight }));
@@ -179,6 +191,25 @@ export class ThreadView {
       },
       { injector: this.injector },
     );
+  }
+
+  /**
+   * The Exchange a search result opened the Thread at (NBK-97): the named
+   * answer and the question it answers. Null when the Thread was opened any
+   * other way, or the answer is not among its messages.
+   */
+  protected readonly foundExchange = computed(() => {
+    const answerId = this.store.foundAnswerId();
+    const messages = this.store.messages();
+    const at = messages.findIndex((m) => m.id === answerId && m.role === 'assistant');
+    if (at < 1 || messages[at - 1].role !== 'user') return null;
+    return { questionId: messages[at - 1].id, answerId: messages[at].id };
+  });
+
+  /** Whether a message is half of the Exchange a search result opened (NBK-97). */
+  protected isFound(messageId: string): boolean {
+    const found = this.foundExchange();
+    return found !== null && (found.questionId === messageId || found.answerId === messageId);
   }
 
   protected readonly activeThread = computed<ChatThread | null>(

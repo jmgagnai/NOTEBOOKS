@@ -88,9 +88,20 @@
     color: var(--mat-sys-error);
   }
 
+  // Documents, then Chat Threads (NBK-97), each under its own heading.
+  &__section {
+    margin-top: 1.5rem;
+  }
+
+  &__section-title {
+    margin: 0 4px;
+    font: var(--mat-sys-title-small);
+    color: var(--mat-sys-on-surface-variant);
+  }
+
   &__results {
     list-style: none;
-    margin: 1.5rem 0 0;
+    margin: 0.5rem 0 0;
     padding: 0;
   }
 
@@ -137,7 +148,15 @@
     color: var(--mat-sys-on-surface-variant);
   }
 
-  // The Abstract, cut to three lines (NBK-96): enough to judge, not to read.
+  // An Exchange's question, whole (NBK-97).
+  &__result-question {
+    margin-top: 4px;
+    font: var(--mat-sys-body-medium);
+    color: var(--mat-sys-on-surface);
+    overflow-wrap: anywhere;
+  }
+
+  // The Abstract — or an Exchange's answer excerpts — cut to three lines (NBK-96): enough to judge, not to read.
   &__result-abstract {
     margin-top: 4px;
     display: -webkit-box;
@@ -147,6 +166,10 @@
     overflow: hidden;
     font: var(--mat-sys-body-medium);
     color: var(--mat-sys-on-surface-variant);
+
+    strong {
+      color: var(--mat-sys-on-surface);
+    }
 
     &--pending {
       font-style: italic;

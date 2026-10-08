@@ -53,12 +53,26 @@
             asker's initials avatar on its right; an answer is full-width
             prose on the left behind the sparkle avatar.
           -->
+          <!--
+            The Exchange a search result opened the Thread at (NBK-97) is
+            marked as a cited Chunk is, so the reader sees which one it was.
+          -->
           @if (message.role === 'user') {
-            <li class="thread-view__message thread-view__message--user">
+            <li
+              class="thread-view__message thread-view__message--user"
+              [attr.data-message-id]="message.id"
+              [class.thread-view__message--found]="isFound(message.id)"
+              [attr.data-testid]="isFound(message.id) ? 'found-exchange' : null"
+            >
               <ng-container *ngTemplateOutlet="question; context: { $implicit: message }" />
             </li>
           } @else {
-            <li class="thread-view__message thread-view__message--assistant">
+            <li
+              class="thread-view__message thread-view__message--assistant"
+              [attr.data-message-id]="message.id"
+              [class.thread-view__message--found]="isFound(message.id)"
+              [attr.data-testid]="isFound(message.id) ? 'found-exchange' : null"
+            >
               <app-sparkle-avatar class="thread-view__avatar" data-testid="chat-assistant-avatar" />
               <div class="thread-view__body thread-view__answer">
                 <!-- An answer no longer names its asker: the question it follows does. -->

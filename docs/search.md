@@ -113,6 +113,16 @@ markup: the matches are delimited with private-use characters that message
 text never contains, then split apart, so the client renders text and bold
 and never parses HTML from a message.
 
+On the page, both searches run at once: Documents first, then Chat Threads,
+each section shown only when it has matches or failed (one failing never
+hides the other). A result opens the Notebook at
+`?thread=<threadId>&message=<answerId>`. `ChatStore.loadThreads` then opens
+that Thread even over one already open, and `ThreadView` lands with the
+Exchange's question at the top and both halves in the cited Chunk's tint.
+That replaces NBK-53's rule 1 for that arrival only. An unknown Thread falls
+back to the newest. The Document page's chat pane reads `&message=` the same
+way.
+
 ## The index decision
 
 Migration `0007` left this open on purpose: "a decision for the retrieval
