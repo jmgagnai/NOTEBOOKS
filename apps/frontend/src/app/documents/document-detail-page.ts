@@ -23,6 +23,7 @@ import { StatusBadge } from '../shared/status-badge';
 import { MarkdownView } from './markdown-view';
 import { showPageTitle } from '../shared/page-title';
 import { failureSentence } from './failure-reason';
+import { withoutExecutiveSummaryTitle } from './executive-summary-title';
 import { isNarrowWindow } from '../shared/narrow-window';
 
 /**
@@ -199,6 +200,15 @@ export class DocumentDetailPage implements OnInit, OnDestroy {
   private targetVersionId(): string | null {
     return this.citedVersionId() ?? this.store.openDocument()?.version.id ?? null;
   }
+
+  /**
+   * The Executive Summary as the page shows it, under its own heading:
+   * without the title the model may have given it (NBK-89).
+   */
+  protected readonly executiveSummary = computed(() => {
+    const summary = this.store.openDocument()?.executiveSummary;
+    return summary ? withoutExecutiveSummaryTitle(summary) : null;
+  });
 
   // The metadata keys read below (`title`, `authors`, `publishedOn`,
   // `documentType`, `language`, `subject`, `keywords`) mirror

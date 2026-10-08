@@ -110,7 +110,7 @@
         <section class="document-detail-page__summary">
           <h2>Executive Summary</h2>
           @if (document.executiveSummary) {
-            <app-markdown-view [markdown]="document.executiveSummary" />
+            <app-markdown-view [markdown]="executiveSummary()" />
           } @else {
             <p class="document-detail-page__pending">
               The Executive Summary is still being generated for this Document.

@@ -632,6 +632,44 @@ describe('summarize-document job', () => {
     expect((version.abstract ?? '').trim().split(/\s+/)).toHaveLength(80);
   });
 
+  // NBK-89: the Document page heads the Executive Summary itself, so the
+  // model is told not to title it — left unsaid, it did so for 52 of 53
+  // local Documents ("# Executive Summary", "**Executive Summary**", …).
+  it('tells the model not to open the Executive Summary with a title, and only that artifact', async () => {
+    const seeded = await seedConvertedVersion(
+      'untitled.md',
+      `# Field Notes\n\n${body('rivers')}\n`,
+    );
+    const { calls, fetchStub } = stubOpenRouter((call) => {
+      switch (call.task) {
+        case 'metadata':
+          return '{"title":"Field Notes"}';
+        case 'sectionSummary':
+          return 'Section summary of rivers.';
+        case 'chatSnippet':
+          return words(200);
+        case 'executiveSummary':
+          return words(700);
+        case 'abstract':
+          return words(70);
+        default:
+          throw new Error(`Unexpected task ${call.task}`);
+      }
+    });
+
+    await runSummarizeDocumentJob(depsWith(fetchStub), {
+      payload: { documentId: seeded.documentId, versionId: seeded.versionId },
+      willRetry: false,
+    });
+
+    const promptOf = (task: Task) => calls.find((call) => call.task === task)?.system ?? '';
+    const noTitle = /do not (begin|open) with a title/i;
+    expect(promptOf('executiveSummary')).toMatch(noTitle);
+    expect(promptOf('executiveSummary')).toMatch(/"Executive Summary" heading/);
+    expect(promptOf('abstract')).not.toMatch(noTitle);
+    expect(promptOf('chatSnippet')).not.toMatch(noTitle);
+  });
+
   // Observed against the real API across several runs: asked for 50-100
   // words, the model returns 99, 108, 112, 126 — in range about half the
   // time, even after the corrective rewrite. For the Abstract that is not
