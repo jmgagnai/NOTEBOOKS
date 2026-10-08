@@ -1,8 +1,9 @@
 // The sign-in and register pages (NBK-46, spec 05): one 360 px column on
-// the canvas with the app name above the form, no card around it. A mixin
-// rather than a shared class because each page keeps its own BEM block
-// (`login-page`, `register-page`) and the two have to stay identical — a
-// column that drifted between them would read as a bug.
+// the canvas with the brand block (`<app-auth-brand>`, NBK-60) above the
+// form, no card around it. A mixin rather than a shared class because each
+// page keeps its own BEM block (`login-page`, `register-page`) and the two
+// have to stay identical — a column that drifted between them would read as
+// a bug.
 
 @mixin page {
   box-sizing: border-box;
@@ -22,13 +23,6 @@
   mat-form-field {
     width: 100%;
   }
-}
-
-@mixin brand {
-  margin: 0;
-  font: var(--mat-sys-title-large);
-  color: var(--mat-sys-on-surface);
-  text-align: center;
 }
 
 @mixin title {
