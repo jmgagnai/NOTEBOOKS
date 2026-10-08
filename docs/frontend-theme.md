@@ -207,7 +207,7 @@ in `app.config.ts`; NBK-31, spec 01 "Icons"). A template imports
 
 Registered names: `add`, `history` (the Chat Threads navigator's title,
 NBK-43), `search`, `more-horizontal`, `delete`,
-`arrow-download`, `open`, `send`, `rename`, `chevron-down`, `notebook`,
+`arrow-download`, `open`, `rename`, `chevron-down`, `notebook`,
 `document`, `sparkle`, `dismiss`, `checkmark`, `warning`, `arrow-left`,
 `panel-right-contract`, `panel-right-expand`, `sign-out`,
 `panel-left-contract` and `panel-left-expand` (the sidebar's collapse
@@ -216,7 +216,7 @@ rows' type icons (NBK-42) `document-pdf`, `document-text` (Word),
 `document-one-page` (text, Markdown), `document-table` (Excel, CSV), with
 `document` for anything else, and `folder` (the Notebook rows on the home
 and the Notebook landing, spec 07), and `arrow-up` (the composer's send
-button, NBK-83). `FluentIconName`
+button, NBK-83, which retired `send`). `FluentIconName`
 is the union of them. An unknown name renders an empty icon and logs through
 the `ErrorHandler`; it does not break the page.
 

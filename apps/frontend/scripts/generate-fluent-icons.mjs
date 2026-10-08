@@ -23,7 +23,6 @@ const NAMES = [
   'delete',
   'arrow-download',
   'open',
-  'send',
   'rename',
   'chevron-down',
   'notebook',

@@ -246,14 +246,23 @@ sent. The "Open or start a Chat Thread to ask" hint is removed.
 questions) is deleted, with its starter-question code path, wherever it is
 rendered. An open Thread with no messages shows an empty message area.
 
-**Composer.** A pill: large radius (about 24 px), about 56 px tall when one
+**Composer.** A pill: large radius (the `--app-corner-pill` token, 28 px —
+a fixed radius rather than a full one, so a multi-line draft stays a rounded
+box instead of becoming a stadium), about 56 px tall when one
 line, white with the strong border, focus shown by darkening the border (as
 spec 01 already allows for the composer). The textarea keeps its accessible
 name "Ask a question" and placeholder. The send button is round, filled with
 the accent colour, with an up-arrow icon (a new Fluent icon) and keeps the
 accessible name "Send". No attach and no microphone controls. The answering
-progress bar, spinner and error row keep their behaviour. The pill is the one
-place the app uses a full radius; spec 01's "no pills" rule otherwise stands.
+progress bar, spinner and error row keep their behaviour. The keyboard /
+answering hint stays, on the right of the caption row under the box, beside
+the AI caveat (which shows only in an open Thread). The pill is the one
+place the app uses a pill radius; spec 01's "no pills" rule otherwise stands.
+
+On the landing while a question asked in a Thread is still being answered
+(the user went back mid-answer), the box stays closed, as above, but shows
+no answering progress or spinner — there is no answer on screen — and its
+hint reads "You can ask again once the current answer is in".
 
 **Messages.** Questions: subtle-surface bubble, right-aligned. Answers: plain
 prose on white, no bubble, 16 px reading role. The message column is centred
