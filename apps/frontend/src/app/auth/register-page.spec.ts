@@ -4,6 +4,7 @@ import { Router } from '@angular/router';
 import { fireEvent, render, screen } from '@testing-library/angular';
 import { RegisterPage } from './register-page';
 import { AuthService } from '../api/services/auth.service';
+import { APP_NAME } from '../shared/brand';
 
 @Component({ selector: 'app-dummy-login', standalone: true, template: 'Login shell' })
 class DummyLoginPage {}
@@ -34,10 +35,14 @@ describe('RegisterPage', () => {
   // NBK-46: the page says "Create account" (alongside "Sign in" / "Sign
   // out"), shows the app name above the form and switches to sign-in
   // through a link.
-  it('shows the app name above a "Create account" form that links to signing in', async () => {
+  // NBK-60 puts the mascot logo above the name and the descriptive line
+  // under it (spec 06).
+  it('shows the logo, the app name and the descriptive line above a "Create account" form that links to signing in', async () => {
     await renderRegister(vi.fn());
 
-    expect(screen.getByText('RAG Notebook')).toBeTruthy();
+    expect(screen.getByRole('img', { name: APP_NAME })).toBeTruthy();
+    expect(screen.getByText(APP_NAME)).toBeTruthy();
+    expect(screen.getByText('A Microsoft Copilot Notebooks clone')).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Create account' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Create account' })).toBeTruthy();
     expect(screen.getByText('Already have an account?')).toBeTruthy();

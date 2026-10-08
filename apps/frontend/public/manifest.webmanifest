@@ -1,0 +1,12 @@
+{
+  "name": "Copycat Notebooks",
+  "short_name": "Copycat",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#FAFAFA",
+  "theme_color": "#0F6CBD",
+  "icons": [
+    { "src": "copycat-logo-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "copycat-logo-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

@@ -11,7 +11,6 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
-import { Title } from '@angular/platform-browser';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
@@ -25,8 +24,8 @@ import { DocumentsEmptyState } from '../documents/documents-empty-state';
 import { Document, DocumentsStore } from '../documents/documents.store';
 import { UploadBatchPanel } from '../documents/upload-batch-panel';
 import { UPLOAD_ACCEPT } from '../documents/upload-rules';
-import { APP_NAME } from '../shared/app-name';
 import { EditableTitle } from '../shared/editable-title';
+import { showPageTitle } from '../shared/page-title';
 import { UndoSnackBar } from '../shared/undo-snack-bar';
 import { NotebooksStore } from './notebooks.store';
 
@@ -123,7 +122,6 @@ function droppedEntries(dataTransfer: DataTransfer | null): {
 })
 export class NotebookDetailPage implements OnInit, OnDestroy {
   private readonly route = inject(ActivatedRoute);
-  private readonly title = inject(Title);
 
   protected readonly notebooksStore = inject(NotebooksStore);
   protected readonly store = inject(DocumentsStore);
@@ -134,19 +132,9 @@ export class NotebookDetailPage implements OnInit, OnDestroy {
     () => this.notebooksStore.notebooks().find((n) => n.id === this.notebookId) ?? null,
   );
 
-  /**
-   * The browser tab reads "<Notebook title> – <app name>" while the page is
-   * open (NBK-35), so several open Notebooks are distinguishable; the title
-   * found on arrival is what leaving restores. The Notebook arrives after the
-   * list loads and changes on a rename, hence an effect rather than a
-   * one-off in `ngOnInit`.
-   */
-  private readonly titleOnArrival = this.title.getTitle();
-
-  private readonly tabTitle = effect(() => {
-    const notebook = this.notebook();
-    if (notebook) this.title.setTitle(`${notebook.title} – ${APP_NAME}`);
-  });
+  // The browser tab names the Notebook (NBK-35, NBK-61) so several open
+  // Notebooks are distinguishable; it follows a rename.
+  private readonly tabTitle = showPageTitle(() => this.notebook()?.title);
 
   ngOnInit(): void {
     void this.notebooksStore.loadNotebooks();
@@ -159,7 +147,6 @@ export class NotebookDetailPage implements OnInit, OnDestroy {
     // connection has to be closed explicitly or it would leak across
     // navigations.
     this.store.stopWatching();
-    this.title.setTitle(this.titleOnArrival);
   }
 
   /**

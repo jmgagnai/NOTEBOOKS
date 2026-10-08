@@ -75,6 +75,21 @@ describe('NotebooksPage', () => {
     expect(screen.queryByLabelText('New Notebook title')).toBeNull();
   });
 
+  // NBK-62 (spec 06 "Empty states"): the mascot fills the otherwise empty
+  // home, decorative so a screen reader skips it.
+  it('shows the cat mark above "No Notebooks yet.", hidden from assistive technology', async () => {
+    await render(NotebooksPage, {
+      providers: pageProviders({ listNotebooks: vi.fn().mockResolvedValue([]) }),
+    });
+
+    const sentence = await screen.findByText('No Notebooks yet.');
+    const mark = screen.getByTestId('copycat-mark') as HTMLImageElement;
+    expect(mark.getAttribute('src')).toBe('/copycat-mark.svg');
+    expect(mark.alt).toBe('');
+    expect(mark.closest('[aria-hidden="true"]')).toBeTruthy();
+    expect(mark.compareDocumentPosition(sentence) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   // NBK-55 (spec 05 "Create"): no title is asked for up front — the new
   // Notebook opens straight away, where its header title is editable.
   it('creates an "Untitled Notebook" and opens it with its title ready to type over', async () => {

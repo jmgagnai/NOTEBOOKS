@@ -2,10 +2,16 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>RAG Notebook</title>
+    <!-- Literal because static HTML cannot read APP_NAME (shared/brand.ts); keep the two in step. -->
+    <title>Copycat Notebooks</title>
     <base href="/" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <link rel="icon" type="image/x-icon" href="favicon.ico" />
+    <!-- A copy of the mat-sys-primary token in styles.scss (static HTML cannot read it), as is manifest.webmanifest's theme_color; keep all three in step. -->
+    <meta name="theme-color" content="#0F6CBD" />
+    <link rel="icon" type="image/x-icon" href="favicon.ico" sizes="16x16 32x32 48x48" />
+    <link rel="alternate icon" type="image/svg+xml" href="copycat-favicon.svg" />
+    <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon-180.png" />
+    <link rel="manifest" href="manifest.webmanifest" />
   </head>
   <body>
     <app-root></app-root>

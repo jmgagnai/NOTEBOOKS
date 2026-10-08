@@ -10,6 +10,7 @@ import { DocumentsService } from '../api/services/documents.service';
 import { DocumentTransferService } from '../documents/document-transfer.service';
 import { AppEvent, AppEventsService } from '../events/app-events.service';
 import { provideAppIcons } from '../shared/fluent-icons';
+import { APP_NAME } from '../shared/brand';
 
 const NOTEBOOK_ID = '11111111-1111-1111-1111-111111111111';
 
@@ -1973,6 +1974,8 @@ describe('NotebookDetailPage', () => {
       });
       expect(await screen.findByRole('button', { name: 'Research 2026' })).toBeTruthy();
       expect(screen.queryByLabelText('Notebook title')).toBeNull();
+      // NBK-61: the browser tab follows the rename.
+      expect(document.title).toBe(`Research 2026 – ${APP_NAME}`);
     });
 
     // Spec 05 story 3: "Create Notebook" names the Notebook "Untitled
@@ -2066,8 +2069,10 @@ describe('NotebookDetailPage', () => {
       ).toBe(false);
     });
 
-    it('puts the Notebook title in the browser tab while open, and restores it on leaving', async () => {
-      document.title = 'RAG Notebook';
+    // NBK-61: leaving puts back the default, not whatever the tab said on
+    // arrival — hence a stale title to start from.
+    it('puts the Notebook title in the browser tab while open, and the default back on leaving', async () => {
+      document.title = 'A stale title';
       const listNotebooks = vi.fn().mockResolvedValue([RESEARCH]);
       const listDocuments = vi.fn().mockResolvedValue([]);
       const { navigate } = await render(RouterShell, {
@@ -2083,11 +2088,11 @@ describe('NotebookDetailPage', () => {
       });
 
       await navigate(`/notebooks/${NOTEBOOK_ID}`);
-      await waitFor(() => expect(document.title).toBe('Research – RAG Notebook'));
+      await waitFor(() => expect(document.title).toBe(`Research – ${APP_NAME}`));
 
       await navigate('/elsewhere');
       await screen.findByText('Somewhere else');
-      expect(document.title).toBe('RAG Notebook');
+      expect(document.title).toBe(APP_NAME);
     });
   });
 
@@ -2463,6 +2468,23 @@ describe('NotebookDetailPage', () => {
       expect(within(panel).getByText(/Add Documents to start asking questions\./)).toBeTruthy();
       expect(emptyStateAddDocuments()).toBeTruthy();
       expect(screen.getAllByRole('button', { name: 'Add Documents' })).toHaveLength(2);
+    });
+
+    // NBK-62 (spec 06 "Empty states"): the cat mark replaces the Documents
+    // icon above the sentence, decorative so a screen reader skips it.
+    it('shows the cat mark above the sentence, hidden from assistive technology', async () => {
+      await renderWithUpload(vi.fn());
+      const panel = documentsPanel();
+      const sentence = within(panel).getByText('No Documents yet.');
+      const mark = within(panel).getByTestId('copycat-mark') as HTMLImageElement;
+
+      expect(mark.getAttribute('src')).toBe('/copycat-mark.svg');
+      expect(mark.alt).toBe('');
+      expect(mark.closest('[aria-hidden="true"]')).toBeTruthy();
+      expect(
+        mark.compareDocumentPosition(sentence) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      expect(panel.querySelector('mat-icon[svgicon="document"]')).toBeNull();
     });
 
     it("the empty state's Add Documents opens the same picker, which starts a batch", async () => {

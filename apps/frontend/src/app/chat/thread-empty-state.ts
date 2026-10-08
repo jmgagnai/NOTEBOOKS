@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
-import { SparkleAvatar } from '../shared/sparkle-avatar';
+import { CopycatMark } from '../shared/copycat-mark';
 
 /**
  * The starter prompts (spec 04 "Empty state", stories 20–21). Static on
@@ -20,13 +20,16 @@ export const STARTER_PROMPTS = [
  * when none is open — is the Thread view's job, because the view is what
  * holds the `Composer` the question has to go through; this way a prompt is
  * asked exactly as a typed question is.
+ *
+ * The cat mark stands where spec 04 had the sparkle (NBK-62, spec 06
+ * "Empty states"): the gradient sparkle is kept for the assistant's avatar.
  */
 @Component({
   selector: 'app-thread-empty-state',
-  imports: [SparkleAvatar],
+  imports: [CopycatMark],
   template: `
     <div class="thread-empty-state">
-      <app-sparkle-avatar class="thread-empty-state__sparkle" />
+      <app-copycat-mark />
       <p class="thread-empty-state__sentence">Ask anything about the Documents in this Notebook</p>
       <ul class="thread-empty-state__prompts" aria-label="Starter prompts">
         @for (prompt of prompts; track prompt) {

@@ -40,6 +40,11 @@ form fields. Material hides the floating label at this density only for the
 | Success (`ready`) | `--mat-sys-tertiary-container` / `--mat-sys-on-tertiary-container` (`--mat-sys-tertiary`) | `#E7F5E7` / `#0E700E` |
 | Dark overlays (tooltip, snack bar) | `--mat-sys-inverse-surface` / `--mat-sys-inverse-on-surface` / `--mat-sys-inverse-primary` | `#242424` / `#FFFFFF` / `#8AB9EA` |
 
+The primary colour has two copies outside `styles.scss`, because static files
+cannot read a token: `index.html`'s `<meta name="theme-color">` (a comment
+there names the source) and `theme_color` in `public/manifest.webmanifest`
+(JSON carries no comment, hence this note). Change all three together.
+
 Success lives on Material's tertiary slot because it is the only spare M3
 colour role; nothing else in the app uses tertiary.
 
@@ -187,6 +192,30 @@ list). The MIT notice is `fluent-icons.LICENSE.md` beside them. To add an
 icon, add its name to the script and regenerate; never edit the generated
 file. Nothing is fetched from Google Fonts any more: `index.html` carries no
 `<link>` to it.
+
+## Brand
+
+The product is Copycat Notebooks (spec 06). The name and the two mascot
+images are constants in `apps/frontend/src/app/shared/brand.ts` — `APP_NAME`,
+`COPYCAT_MARK_SRC` and `COPYCAT_LOGO_SRC` — and every template and spec reads
+them from there. The only literal copies are in the static files that cannot
+import it: `index.html` (`<title>`, favicons) and `public/manifest.webmanifest`.
+
+| Image | Path | Where, at what size |
+|---|---|---|
+| Mark (the cat's head alone) | `/copycat-mark.svg` (`COPYCAT_MARK_SRC`) | title bar, 24 px, named by `APP_NAME` as the home link; the three empty states (Notebooks home, a Notebook's Documents panel, a Chat Thread with no messages), 64 px, decorative |
+| Logo (the full scene) | `/copycat-logo.svg` (`COPYCAT_LOGO_SRC`) | sign-in and register pages, 96 px (`<app-auth-brand>`) |
+
+The mark is always `<app-copycat-mark>` (`shared/copycat-mark.ts`), an
+`<img>` rather than a registered icon because the mascot's colours are fixed,
+not themed. Inputs: `size`, its height in px (default 64; the width follows
+the artwork, which is wider than tall), and an optional `label`. Without a
+label the mark is decorative (empty `alt`, `aria-hidden`), which is right
+wherever text beside it already says what it means; with one, the label is
+its `alt`, as in the title bar where the mark names the home link.
+
+The empty states no longer show the `sparkle` or `document` icons; the mark
+replaced them (NBK-62). Both icons stay registered for their other uses.
 
 ## Material components with Fluent overrides
 
