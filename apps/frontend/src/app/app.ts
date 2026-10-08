@@ -1,36 +1,23 @@
 import { Component, inject, OnInit } from '@angular/core';
-import { Router, RouterLink, RouterOutlet } from '@angular/router';
-import { MatIconModule } from '@angular/material/icon';
-import { MatMenuModule } from '@angular/material/menu';
-import { MatToolbarModule } from '@angular/material/toolbar';
+import { Router, RouterOutlet } from '@angular/router';
 import { AuthStore } from './auth/auth.store';
-import { APP_NAME } from './shared/brand';
-import { Avatar } from './shared/avatar';
-import { CopycatMark } from './shared/copycat-mark';
+import { Sidebar } from './shell/sidebar';
 
 /**
- * The app shell (NBK-3): a title bar showing who's signed in behind an
- * avatar menu with a sign-out action (NBK-30), hosting whichever page the
- * router activates. The authenticated vs. signed-out distinction for the
- * routed content itself is the auth guard's job (see auth/auth.guard.ts) —
- * this component only reflects the session state once resolved.
+ * The app shell (NBK-3): the left sidebar (NBK-79, which replaced the title
+ * bar of NBK-30) for whoever is signed in, beside whichever page the router
+ * activates. The authenticated vs. signed-out distinction for the routed
+ * content itself is the auth guard's job (see auth/auth.guard.ts) — this
+ * component only reflects the session state once resolved, which is why the
+ * sign-in and register pages show no sidebar.
  */
 @Component({
-  imports: [
-    Avatar,
-    CopycatMark,
-    MatIconModule,
-    MatMenuModule,
-    MatToolbarModule,
-    RouterLink,
-    RouterOutlet,
-  ],
+  imports: [RouterOutlet, Sidebar],
   selector: 'app-root',
   styleUrl: './app.scss',
   templateUrl: './app.html',
 })
 export class App implements OnInit {
-  protected readonly appName = APP_NAME;
   protected readonly store = inject(AuthStore);
   private readonly router = inject(Router);
 

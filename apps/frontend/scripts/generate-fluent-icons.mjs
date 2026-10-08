@@ -40,6 +40,8 @@ const NAMES = [
   'document-text',
   'document-one-page',
   'document-table',
+  'panel-left-contract',
+  'panel-left-expand',
 ];
 
 const require = createRequire(import.meta.url);

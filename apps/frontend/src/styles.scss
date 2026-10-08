@@ -263,19 +263,16 @@ h6 {
   font: var(--mat-sys-title-small);
 }
 
-// Full-height layout under the title bar: the routed page is a flex child
-// that takes the viewport below the bar (`100vh - 48px`), so later specs can
-// build panes that scroll inside it rather than with the page.
-app-root {
-  display: flex;
-  flex-direction: column;
-  min-height: 100%;
-}
+// Full-height frame (spec 07, NBK-79): `app-root` is a row of the sidebar
+// and the page column, exactly the viewport high (app.scss). The routed page
+// is a flex child of that column that grows to at least its height, so a
+// page can set `height: 100%` on its root and scroll panes inside it, while
+// a longer page simply scrolls the column. Here rather than in app.scss
+// because the page element is the router's, not in the shell's template.
 
-app-root > :not(mat-toolbar):not(router-outlet) {
+.app-shell__main > :not(router-outlet) {
   display: block;
-  flex: 1 1 auto;
-  min-height: 0;
+  flex: 1 0 auto;
 }
 
 // Keyboard focus: a 2 px ring in the text colour on every control, 1 px
@@ -301,20 +298,6 @@ app-root > :not(mat-toolbar):not(router-outlet) {
 // Material components in Fluent clothes. Component tokens here, layout in the
 // components' own stylesheets.
 // ---------------------------------------------------------------------------
-
-// Title bar: 48 px, white, 1 px bottom border. Its content is the shell's
-// (spec 01 "App shell").
-.mat-toolbar {
-  @include mat.toolbar-overrides(
-    (
-      container-background-color: var(--mat-sys-surface),
-      container-text-color: var(--mat-sys-on-surface),
-      standard-height: var(--app-title-bar-height),
-      mobile-height: var(--app-title-bar-height),
-    )
-  );
-  border-bottom: 1px solid var(--mat-sys-outline-variant);
-}
 
 // Cards: flat white, no corner, border or shadow (spec 07, NBK-78). The
 // Document and Search pages hold their content in a `mat-card`, which on a

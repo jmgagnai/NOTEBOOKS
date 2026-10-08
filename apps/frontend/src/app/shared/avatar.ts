@@ -16,8 +16,8 @@ export function initials(email: string): string {
 /**
  * A 28 px accent circle carrying a user's initials (NBK-30, spec 01 "App
  * shell"). Presentational only: it is `aria-hidden` because the control that
- * wraps it (the title bar's account button today, a message author line
- * later) names the user in full, so a screen reader never hears "A" alone.
+ * wraps it (the sidebar's account button, a message author line
+ * as well) names the user in full, so a screen reader never hears "A" alone.
  */
 @Component({
   selector: 'app-avatar',

@@ -9,7 +9,7 @@ export const APP_NAME = 'Copycat Notebooks';
 
 /**
  * The mascot's head alone (NBK-58): small enough to read at 24 px, so it is
- * the title bar's mark and the empty states'. Rendered by `<app-copycat-mark>`.
+ * the sidebar's mark and the empty states'. Rendered by `<app-copycat-mark>`.
  */
 export const COPYCAT_MARK_SRC = '/copycat-mark.svg';
 

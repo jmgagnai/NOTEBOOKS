@@ -11,7 +11,7 @@ import { AuthStore } from './auth.store';
  * Lets a new user create an account (NBK-3). Registration doesn't issue a
  * session (only /auth/login does), so on success this sends the user to the
  * sign-in page rather than straight into the authenticated shell. The page
- * carries the app name itself (NBK-46) because the title bar is only
+ * carries the app name itself (NBK-46) because the sidebar is only
  * rendered once signed in.
  */
 @Component({

@@ -95,23 +95,16 @@
   </header>
 
   <!--
-    Three panes (NBK-35, flat since NBK-78), each a labelled landmark that scrolls
-    on its own: the Chat Threads navigator, the open Thread, the Documents
-    panel. The chat components (NBK-34) own their cards' content; the
-    Documents panel's content is the page's own, moved here from the old
-    single card unchanged (specs 03 and 04 redesign what the panels show).
+    Two panes (NBK-35, flat since NBK-78), each a labelled landmark that
+    scrolls on its own: the open Thread and the Documents panel. The Chat
+    Threads navigator left for the sidebar (NBK-79), which renders the
+    Threads this page loads. The chat component (NBK-34) owns its pane's
+    content; the Documents panel's content is the page's own.
   -->
   <div
     class="notebook-detail-page__workspace"
     [class.notebook-detail-page__workspace--documents-hidden]="documentsHidden()"
   >
-    <nav
-      class="notebook-detail-page__panel notebook-detail-page__panel--threads"
-      aria-label="Chat Threads"
-    >
-      <app-thread-navigator [notebookId]="notebookId" />
-    </nav>
-
     <section
       class="notebook-detail-page__panel notebook-detail-page__panel--chat"
       aria-label="Chat"

@@ -546,19 +546,19 @@ describe('NotebookDetailPage — workspace', () => {
     });
   });
 
-  // NBK-35: the Notebook is a full-height workspace of three cards — the
-  // Chat Threads navigator, the open Thread and the Documents panel — each a
-  // labelled landmark so a keyboard user can jump between them, under a slim
-  // header that carries the way back, the title and the Notebook's actions.
+  // NBK-35: the Notebook is a full-height workspace of panes — since NBK-79
+  // the open Thread and the Documents panel, the Chat Threads having moved
+  // to the app's sidebar — each a labelled landmark so a keyboard user can
+  // jump between them, under a slim header that carries the way back, the
+  // title and the Notebook's actions.
   describe('NBK-35: workspace frame', () => {
-    it('lays the Notebook out as three labelled regions', async () => {
+    it('lays the Notebook out as two labelled regions, with no Chat Threads column', async () => {
       await renderWithUpload(vi.fn());
 
-      const navigator = screen.getByRole('navigation', { name: 'Chat Threads' });
       const chat = screen.getByRole('region', { name: 'Chat' });
       const documents = documentsPanel();
 
-      expect(within(navigator).getByRole('button', { name: 'New Chat Thread' })).toBeTruthy();
+      expect(screen.queryByRole('navigation', { name: 'Chat Threads' })).toBeNull();
       expect(
         within(chat).getByText('Ask anything about the Documents in this Notebook'),
       ).toBeTruthy();
@@ -728,8 +728,7 @@ describe('NotebookDetailPage — workspace', () => {
 
       expect(screen.queryByRole('complementary', { name: 'Documents' })).toBeNull();
       expect(screen.queryByRole('list', { name: 'Documents' })).toBeNull();
-      // Only the panel goes: the reader hid it to make room for these two.
-      expect(screen.getByRole('navigation', { name: 'Chat Threads' })).toBeTruthy();
+      // Only the panel goes: the reader hid it to make room for the Thread.
       expect(screen.getByRole('region', { name: 'Chat' })).toBeTruthy();
       const show = showDocumentsButton()!;
       expect(show).toBeTruthy();
