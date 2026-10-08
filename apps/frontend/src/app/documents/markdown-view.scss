@@ -3,7 +3,9 @@
 // emulated view encapsulation does not add scoping attributes to — hence
 // `::ng-deep` on the children.
 .markdown-view {
-  line-height: 1.6;
+  // A host page may set its own (the Document page's article does, spec 08);
+  // chat answers keep the default.
+  line-height: var(--markdown-view-line-height, 1.6);
   overflow-wrap: break-word;
 
   // One wrapper per top-level Markdown block, so a Citation's character
@@ -39,8 +41,11 @@
     h2 {
       font-size: var(--mat-sys-title-large-size);
     }
+    // Never below the text around it: on the Document page's 17 px article
+    // (spec 08) title-medium's 16 px would make a heading smaller than its
+    // paragraphs. In a 16 px chat answer the two are the same.
     h3 {
-      font-size: var(--mat-sys-title-medium-size);
+      font-size: max(var(--mat-sys-title-medium-size), 1em);
     }
 
     p,

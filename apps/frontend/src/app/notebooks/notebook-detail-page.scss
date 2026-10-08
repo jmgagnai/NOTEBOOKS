@@ -1,8 +1,9 @@
 @use '../workspace-card';
 
 // Where the panes stack into one column. Mirrored, not shared, by
-// `COLLAPSED_BELOW_PX` in shell/sidebar.ts, which starts the sidebar as the
-// rail below the same width (spec 07 "Collapse"): change both together.
+// `NARROW_BELOW_PX` in shared/narrow-window.ts, below which the sidebar
+// starts as the rail and the Document page without its chat pane: change
+// both together.
 $stack-below: 900px;
 
 // The Notebook workspace (NBK-35): the pane grid filling the page column

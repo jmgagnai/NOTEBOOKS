@@ -79,6 +79,8 @@ $type-scale: (
 // - row-title: a Notebook's title in a row of the home list.
 // - reading: questions and answers in a Chat Thread, with the generous line
 //   height long prose needs; the Documents pane keeps the 14 px body.
+// - document: the Document page's article (spec 08), a step above reading
+//   with a looser line, after Copilot's page view: it is read at length.
 $app-type-scale: (
   page-title: (
     600,
@@ -94,6 +96,11 @@ $app-type-scale: (
     400,
     16px,
     26px,
+  ),
+  document: (
+    400,
+    17px,
+    30px,
   ),
 );
 

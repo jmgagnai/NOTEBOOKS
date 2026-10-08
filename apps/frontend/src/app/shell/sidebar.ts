@@ -1,5 +1,4 @@
-import { DOCUMENT } from '@angular/common';
-import { Component, computed, inject, input, output, signal } from '@angular/core';
+import { Component, computed, effect, inject, input, output, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import {
   ActivatedRouteSnapshot,
@@ -13,19 +12,12 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatMenuModule } from '@angular/material/menu';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { filter, map } from 'rxjs';
-import { NOTEBOOK_PAGE_PATH } from '../app.routes';
+import { DOCUMENT_PAGE_PATH, NOTEBOOK_PAGE_PATH } from '../app.routes';
 import { ThreadNavigator } from '../chat/thread-navigator';
 import { Avatar } from '../shared/avatar';
 import { APP_NAME } from '../shared/brand';
 import { CopycatMark } from '../shared/copycat-mark';
-
-/**
- * Below this viewport width the sidebar starts as the rail (spec 07
- * "Collapse"): the same 900 px the Notebook page stacks its panes at.
- * Mirrors `$stack-below` in notebooks/notebook-detail-page.scss, which a
- * TypeScript constant cannot share: change both together.
- */
-const COLLAPSED_BELOW_PX = 900;
+import { isNarrowWindow } from '../shared/narrow-window';
 
 /** The deepest activated route: the app's routes are flat, so it is the page's. */
 function leafOf(route: ActivatedRouteSnapshot): ActivatedRouteSnapshot {
@@ -81,18 +73,34 @@ export class Sidebar {
   /** The Notebook the current route is inside, if any. */
   protected readonly notebookId = computed(() => this.page().paramMap.get('notebookId'));
 
-  /** Only the Notebook page itself, not its Search or Document pages (spec 07 story 12). */
-  protected readonly onNotebookPage = computed(
-    () => this.page().routeConfig?.path === NOTEBOOK_PAGE_PATH,
-  );
-
   /**
    * Component state only, like the Documents pane's hidden state: a reload
    * starts expanded again, or collapsed on a narrow window.
    */
-  protected readonly collapsed = signal(
-    (inject(DOCUMENT).defaultView?.innerWidth ?? Infinity) < COLLAPSED_BELOW_PX,
+  protected readonly collapsed = signal(isNarrowWindow());
+
+  private readonly onDocumentPage = computed(
+    () => this.page().routeConfig?.path === DOCUMENT_PAGE_PATH,
   );
+
+  /**
+   * The pages with a chat pane whose Chat Thread the sidebar switches: the
+   * Notebook page (spec 07 story 12) and, since spec 08, the Document page.
+   * Not Search, which has none.
+   */
+  protected readonly showsChatThreads = computed(
+    () => this.page().routeConfig?.path === NOTEBOOK_PAGE_PATH || this.onDocumentPage(),
+  );
+
+  /**
+   * Entering the Document page collapses the sidebar to the rail (spec 08),
+   * which splits its width between the chat pane and the Document. Only on
+   * entering: expanding it there, or moving from one Document to another,
+   * is left alone.
+   */
+  private readonly railOnDocumentPage = effect(() => {
+    if (this.onDocumentPage()) this.collapsed.set(true);
+  });
 
   /** The collapse control's name and tooltip, which say what it will do. */
   protected readonly toggleLabel = computed(() =>

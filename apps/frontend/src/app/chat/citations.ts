@@ -90,10 +90,20 @@ export function citationLink(notebookId: string, citation: Citation): (string | 
   return ['/notebooks', notebookId, 'documents', citation.documentId];
 }
 
-export function citationParams(citation: Citation): Record<string, string | number> {
+/**
+ * The query a Citation's link carries: the pinned Version, Chunk and range
+ * (see `citationLink`), and the Chat Thread the answer citing it is in, so
+ * the Document page opens with that Thread beside the Document (spec 08) —
+ * also from a pasted link, where nothing else could say which Thread.
+ */
+export function citationParams(
+  citation: Citation,
+  threadId: string,
+): Record<string, string | number> {
   const params: Record<string, string | number> = {
     version: citation.documentVersionId,
     chunk: citation.chunkId,
+    thread: threadId,
   };
   // Omitted rather than sent as null when the Chunk could not be located in
   // the Converted Markdown: the Version still opens, just not scrolled.

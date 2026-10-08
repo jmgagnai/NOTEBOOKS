@@ -65,7 +65,7 @@ no Chat Threads, and after the user goes back from an open Thread.
 9. As a user, I want the open Chat Thread's row marked as current in the sidebar, so that I can see which one I am reading.
 10. As a user, I want a "New Chat Thread" control next to the "Chat Threads" header, so that starting a Thread works as it does today.
 11. As a user, I want "No Chat Threads yet." in the sidebar when the Notebook has none, so that the empty list is explained.
-12. As a user on the Notebooks home, the Document page or the Search page, I want the sidebar to show the Chat Threads only while I am on the Notebook page itself, so that the sidebar is not cluttered with a list I cannot use from there.
+12. _(Superseded by spec 08 for the Document page, which lists Chat Threads too.)_ As a user on the Notebooks home, the Document page or the Search page, I want the sidebar to show the Chat Threads only while I am on the Notebook page itself, so that the sidebar is not cluttered with a list I cannot use from there.
 13. As a user, I want my avatar and e-mail at the bottom of the sidebar, opening a menu with "Sign out", so that signing out stays one click away.
 14. As a user, I want to collapse the sidebar to a narrow icon rail and expand it again, so that the content gets the width when I need it.
 15. As a user with a collapsed sidebar, I want the rail to keep the brand mark, Notebooks, Search (inside a Notebook) and my avatar as icon buttons with tooltips, so that the main destinations stay reachable.
@@ -130,7 +130,7 @@ no Chat Threads, and after the user goes back from an open Thread.
 
 ### Other pages and cross-cutting
 
-56. As a user on the Document page or the Search page, I want the sidebar and the flat look, with their own layout and back links unchanged.
+56. _(Superseded by spec 08 for the Document page.)_ As a user on the Document page or the Search page, I want the sidebar and the flat look, with their own layout and back links unchanged.
 57. As a user, I want every visible word to keep using the project's vocabulary — Notebook, Document, Chat Thread, Citation — rather than Copilot's "references", "sources" or "chats".
 58. As a keyboard user, I want visible focus on every new control (sidebar items, collapse toggle, back arrow, Show Documents), so that the new look does not regress accessibility.
 
