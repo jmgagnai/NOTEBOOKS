@@ -18,6 +18,7 @@ import {
   rowMenuItem,
   documentsPanel,
 } from './notebook-detail-page.spec-helpers';
+import { tooltipOf } from '../chat/chat-panel.spec-helpers';
 
 describe('NotebookDetailPage — Documents panel', () => {
   // NBK-42: one compact row per Document — type icon, filename, a quiet
@@ -464,9 +465,10 @@ describe('NotebookDetailPage — Documents panel', () => {
       expect(listDocuments).toHaveBeenCalledTimes(1);
     });
 
-    // Spec 02 / NBK-37: the header button is "Documents <count>", the plain
-    // number, whatever is still ingesting; the ready line is the panel's.
-    it('"Show Documents" reads "Documents <n>", with the Document count only', async () => {
+    // Spec 02 / NBK-37: "Show Documents" carries the plain number, whatever
+    // is still ingesting; the ready line is the panel's. An icon button since
+    // NBK-82 (spec 07), so the number moved into its tooltip.
+    it('"Show Documents" tells the Document count only, in its tooltip', async () => {
       await renderWithUpload(vi.fn(), [
         documentFor('a.txt', { status: 'ready' }),
         documentFor('b.txt', { status: 'queued' }),
@@ -476,7 +478,7 @@ describe('NotebookDetailPage — Documents panel', () => {
       fireEvent.click(within(documentsPanel()).getByRole('button', { name: 'Hide Documents' }));
 
       const show = screen.getByRole('button', { name: 'Show Documents' });
-      expect(show.textContent?.replace(/\s+/g, ' ').trim()).toBe('Documents 2');
+      expect(await tooltipOf(show)).toBe('Show Documents (2)');
     });
 
     const LIBRARY = [
@@ -684,19 +686,11 @@ describe('NotebookDetailPage — Documents panel', () => {
   });
 
   describe('NBK-49: empty state', () => {
-    /** The empty state's own "Add Documents", inside the Documents panel. */
-    function emptyStateAddDocuments() {
+    /** The Documents pane's own "Add Documents", at its top since NBK-82. */
+    function paneAddDocuments() {
       return within(documentsPanel()).getByRole('button', {
         name: 'Add Documents',
       }) as HTMLButtonElement;
-    }
-
-    /** The page header's "Add Documents", outside the Documents panel. */
-    function headerAddDocuments() {
-      const panel = documentsPanel();
-      return screen
-        .getAllByRole('button', { name: 'Add Documents' })
-        .find((button) => !panel.contains(button)) as HTMLButtonElement;
     }
 
     it('an empty Notebook invites the first upload where the list would be', async () => {
@@ -705,8 +699,11 @@ describe('NotebookDetailPage — Documents panel', () => {
 
       expect(within(panel).getByText('No Documents yet.')).toBeTruthy();
       expect(within(panel).getByText(/Add Documents to start asking questions\./)).toBeTruthy();
-      expect(emptyStateAddDocuments()).toBeTruthy();
-      expect(screen.getAllByRole('button', { name: 'Add Documents' })).toHaveLength(2);
+      // NBK-82 (spec 07 story 52): no button of its own — the pane's
+      // "Add Documents" sits right above it.
+      expect(screen.getAllByRole('button', { name: 'Add Documents' })).toEqual([
+        paneAddDocuments(),
+      ]);
     });
 
     // NBK-62 (spec 06 "Empty states"): the cat mark replaces the Documents
@@ -724,21 +721,6 @@ describe('NotebookDetailPage — Documents panel', () => {
         mark.compareDocumentPosition(sentence) & Node.DOCUMENT_POSITION_FOLLOWING,
       ).toBeTruthy();
       expect(panel.querySelector('mat-icon[svgicon="document"]')).toBeNull();
-    });
-
-    it("the empty state's Add Documents opens the same picker, which starts a batch", async () => {
-      const request = deferred<Record<string, unknown>>();
-      const uploadDocument = vi.fn().mockReturnValue(request.promise);
-      await renderWithUpload(uploadDocument);
-      const input = screen.getByLabelText('Upload Documents') as HTMLInputElement;
-      const open = vi.spyOn(input, 'click');
-
-      fireEvent.click(emptyStateAddDocuments());
-      expect(open).toHaveBeenCalledTimes(1);
-
-      pick([fileNamed('a.txt')]);
-      expect(await screen.findByRole('list', { name: 'Upload progress' })).toBeTruthy();
-      expect(sentNames(uploadDocument)).toEqual(['a.txt']);
     });
 
     it('goes away while a batch runs, and stays away once a Document exists', async () => {
@@ -763,10 +745,10 @@ describe('NotebookDetailPage — Documents panel', () => {
       expect(screen.getAllByRole('button', { name: 'Add Documents' })).toHaveLength(1);
     });
 
-    it("the header's Add Documents carries the add icon", async () => {
+    it("the pane's Add Documents carries the add icon", async () => {
       await renderWithUpload(vi.fn());
 
-      const icon = headerAddDocuments().querySelector('mat-icon');
+      const icon = paneAddDocuments().querySelector('mat-icon');
       expect(icon?.getAttribute('data-mat-icon-name')).toBe('add');
     });
   });

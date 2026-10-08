@@ -1,44 +1,15 @@
-// The bar's chrome (48 px, white, bottom border) is the toolbar override in
-// styles.scss; this file only lays out what sits in it (NBK-30).
-.app-shell__toolbar {
-  gap: 8px;
-  padding: 0 12px 0 16px;
+// The shell's frame (NBK-79): the sidebar, then the routed page in the rest
+// of the width, exactly the viewport high. The page
+// inside `__main` is styled in styles.scss: it is not in this template.
+:host {
+  display: flex;
+  height: 100%;
 }
 
-// Spec 06 (NBK-59): the mark and the name form one link home. The cluster
-// is the one element allowed to shrink so a 360 px window still shows the
-// avatar; the mark (which sizes itself and does not shrink) keeps its size
-// and only the name truncates.
-.app-shell__brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  color: inherit;
-  text-decoration: none;
-}
-
-// Spec 01's section size (16/600), not the toolbar's title size.
-.app-shell__name {
-  min-width: 0;
-  overflow: hidden;
-  font: var(--mat-sys-title-medium);
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.app-shell__spacer {
+.app-shell__main {
+  display: flex;
+  flex-direction: column;
   flex: 1 1 auto;
-}
-
-// The avatar is the button: no Material button chrome, so the round focus
-// ring from styles.scss hugs the circle.
-.app-shell__account {
-  display: inline-flex;
-  flex: none;
-  padding: 0;
-  border: 0;
-  border-radius: var(--app-corner-round);
-  background: none;
-  cursor: pointer;
+  min-width: 0;
+  overflow: auto;
 }

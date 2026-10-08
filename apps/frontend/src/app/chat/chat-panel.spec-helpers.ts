@@ -1,13 +1,15 @@
-import { Component, input } from '@angular/core';
+import { Component, inject, input, OnDestroy, OnInit } from '@angular/core';
 import { DeferBlockBehavior, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/angular';
 import { Subject } from 'rxjs';
+import { ChatStore } from './chat.store';
 import { ThreadNavigator } from './thread-navigator';
 import { ThreadView } from './thread-view';
 import { AuthService } from '../api/services/auth.service';
 import { AuthStore } from '../auth/auth.store';
 import { ChatService } from '../api/services/chat.service';
+import { NotebooksService } from '../api/services/notebooks.service';
 import { AppEvent, AppEventsService } from '../events/app-events.service';
 import { provideAppIcons } from '../shared/fluent-icons';
 
@@ -94,6 +96,13 @@ export async function tooltipOf(element: HTMLElement): Promise<string | undefine
 /** The question box, however it is currently rendered (enabled or not). */
 export const questionBox = () => screen.getByLabelText('Ask a question') as HTMLTextAreaElement;
 
+/** The composer's Send button, while the box is not answering. */
+export const sendButton = () => screen.getByRole('button', { name: 'Send' }) as HTMLButtonElement;
+
+/** The navigator's "New Chat Thread" button. */
+export const newThreadButton = () =>
+  screen.getByRole('button', { name: 'New Chat Thread' }) as HTMLButtonElement;
+
 /** The question most tests ask, and the exchange that records it. */
 export const ASK = 'What was revenue in Q3?';
 export const q3Exchange = () => ({
@@ -171,7 +180,9 @@ export const failed = (data: Record<string, unknown> = {}): AppEvent =>
  * NBK-34 split the one panel component in two so the workspace frame
  * (NBK-35) can place them in different cards; the behaviour under test is
  * the pair's, so this host stands in for the page and every test below is
- * the one that ran against the single component.
+ * the one that ran against the single component. Since NBK-79 the page, not
+ * the navigator, loads the Threads, follows the live stream and resets the
+ * store on the way out, so the host does exactly what the page does there.
  */
 @Component({
   selector: 'app-chat-panel-host',
@@ -181,8 +192,19 @@ export const failed = (data: Record<string, unknown> = {}): AppEvent =>
     <app-thread-view [notebookId]="notebookId()" />
   `,
 })
-export class ChatPanelHost {
+export class ChatPanelHost implements OnInit, OnDestroy {
   readonly notebookId = input.required<string>();
+
+  private readonly store = inject(ChatStore);
+
+  ngOnInit(): void {
+    void this.store.loadThreads(this.notebookId());
+    this.store.watchNotebook(this.notebookId());
+  }
+
+  ngOnDestroy(): void {
+    this.store.reset();
+  }
 }
 
 // Seam-3 test (per NBK-1's testing decisions, and explicitly called for by
@@ -241,6 +263,9 @@ export async function renderPanel(chatService: Partial<ChatService>) {
       provideRouter([]),
       provideAppIcons(),
       { provide: ChatService, useValue: chatService },
+      // The Notebook landing (NBK-81) shows and renames the Notebook's title
+      // through the Notebooks store; the page, not the panel, loads it.
+      { provide: NotebooksService, useValue: { listNotebooks: vi.fn().mockResolvedValue([]) } },
       {
         provide: AuthService,
         useValue: { getCurrentUser: vi.fn().mockResolvedValue(SIGNED_IN) },

@@ -2,6 +2,10 @@
 // NBK-34). The card it sits in is the page's (NBK-35); this fills it as a
 // column whose message list is the scrolling part and whose composer is the
 // fixed last row, so the question box stays in view however long the Thread.
+// The reading column (spec 07 "Messages"): messages, the composer and the
+// landing share it, so the three line up.
+$column-width: 760px;
+
 :host {
   display: flex;
   flex-direction: column;
@@ -15,12 +19,70 @@
   flex: 1 1 auto;
   min-height: 0;
 
+  // The open Thread's top bar (NBK-81): the back arrow at the top left,
+  // then the title over "Started by".
   &__head {
     flex: none;
     display: flex;
+    align-items: flex-start;
+    gap: 0.25rem;
+    padding: 8px 12px 0 4px;
+  }
+
+  &__back {
+    flex: none;
+  }
+
+  &__heading {
+    min-width: 0;
+    display: flex;
     flex-direction: column;
     gap: 0.125rem;
-    padding: 8px 12px 0;
+  }
+
+  // The Notebook landing (NBK-81): the title block and the composer after
+  // it sit together in the middle of the pane, as on Copilot's Notebook
+  // page, rather than the composer pinned to the bottom of an empty pane.
+  // One column as wide as an open Thread's reading width (spec 07
+  // "Messages", about 760 px), the title lined up with the box's edge.
+  &--landing {
+    justify-content: center;
+    align-items: center;
+    padding: 24px;
+
+    > * {
+      box-sizing: border-box;
+      width: min(760px, 100%);
+    }
+  }
+
+  &__landing {
+    flex: none;
+    padding: 0 12px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+  }
+
+  &__landing-icon {
+    color: var(--mat-sys-on-surface-variant);
+  }
+
+  &__landing-title {
+    max-width: 100%;
+    margin: 0;
+    font: inherit;
+  }
+
+  // The composer in an open Thread: pinned under the messages, in their
+  // centred column (NBK-83). Its own 12 px padding lines the pill up with
+  // the messages' edge.
+  &__composer {
+    align-self: center;
+    box-sizing: border-box;
+    width: min(#{$column-width}, 100%);
   }
 
   // The heading only carries the semantics; the editable title sets the type.
@@ -34,13 +96,17 @@
     color: var(--mat-sys-on-surface-variant);
   }
 
+  // The list scrolls across the whole pane, so its scrollbar sits at the
+  // pane's edge, while the messages sit in a centred column at most 760 px
+  // wide (spec 07 story 41, NBK-83): the side padding grows to centre them.
+  // The same column as the composer under it and the landing above.
   &__messages {
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
     list-style: none;
     margin: 0;
-    padding: 8px 12px;
+    padding: 8px max(12px, calc((100% - #{$column-width}) / 2 + 12px));
     display: flex;
     flex-direction: column;
     gap: 1rem;
@@ -81,16 +147,20 @@
 
   // The question's bubble: a subtle surface with the spec's 12 px corners,
   // capped at three quarters of the row so it reads as speech, not a block.
+  // Questions and answers both take the 16 px reading role (spec 07).
   &__bubble {
+    font: var(--app-type-reading);
     max-width: 75%;
     padding: 0.5rem 0.75rem;
     border-radius: var(--mat-sys-corner-extra-large);
     background: var(--mat-sys-surface-container-high);
   }
 
-  // An answer has no bubble: it is the page's prose, and takes the width.
+  // An answer has no bubble: it is the page's prose on white, in the 16 px
+  // reading role (spec 07 "Messages"), and takes the column's width.
   &__answer {
     flex: 1 1 auto;
+    font: var(--app-type-reading);
   }
 
   // Nudged down so the avatar centres on the author line, not the row's top.
@@ -112,9 +182,10 @@
     margin-top: 0.6rem;
   }
 
+  // Keeps the small label size inside the 16 px reading role.
   &__message-author {
     display: block;
-    font-size: var(--mat-sys-body-small-size);
+    font: var(--mat-sys-body-small);
     color: var(--mat-sys-on-surface-variant);
     margin-bottom: 0.25rem;
   }

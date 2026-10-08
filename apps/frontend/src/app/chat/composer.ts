@@ -16,16 +16,17 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
-import { ChatStore } from './chat.store';
+import { ChatStore, NEW_THREAD_TITLE } from './chat.store';
 
 /**
- * The question box of the open Chat Thread (NBK-45, spec 04 "Composer"):
- * one bordered box holding the growing textarea, the keyboard hint and the
- * icon send button.
+ * The question box (NBK-45, spec 04 "Composer"; a Copilot-style pill since
+ * NBK-83, spec 07): the growing textarea and the round send button in one
+ * box, the keyboard hint and, in an open Thread, the AI caveat under it. It asks
+ * in the open Chat Thread, or, on the Notebook landing where none is open,
+ * starts one and asks there (NBK-81).
  *
  * Split out of the Thread view so the view's template is the message list
- * and nothing else, and so the empty state's starter prompts (spec 04) have
- * one thing to send through. It reads the ChatStore directly rather than
+ * and nothing else. It reads the ChatStore directly rather than
  * taking the open Thread as an input: the draft, the send and the answering
  * state are all facts about the store's open Thread, and a second copy of
  * "which Thread is open" would only be one more thing to keep in step.
@@ -58,9 +59,6 @@ export class Composer {
     computation: () => '',
   });
 
-  /** Nothing to ask into until a Chat Thread is open. */
-  protected readonly hasThread = computed(() => this.store.activeThreadId() !== null);
-
   /**
    * The answering state (spec 04): from the send until the recorded answer
    * arrives or the ask fails. That is exactly the store's `sending` — it
@@ -72,15 +70,35 @@ export class Composer {
    */
   protected readonly answering = computed(() => this.store.sending());
 
-  /** The box is closed without a Thread to ask into, and while answering. */
-  protected readonly closed = computed(() => !this.hasThread() || this.answering());
+  /**
+   * Whether the answering state is shown here: only in an open Thread. Back
+   * on the landing while an answer is still out (NBK-81) the box stays
+   * closed — spec 07 keeps sending disabled while a question is being sent —
+   * but there is no answer on screen, so the progress bar, the spinner and
+   * the "reopens when the answer is in" hint would point at nothing.
+   */
+  protected readonly answeringHere = computed(() => this.answering() && this.threadOpen());
+
+  /**
+   * The box is closed while answering, and while a Chat Thread is being
+   * started — by this box or the navigator's button — so a second send
+   * cannot start a second Thread (spec 07 story 35). With no Thread open it
+   * is open: sending starts one (NBK-81).
+   */
+  protected readonly closed = computed(() => this.answering() || this.store.creatingThread());
+
+  /**
+   * Whether a Chat Thread is open: the caveat under the box (spec 07 story
+   * 44) is about answers, so it shows where answers are, not on the landing.
+   */
+  protected readonly threadOpen = computed(() => this.store.activeThreadId() !== null);
 
   /** Whitespace is not a question: the same rule `send` applies, shown on the button. */
   protected readonly canSend = computed(() => !this.closed() && this.draft().trim().length > 0);
 
   protected readonly hint = computed(() => {
-    if (this.answering()) return 'Answering… the box reopens when the answer is in';
-    if (!this.hasThread()) return 'Open or start a Chat Thread to ask';
+    if (this.answeringHere()) return 'Answering… the box reopens when the answer is in';
+    if (this.answering()) return 'You can ask again once the current answer is in';
     return 'Enter to send · Shift+Enter for a new line';
   });
 
@@ -121,20 +139,29 @@ export class Composer {
   });
 
   /**
-   * Sends `content` as this user's question in the open Thread and reports
-   * whether the exchange landed. Public so a caller outside the box — the
-   * empty state's starter prompts (spec 04) — sends through the same path
-   * the keyboard does.
+   * Sends `content` as this user's question and reports whether the
+   * exchange landed.
+   *
+   * With no Thread open (the Notebook landing) it first starts one, titled
+   * as the navigator's "New Chat Thread" button titles one, so a Thread is
+   * the same thing however it was started — the sequence NBK-54's starter
+   * prompts ran, moved here when they went (NBK-81). `createThread` makes the
+   * new Thread the open one, which is what the question is then asked in; if
+   * it failed, nothing is open, the store's error row says why, and the text
+   * stays in the box.
    *
    * The text leaves the box as it is sent, since it now shows in the Thread
    * as the pending question (NBK-70), and comes back through
-   * `restoreFailedQuestion` if the ask fails. A starter prompt fails the
-   * same way, landing in the box ready to be asked again.
+   * `restoreFailedQuestion` if the ask fails.
    */
-  async ask(content: string): Promise<boolean> {
-    const threadId = this.store.activeThreadId();
+  private async ask(content: string): Promise<boolean> {
     const question = content.trim();
-    if (!threadId || !question || this.store.sending()) return false;
+    if (!question || this.closed()) return false;
+    if (this.store.activeThreadId() === null) {
+      await this.store.createThread(this.notebookId(), NEW_THREAD_TITLE);
+    }
+    const threadId = this.store.activeThreadId();
+    if (!threadId) return false;
     this.setDraft('');
     return this.store.sendMessage(this.notebookId(), threadId, question);
   }

@@ -23,7 +23,6 @@ const NAMES = [
   'delete',
   'arrow-download',
   'open',
-  'send',
   'rename',
   'chevron-down',
   'notebook',
@@ -40,6 +39,10 @@ const NAMES = [
   'document-text',
   'document-one-page',
   'document-table',
+  'panel-left-contract',
+  'panel-left-expand',
+  'folder',
+  'arrow-up',
 ];
 
 const require = createRequire(import.meta.url);

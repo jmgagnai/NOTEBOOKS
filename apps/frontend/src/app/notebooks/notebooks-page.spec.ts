@@ -1,7 +1,7 @@
 import { Component } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
-import { fireEvent, render, screen, waitFor } from '@testing-library/angular';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/angular';
 import { NotebooksPage } from './notebooks-page';
 import { NotebooksService } from '../api/services/notebooks.service';
 import { provideAppIcons } from '../shared/fluent-icons';
@@ -16,11 +16,32 @@ function pageProviders(notebooksService: Partial<Record<keyof NotebooksService, 
 }
 
 /**
- * Opens the card's "…" menu for `title` and picks `action` from it (NBK-56):
- * Rename and Delete live behind "Actions for <title>" rather than on the card.
+ * The row of the Notebooks list holding `title` (NBK-80, spec 07 "Notebooks
+ * home"): a list item with the link into the Notebook and its "…" button.
  */
-async function chooseFromCardMenu(title: string, action: 'Rename' | 'Delete') {
-  fireEvent.click(screen.getByRole('button', { name: `Actions for ${title}` }));
+async function notebookRow(title: string): Promise<HTMLElement> {
+  const list = await screen.findByRole('list', { name: 'Notebooks' });
+  return waitFor(() => {
+    const row = within(list)
+      .getAllByRole('listitem')
+      .find((item) => within(item).queryByText(title));
+    if (!row) throw new Error(`No Notebook row for ${title}`);
+    return row;
+  });
+}
+
+/** The link that opens the Notebook from its row. */
+async function rowLink(title: string): Promise<HTMLElement> {
+  return within(await notebookRow(title)).getByRole('link');
+}
+
+/**
+ * Opens the row's "…" menu for `title` and picks `action` from it (NBK-56):
+ * Rename and Delete live behind "Actions for <title>" rather than on the row.
+ */
+async function chooseFromRowMenu(title: string, action: 'Rename' | 'Delete') {
+  const row = await notebookRow(title);
+  fireEvent.click(within(row).getByRole('button', { name: `Actions for ${title}` }));
   fireEvent.click(await screen.findByRole('menuitem', { name: `${action} ${title}` }));
 }
 
@@ -43,9 +64,10 @@ describe('NotebooksPage', () => {
     expect(listNotebooks).toHaveBeenCalled();
   });
 
-  // NBK-55: a Notebook is a card whose body is a link into it, so opening
-  // one is a single click (or Enter) rather than a separate "Open" button.
-  it('shows each Notebook as a card linking to it, with its creation date', async () => {
+  // NBK-80 (spec 07 "Notebooks home"): a Notebook is a full-width row whose
+  // link opens it, so the whole row is the target rather than an "Open"
+  // button; the row says when the Notebook was created under a folder icon.
+  it('shows each Notebook as a row with a folder icon and its creation date', async () => {
     const listNotebooks = vi
       .fn()
       .mockResolvedValue([
@@ -56,10 +78,29 @@ describe('NotebooksPage', () => {
       providers: pageProviders({ listNotebooks }),
     });
 
-    const card = await screen.findByRole('link', { name: /Q3 Contracts/ });
-    expect(card.getAttribute('href')).toBe('/notebooks/1');
-    expect(card.textContent).toContain('Created Jan 15, 2026');
+    const row = await notebookRow('Q3 Contracts');
+    expect(row.textContent).toContain('Created Jan 15, 2026');
+    expect(row.querySelector('mat-icon[data-mat-icon-name="folder"]')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Open' })).toBeNull();
+  });
+
+  it('opens the Notebook when its row is activated', async () => {
+    const listNotebooks = vi
+      .fn()
+      .mockResolvedValue([
+        { id: '1', title: 'Q3 Contracts', createdAt: '2026-01-15T12:00:00.000Z' },
+      ]);
+
+    await render(NotebooksPage, {
+      providers: pageProviders({ listNotebooks }),
+      routes: [{ path: 'notebooks/:notebookId', component: OpenedNotebook }],
+    });
+
+    const link = await rowLink('Q3 Contracts');
+    expect(link.getAttribute('href')).toBe('/notebooks/1');
+    fireEvent.click(link);
+
+    await vi.waitFor(() => expect(TestBed.inject(Router).url).toBe('/notebooks/1'));
   });
 
   it('shows an empty state with the Create button when the Notebook list is empty', async () => {
@@ -138,9 +179,9 @@ describe('NotebooksPage', () => {
     expect(TestBed.inject(Router).url).toBe('/');
   });
 
-  // NBK-56: the card keeps only its link and a "…" button; the menu holds
+  // NBK-56: the row keeps only its link and a "…" button; the menu holds
   // the actions, and opening it must not open the Notebook underneath.
-  it('offers Rename and Delete from the card\'s "…" menu without opening the Notebook', async () => {
+  it('offers Rename and Delete from the row\'s "…" menu without opening the Notebook', async () => {
     const listNotebooks = vi
       .fn()
       .mockResolvedValue([
@@ -151,9 +192,9 @@ describe('NotebooksPage', () => {
       providers: pageProviders({ listNotebooks }),
       routes: [{ path: 'notebooks/:notebookId', component: OpenedNotebook }],
     });
-    await screen.findByText('Q3 Contracts');
+    const row = await notebookRow('Q3 Contracts');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Actions for Q3 Contracts' }));
+    fireEvent.click(within(row).getByRole('button', { name: 'Actions for Q3 Contracts' }));
 
     expect(await screen.findByRole('menuitem', { name: 'Rename Q3 Contracts' })).toBeTruthy();
     expect(screen.getByRole('menuitem', { name: 'Delete Q3 Contracts' })).toBeTruthy();
@@ -177,17 +218,17 @@ describe('NotebooksPage', () => {
     });
     await screen.findByText('Q3 Contracts');
 
-    await chooseFromCardMenu('Q3 Contracts', 'Rename');
+    await chooseFromRowMenu('Q3 Contracts', 'Rename');
     const box = await screen.findByLabelText('Notebook title');
     expect(screen.queryByRole('button', { name: 'Save' })).toBeNull();
     fireEvent.input(box, { target: { value: 'Q4 Contracts' } });
     fireEvent.keyDown(box, { key: 'Enter' });
 
     expect(renameNotebook).toHaveBeenCalledWith({ id: '1', body: { title: 'Q4 Contracts' } });
-    const card = await screen.findByRole('link', { name: /Q4 Contracts/ });
+    const link = await rowLink('Q4 Contracts');
     expect(screen.queryByLabelText('Notebook title')).toBeNull();
-    // The keyboard is back on the card it renamed, not dropped on the page.
-    await waitFor(() => expect(document.activeElement).toBe(card));
+    // The keyboard is back on the row it renamed, not dropped on the page.
+    await waitFor(() => expect(document.activeElement).toBe(link));
   });
 
   it('puts the title back when the rename is abandoned with Escape', async () => {
@@ -203,15 +244,15 @@ describe('NotebooksPage', () => {
     });
     await screen.findByText('Q3 Contracts');
 
-    await chooseFromCardMenu('Q3 Contracts', 'Rename');
+    await chooseFromRowMenu('Q3 Contracts', 'Rename');
     const box = await screen.findByLabelText('Notebook title');
     fireEvent.input(box, { target: { value: 'Mistake' } });
     fireEvent.keyDown(box, { key: 'Escape' });
 
     expect(renameNotebook).not.toHaveBeenCalled();
-    const card = await screen.findByRole('link', { name: /Q3 Contracts/ });
+    const link = await rowLink('Q3 Contracts');
     expect(screen.queryByLabelText('Notebook title')).toBeNull();
-    await waitFor(() => expect(document.activeElement).toBe(card));
+    await waitFor(() => expect(document.activeElement).toBe(link));
   });
 
   it('deletes a Notebook, removing it from the list', async () => {
@@ -228,7 +269,7 @@ describe('NotebooksPage', () => {
 
     await screen.findByText('Q3 Contracts');
 
-    await chooseFromCardMenu('Q3 Contracts', 'Delete');
+    await chooseFromRowMenu('Q3 Contracts', 'Delete');
 
     expect(deleteNotebook).toHaveBeenCalledWith({ id: '1' });
     await screen.findByText('No Notebooks yet.');
@@ -252,7 +293,7 @@ describe('NotebooksPage', () => {
     });
 
     await screen.findByText('Q3 Contracts');
-    await chooseFromCardMenu('Q3 Contracts', 'Delete');
+    await chooseFromRowMenu('Q3 Contracts', 'Delete');
     await screen.findByText('No Notebooks yet.');
 
     // The offer is a snack bar (NBK-33), which only becomes visible to
@@ -278,7 +319,7 @@ describe('NotebooksPage', () => {
     });
 
     await screen.findByText('Q3 Contracts');
-    await chooseFromCardMenu('Q3 Contracts', 'Delete');
+    await chooseFromRowMenu('Q3 Contracts', 'Delete');
 
     expect(await screen.findByText('Q3 Contracts deleted')).toBeTruthy();
     expect(screen.queryByText(/"Q3 Contracts" deleted\./)).toBeNull();
@@ -296,10 +337,10 @@ describe('NotebooksPage', () => {
     });
 
     await screen.findByText('Q3 Contracts');
-    await chooseFromCardMenu('Q3 Contracts', 'Delete');
+    await chooseFromRowMenu('Q3 Contracts', 'Delete');
     await screen.findByText('Q3 Contracts deleted');
 
-    await chooseFromCardMenu('Onboarding Docs', 'Delete');
+    await chooseFromRowMenu('Onboarding Docs', 'Delete');
 
     expect(await screen.findByText('Onboarding Docs deleted')).toBeTruthy();
     await waitFor(() => expect(screen.queryByText('Q3 Contracts deleted')).toBeNull());
@@ -323,7 +364,7 @@ describe('NotebooksPage', () => {
     // snack bar's short opening delays elapse without being stepped by hand.
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'], shouldAdvanceTime: true });
     try {
-      await chooseFromCardMenu('Q3 Contracts', 'Delete');
+      await chooseFromRowMenu('Q3 Contracts', 'Delete');
       await screen.findByText('Q3 Contracts deleted');
 
       await vi.advanceTimersByTimeAsync(7_000);

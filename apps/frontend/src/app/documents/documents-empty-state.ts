@@ -1,15 +1,11 @@
-import { ChangeDetectionStrategy, Component, output } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
-import { MatIconModule } from '@angular/material/icon';
+import { ChangeDetectionStrategy, Component } from '@angular/core';
 import { CopycatMark } from '../shared/copycat-mark';
 
 /**
  * What an empty Notebook's Documents panel shows where the list would be
- * (NBK-49, spec 03 "Empty state"): the first step, said and offered in
- * place. Its "Add Documents" is a second, secondary-styled way to the one
- * picker the page header owns, so it only asks — `add` — and the page opens
- * that same input; a second file input here would have to duplicate the
- * accepted types and the disabled-while-a-batch-runs rule.
+ * (NBK-49, spec 03 "Empty state"): the first step, said in place. It had
+ * its own "Add Documents" until NBK-82 (spec 07 story 52) put the panel's
+ * one directly above it, so it only says what to do.
  *
  * The cat mark stands where spec 03 had a Documents icon (NBK-62, spec 06
  * "Empty states").
@@ -19,16 +15,12 @@ import { CopycatMark } from '../shared/copycat-mark';
  */
 @Component({
   selector: 'app-documents-empty-state',
-  imports: [MatButtonModule, MatIconModule, CopycatMark],
+  imports: [CopycatMark],
   template: `
     <app-copycat-mark />
     <p class="documents-empty-state__text">
       <span>No Documents yet.</span> Add Documents to start asking questions.
     </p>
-    <button mat-stroked-button type="button" (click)="add.emit()">
-      <mat-icon svgIcon="add" />
-      Add Documents
-    </button>
   `,
   styles: `
     :host {
@@ -47,7 +39,4 @@ import { CopycatMark } from '../shared/copycat-mark';
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class DocumentsEmptyState {
-  /** The user asked to pick files; the page opens its picker. */
-  readonly add = output<void>();
-}
+export class DocumentsEmptyState {}

@@ -159,7 +159,7 @@ describe('Chat panel (ThreadNavigator + ThreadView) — messages and Citations',
     async function askWithoutAnswering() {
       const { sendChatMessage, settle } = heldSend();
       await openRevenueQuestions([], { sendChatMessage });
-      await screen.findByText('Ask anything about the Documents in this Notebook');
+      await screen.findByTestId('chat-messages');
       fireEvent.input(questionBox(), { target: { value: 'What was revenue in Q3?' } });
       fireEvent.click(screen.getByRole('button', { name: 'Send' }));
       return { settle };
@@ -256,7 +256,7 @@ describe('Chat panel (ThreadNavigator + ThreadView) — messages and Citations',
         ]);
 
       await openRevenueQuestions([], { listChatMessages });
-      await screen.findByText('Ask anything about the Documents in this Notebook');
+      await screen.findByTestId('chat-messages');
 
       // The first chunk this client sees is the third one of the answer.
       appEvents.events.next(chunk(2, 'and the trend is upward.'));

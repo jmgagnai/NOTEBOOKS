@@ -1,11 +1,13 @@
-// A card of the Notebook workspace (NBK-35): white on the canvas, spec 01's
-// 8 px corner and 1 px border, a header row and a body that scrolls on its
-// own, from the prototype's measurements (header row 44 px, 8 px body
-// padding). Mixins rather than classes because the Documents panel's chrome
-// is drawn by the page while the Chat Threads navigator draws its own — its
-// header hosts the start-a-Thread control, which is the navigator's state —
-// and the two have to stay identical: a value that drifted would read as a
-// bug. NBK-36 and NBK-37 (drop target, hiding) build on the same card.
+// A pane of the Notebook workspace (NBK-35): a header row and a body that
+// scrolls on its own, from the prototype's measurements (header row 44 px,
+// 8 px body padding). Since spec 07 (NBK-78) a pane is flat white with no
+// border or corner of its own — the page draws the 1 px lines between
+// panes — though the mixin keeps its `card` name. Mixins rather than classes
+// because the Documents panel's chrome is drawn by the page while the Chat
+// Threads navigator draws its own — its header hosts the start-a-Thread
+// control, which is the navigator's state — and the two have to stay
+// identical: a value that drifted would read as a bug. NBK-36 and NBK-37
+// (drop target, hiding) build on the same pane.
 
 @mixin card {
   position: relative;
@@ -14,8 +16,6 @@
   min-height: 0;
   min-width: 0;
   background: var(--mat-sys-surface);
-  border: 1px solid var(--mat-sys-outline-variant);
-  border-radius: var(--mat-sys-corner-medium);
   overflow: hidden;
 }
 

@@ -8,7 +8,7 @@ import { APP_NAME, COPYCAT_LOGO_SRC } from '../shared/brand';
  * reason `_auth-page.scss` is shared.
  *
  * The logo is the full scene (`COPYCAT_LOGO_SRC`), not the head-only mark the
- * title bar uses: at 96 px the cat, notebook and pencil read, and spec 06
+ * sidebar uses: at 96 px the cat, notebook and pencil read, and spec 06
  * reserves the full scene for these pages. The descriptive line is plain text
  * on purpose — spec 06 forbids any Microsoft or Copilot logo or icon.
  */

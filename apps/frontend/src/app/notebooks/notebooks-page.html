@@ -18,52 +18,57 @@
       <ng-container *ngTemplateOutlet="createButton" />
     </div>
   } @else {
-    <ul class="notebooks-page__grid" aria-label="Notebooks">
+    <!-- NBK-80 (spec 07 "Notebooks home"): full-width rows between dividers.
+         Each row is a list item holding the link and, beside it rather than
+         inside it, the "…" button, so opening the menu never opens the
+         Notebook. -->
+    <ul class="notebooks-page__list" aria-label="Notebooks">
       @for (notebook of store.notebooks(); track notebook.id) {
-        <li class="notebooks-page__card">
-          <!-- While renaming, the card body stops being a link: a text box inside
+        <li class="notebooks-page__row">
+          <!-- While renaming, the row body stops being a link: a text box inside
                an <a> would navigate on every click into it (NBK-56). -->
           @if (renamingId() === notebook.id) {
-            <div class="notebooks-page__card-link">
-              <mat-icon class="notebooks-page__card-icon" svgIcon="notebook" />
-              <app-editable-title
-                class="notebooks-page__card-title-edit"
-                size="small"
-                editLabel="Notebook title"
-                [title]="notebook.title"
-                (titleChange)="rename(notebook.id, $event)"
-                (editClosed)="closeRename(notebook.id, $event.refocus)"
-              />
-              <span class="notebooks-page__card-created">
-                Created {{ notebook.createdAt | date: 'mediumDate' }}
+            <div class="notebooks-page__row-link">
+              <mat-icon class="notebooks-page__row-icon" svgIcon="folder" />
+              <span class="notebooks-page__row-text">
+                <app-editable-title
+                  size="medium"
+                  editLabel="Notebook title"
+                  [title]="notebook.title"
+                  (titleChange)="rename(notebook.id, $event)"
+                  (editClosed)="closeRename(notebook.id, $event.refocus)"
+                />
+                <span class="notebooks-page__row-created">
+                  Created {{ notebook.createdAt | date: 'mediumDate' }}
+                </span>
               </span>
             </div>
           } @else {
             <a
-              #cardLink
-              class="notebooks-page__card-link"
+              #rowLink
+              class="notebooks-page__row-link"
               [attr.data-notebook-id]="notebook.id"
               [routerLink]="['/notebooks', notebook.id]"
             >
-              <mat-icon class="notebooks-page__card-icon" svgIcon="notebook" />
-              <span class="notebooks-page__card-title">{{ notebook.title }}</span>
-              <span class="notebooks-page__card-created">
-                Created {{ notebook.createdAt | date: 'mediumDate' }}
+              <mat-icon class="notebooks-page__row-icon" svgIcon="folder" />
+              <span class="notebooks-page__row-text">
+                <span class="notebooks-page__row-title">{{ notebook.title }}</span>
+                <span class="notebooks-page__row-created">
+                  Created {{ notebook.createdAt | date: 'mediumDate' }}
+                </span>
               </span>
             </a>
           }
-          <!-- A sibling of the link, not inside it, so opening the menu never
-               opens the Notebook. -->
           <button
             mat-icon-button
             type="button"
-            class="notebooks-page__card-menu"
+            class="notebooks-page__row-menu"
             [attr.aria-label]="'Actions for ' + notebook.title"
-            [matMenuTriggerFor]="cardMenu"
+            [matMenuTriggerFor]="rowMenu"
           >
             <mat-icon svgIcon="more-horizontal" />
           </button>
-          <mat-menu #cardMenu="matMenu">
+          <mat-menu #rowMenu="matMenu">
             <button
               mat-menu-item
               type="button"
@@ -89,8 +94,11 @@
   }
 </div>
 
+<!-- A secondary button with the add icon, where Copilot has "New notebook"
+     (NBK-80); the wording stays the app's. -->
 <ng-template #createButton>
-  <button mat-flat-button type="button" [disabled]="creating()" (click)="create()">
+  <button mat-stroked-button type="button" [disabled]="creating()" (click)="create()">
+    <mat-icon svgIcon="add" />
     Create Notebook
   </button>
 </ng-template>

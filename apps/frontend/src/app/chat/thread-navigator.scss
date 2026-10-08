@@ -2,9 +2,9 @@
 @use '../workspace-card';
 
 // The Chat Threads navigator of a Notebook (NBK-10, split out of the chat
-// panel in NBK-34, a list of rows since NBK-43). The card it sits in is the
-// page's (NBK-35); this fills it as a column — the header row fixed, the
-// Thread list scrolling — so the host stretches to the card's height.
+// panel in NBK-34, a list of rows since NBK-43). The section it sits in is
+// the sidebar's (NBK-79); this fills it as a column — the header row fixed, the
+// Thread list scrolling — so the host stretches to the pane's height.
 :host {
   display: flex;
   flex-direction: column;
@@ -79,8 +79,9 @@
     text-align: left;
     cursor: pointer;
 
+    // A step darker than the sidebar's grey it sits on (NBK-79).
     &:hover {
-      background: var(--mat-sys-surface-container);
+      background: var(--mat-sys-surface-container-high);
     }
 
     // The open Thread (spec 04 "Navigator"): tinted fill, brand bar on the

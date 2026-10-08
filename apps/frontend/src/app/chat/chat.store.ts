@@ -181,6 +181,15 @@ const initialState: ChatState = {
   error: null,
 };
 
+/**
+ * The fixed title a Thread starts with (NBK-43, spec 04 "Default Thread"),
+ * whichever control starts it — the navigator's button or a question sent
+ * from the landing (NBK-81):
+ * the create request requires a non-empty title, and the user renames the
+ * Thread from the Thread view's header once they know what it is about.
+ */
+export const NEW_THREAD_TITLE = 'New Chat Thread';
+
 /** What every event about one streamed answer carries, if it is one. */
 function streamFields(event: AppEvent): { threadId: string; streamId: string } | null {
   const threadId = event.data['threadId'];
@@ -216,6 +225,14 @@ export const ChatStore = signalStore(
     // the same shape as DocumentsStore's.
     let watching: Subscription | null = null;
 
+    /**
+     * Whether `threadId` is still the open Thread: a read that resolves after
+     * the Thread was closed (NBK-81) or swapped for another must not land.
+     */
+    function stillOpen(threadId: string): boolean {
+      return store.activeThreadId() === threadId;
+    }
+
     function stopWatching(): void {
       watching?.unsubscribe();
       watching = null;
@@ -242,7 +259,7 @@ export const ChatStore = signalStore(
           notebookId,
           threadId,
         })) as ChatMessage[];
-        if (store.activeThreadId() !== threadId) return;
+        if (!stillOpen(threadId)) return;
         patchState(store, {
           messages,
           // Only if it is still the same answer: a newer one may have
@@ -274,6 +291,9 @@ export const ChatStore = signalStore(
           notebookId,
           threadId,
         })) as ChatMessage[];
+        // Closed (NBK-81) or swapped for another while the read was out:
+        // these are no longer the messages on screen.
+        if (!stillOpen(threadId)) return;
         // An ask in this Thread can land while the read is out — the user
         // switched back mid-answer — and `sendMessage` has then appended an
         // exchange the snapshot predates. Keep it rather than let the older
@@ -287,6 +307,7 @@ export const ChatStore = signalStore(
         );
         patchState(store, { messages, messagesLoading: false });
       } catch (err) {
+        if (!stillOpen(threadId)) return;
         patchState(store, {
           messagesLoading: false,
           error: errorMessage(err, 'Failed to load the Chat Thread.'),
@@ -363,6 +384,27 @@ export const ChatStore = signalStore(
       },
 
       openThread,
+
+      /**
+       * Closes the open Chat Thread (NBK-81, spec 07 "Middle pane"): the
+       * Thread view's back arrow returns to the Notebook landing. Only the
+       * client lets go — the Thread stays in the list and nothing is sent to
+       * the server, so an answer still being written there keeps being
+       * recorded, as when another Thread is opened. Not a reload either:
+       * `loadThreads` would reopen the newest Thread (NBK-43), and the
+       * landing must stay. A question in flight and failed questions are
+       * kept: they belong to their Thread, which may be opened again.
+       */
+      closeThread(): void {
+        patchState(store, {
+          activeThreadId: null,
+          messages: [],
+          messagesLoading: false,
+          streamingAnswer: null,
+          // The error row is the closed Thread's (or about an ask in it).
+          error: null,
+        });
+      },
 
       /**
        * Asks a question and appends the exchange.

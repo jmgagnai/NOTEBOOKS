@@ -38,10 +38,14 @@ and centred with the app name above the form.
 
 ## Implementation Decisions
 
+> **Superseded by [spec 07](07-closer-copilot-pass.md)** — see its Notebooks home (a list of rows).
+
 **Home layout.** Page title "Notebooks" (20/600) and the "Create Notebook"
 primary button in a header row; below, a CSS grid of cards
 (`repeat(auto-fill, minmax(240px, 1fr))`, 16 px gap). The outer Material
 card is removed.
+
+> **Superseded by [spec 07](07-closer-copilot-pass.md)** — see its Notebooks home (rows replace cards).
 
 **Card.** 8 px corner, 1 px border, white, hover raises the border colour;
 content: a notebook icon, the title (14/600, two-line clamp), "Created

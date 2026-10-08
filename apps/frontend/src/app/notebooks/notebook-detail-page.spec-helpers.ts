@@ -202,13 +202,23 @@ export async function renderWithUpload(
   });
   if (existing.length === 0) await screen.findByText('No Documents yet.');
   else await screen.findByText(String(existing[0]['filename']));
-  if (notebook) await screen.findByRole('button', { name: notebook.title });
+  if (notebook) await landingTitle(notebook.title);
   return result;
 }
 
-/** Opens the "Research" title for editing and types `title` into it. */
+/**
+ * The Notebook title on the landing (NBK-81): the Notebook has no Chat
+ * Threads here, so the Chat region is the landing — the only place the
+ * title is shown since NBK-82 removed the page header.
+ */
+export async function landingTitle(title: string) {
+  const heading = await within(elsewhereOnThePage()).findByRole('heading', { name: title });
+  return within(heading).getByRole('button', { name: title });
+}
+
+/** Opens the landing's "Research" title for editing and types `title` into it. */
 export async function typeTitle(title: string) {
-  fireEvent.click(await screen.findByRole('button', { name: RESEARCH.title }));
+  fireEvent.click(await landingTitle(RESEARCH.title));
   const input = screen.getByLabelText('Notebook title') as HTMLInputElement;
   expect(input.value).toBe(RESEARCH.title);
   fireEvent.input(input, { target: { value: title } });

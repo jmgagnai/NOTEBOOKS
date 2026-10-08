@@ -10,6 +10,8 @@ import {
   viewChild,
 } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
+import { MatButtonModule } from '@angular/material/button';
+import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { ChatStore, ChatThread, PendingQuestion } from './chat.store';
@@ -19,8 +21,7 @@ import { Composer } from './composer';
 import { AnswerBody } from './answer-body';
 import { CitationGroups } from './citation-groups';
 import { EditableTitle } from '../shared/editable-title';
-import { ThreadEmptyState } from './thread-empty-state';
-import { NEW_THREAD_TITLE } from './thread-navigator';
+import { NotebooksStore } from '../notebooks/notebooks.store';
 
 /** One block of a streamed answer: a chunk, as received. */
 interface AnswerBlock {
@@ -33,6 +34,11 @@ interface AnswerBlock {
  * The open Chat Thread of a Notebook (NBK-10, split out in NBK-34): its
  * editable title, its messages, the answer being streamed into it,
  * and, through `Composer` (NBK-45), the question box.
+ *
+ * With no Thread open it is the Notebook landing instead (NBK-81, spec 07
+ * "Middle pane: landing or Thread"): the Notebook's title, renamed in place
+ * through the Notebooks store, over the same composer, which then starts a
+ * Thread to ask in. An open Thread's back arrow closes it and returns here.
  *
  * Every message names who asked it (GLOSSARY.md): a Thread is shared, so a
  * Chat Thread is unreadable without the attribution.
@@ -52,10 +58,11 @@ interface AnswerBlock {
  * than whatever is latest — which is the guarantee GLOSSARY.md makes about a
  * Citation and the reason an old answer stays checkable.
  *
- * This component only reads the ChatStore: loading the Threads, watching the
- * Notebook's App Events and resetting the store belong to the Thread
- * navigator (`ThreadNavigator`), so that the two can sit in different cards
- * (NBK-35) without either depending on the other being rendered first.
+ * This component loads nothing: loading the Threads, watching the
+ * Notebook's App Events and resetting the store belong to the Notebook page
+ * (`NotebookDetailPage`, since NBK-79), which outlives both this view and
+ * the sidebar's Thread navigator; and the Notebook list the landing's title
+ * comes from is the page's to load too.
  */
 @Component({
   selector: 'app-thread-view',
@@ -65,12 +72,13 @@ interface AnswerBlock {
     CitationGroups,
     Composer,
     EditableTitle,
+    MatButtonModule,
+    MatIconModule,
     MatProgressSpinnerModule,
     MatTooltipModule,
     NgTemplateOutlet,
     Avatar,
     SparkleAvatar,
-    ThreadEmptyState,
   ],
   templateUrl: './thread-view.html',
   styleUrl: './thread-view.scss',
@@ -80,7 +88,7 @@ export class ThreadView {
 
   protected readonly store = inject(ChatStore);
 
-  private readonly composer = viewChild.required(Composer);
+  private readonly notebooks = inject(NotebooksStore);
 
   private readonly injector = inject(Injector);
 
@@ -102,7 +110,9 @@ export class ThreadView {
       const threadId = this.store.activeThreadId();
       if (this.store.messagesLoading() || threadId === landedThread) return;
       landedThread = threadId;
-      this.afterRender((list) => list.scrollTo({ top: list.scrollHeight }));
+      // Optional call: jsdom has no scrollTo, and since NBK-81 an open
+      // Thread with no messages renders its (empty) list too.
+      this.afterRender((list) => list.scrollTo?.({ top: list.scrollHeight }));
     });
 
     // Rule 3 (story 15d): an answer's first block brings its start to the
@@ -181,6 +191,45 @@ export class ThreadView {
     return streaming.chunks.map((text, index) => ({ index, text }));
   });
 
+  /** The Notebook as the page's Notebooks store holds it; the page loads the list. */
+  private readonly notebook = computed(() => this.notebooks.byId(this.notebookId()));
+
+  /**
+   * The landing's title (NBK-81), under the name the Notebook page falls
+   * back to while the list loads.
+   */
+  protected readonly notebookTitle = computed(() => this.notebook()?.title ?? 'Notebook');
+
+  /**
+   * Whether to open the landing's title for editing on arrival: the page
+   * says so after "Create Notebook" (spec 05 story 3), whose title is a
+   * placeholder. An input rather than this view reading the navigation
+   * itself, because the page is what the router activates — the moment the
+   * navigation's state is at hand — and the landing title has been the only
+   * one on the page since NBK-82 removed the header.
+   */
+  readonly editTitleOnArrival = input(false);
+
+  private readonly landingTitle = viewChild<EditableTitle>('landingTitle');
+
+  // Once the Notebook has loaded and the landing has rendered its title, so
+  // the box opens on the real title rather than the "Notebook" placeholder;
+  // once only, so a later rename, list reload or return to the landing does
+  // not reopen it.
+  private titleOpenedOnArrival = false;
+  private readonly openTitleOnArrival = effect(() => {
+    const title = this.landingTitle();
+    if (this.titleOpenedOnArrival || !this.editTitleOnArrival()) return;
+    if (!title || !this.notebook()) return;
+    this.titleOpenedOnArrival = true;
+    afterNextRender(() => title.edit(), { injector: this.injector });
+  });
+
+  /** The landing title hands over only a changed, non-blank title (NBK-41). */
+  protected renameNotebook(title: string): void {
+    void this.notebooks.renameNotebook(this.notebookId(), title);
+  }
+
   /** The e-mail's local part: how a question's author line names its asker (NBK-44). */
   protected shortName(email: string): string {
     return email.split('@')[0];
@@ -194,19 +243,5 @@ export class ThreadView {
    */
   protected rename(threadId: string, title: string): void {
     void this.store.renameThread(this.notebookId(), threadId, title);
-  }
-
-  /**
-   * Asks a starter prompt (NBK-54), starting a Chat Thread first when none
-   * is open — titled as the navigator's "New Chat Thread" button titles one,
-   * so a Thread is the same thing however it was started. `createThread`
-   * makes the new Thread the open one, which is what the composer asks into;
-   * if it failed, nothing is open and the store's error is already showing.
-   */
-  protected async askStarter(prompt: string): Promise<void> {
-    if (this.store.activeThreadId() === null) {
-      await this.store.createThread(this.notebookId(), NEW_THREAD_TITLE);
-    }
-    await this.composer().ask(prompt);
   }
 }

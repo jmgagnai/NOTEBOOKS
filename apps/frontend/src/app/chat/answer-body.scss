@@ -12,9 +12,10 @@
 }
 
 // The rendered prose sits in a chat column, not a Document page: no extra
-// space above the first block or below the last.
+// space above the first block or below the last, and the reading role's
+// line height (spec 07, NBK-83) rather than the Document page's 1.6.
 .answer-body__markdown ::ng-deep .markdown-view {
-  line-height: 1.5;
+  line-height: var(--app-type-reading-line-height);
 
   > .markdown-view__block:first-child > :first-child {
     margin-top: 0;

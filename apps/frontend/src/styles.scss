@@ -72,6 +72,31 @@ $type-scale: (
     ),
 );
 
+// Spec 07's larger roles (NBK-78), outside Material's role set because no
+// Material component reads them: they are for the pages that copy Copilot's
+// big type. Same parts as the roles above, under `--app-type-<role>`.
+// - page-title: the home's "Notebooks" and the Notebook landing title.
+// - row-title: a Notebook's title in a row of the home list.
+// - reading: questions and answers in a Chat Thread, with the generous line
+//   height long prose needs; the Documents pane keeps the 14 px body.
+$app-type-scale: (
+  page-title: (
+    600,
+    40px,
+    52px,
+  ),
+  row-title: (
+    400,
+    20px,
+    28px,
+  ),
+  reading: (
+    400,
+    16px,
+    26px,
+  ),
+);
+
 html {
   // `theme-type: light` rather than Material's default `color-scheme`: dark
   // mode is out of scope for spec 01, and `light-dark()` values would let an
@@ -113,9 +138,11 @@ html {
   --mat-sys-on-error: #ffffff;
   --mat-sys-error-container: #fde7e9;
   --mat-sys-on-error-container: #c50f1f;
-  // Page canvas vs. pane/card surface, then the subtle surfaces for hover
-  // and the user bubble, from lightest to darkest.
-  --mat-sys-background: #f5f5f5;
+  // The page behind the panes, then the pane surface, then the subtle
+  // surfaces for hover and the user bubble, from lightest to darkest. The
+  // page was a grey canvas under bordered cards until spec 07 (NBK-78): now
+  // everything is flat white split by 1 px lines, as in Copilot.
+  --mat-sys-background: #ffffff;
   --mat-sys-on-background: #242424;
   --mat-sys-surface: #ffffff;
   --mat-sys-surface-container-lowest: #ffffff;
@@ -147,6 +174,12 @@ html {
   // round chips (Citation chips). `corner-full` cannot serve: it is pinned
   // at 4 px above so that buttons stay square-ish.
   --app-corner-round: 9999px;
+  // The composer's pill (spec 07 "Composer", NBK-83): half its 56 px
+  // one-line height, so one line reads as a full pill, while a draft grown
+  // to several lines keeps 28 px corners rather than becoming a stadium
+  // whose ends would cut into the text. The one pill in the app; spec 01's
+  // "no pills" rule otherwise stands.
+  --app-corner-pill: 28px;
 
   // Elevation off: surfaces are separated by 1 px borders. Only floating
   // overlays (menus, dialogs) keep a soft shadow at level 3 and above.
@@ -169,6 +202,16 @@ html {
     --mat-sys-#{$role}-tracking: 0;
   }
 
+  @each $role, $spec in $app-type-scale {
+    $weight: list.nth($spec, 1);
+    $size: list.nth($spec, 2);
+    $line-height: list.nth($spec, 3);
+    --app-type-#{$role}: #{$weight} #{$size} / #{$line-height} #{meta.inspect($system-font)};
+    --app-type-#{$role}-weight: #{$weight};
+    --app-type-#{$role}-size: #{$size};
+    --app-type-#{$role}-line-height: #{$line-height};
+  }
+
   // App-level tokens for the spec values Material has no system slot for.
   --app-primary-hover: #115ea3;
   --app-primary-pressed: #0c3b5e;
@@ -176,7 +219,6 @@ html {
   // The chat composer's focused border (spec 04): a step darker than the
   // strong border, standing in for the focus ring the box does not draw.
   --app-outline-focus: #8a8a8a;
-  --app-title-bar-height: 48px;
   --app-control-height: 32px;
   // A glyph inside a 24 px avatar (the assistant's sparkle, NBK-44): the
   // global 20 px icon would fill the circle edge to edge.
@@ -190,6 +232,10 @@ html {
   // and `primary-container` beside that outline reads as unfilled.
   --app-selected-fill: #d6e8f9;
   --app-selected-fill-hover: #c7def6;
+  // The sidebar (spec 07, NBK-78): the one surface that is not white, the
+  // subtle grey Copilot puts its navigation on, reused rather than a new
+  // colour so it stays one of the theme's greys.
+  --app-sidebar-surface: var(--mat-sys-surface-container);
 }
 
 html,
@@ -222,19 +268,16 @@ h6 {
   font: var(--mat-sys-title-small);
 }
 
-// Full-height layout under the title bar: the routed page is a flex child
-// that takes the viewport below the bar (`100vh - 48px`), so later specs can
-// build panes that scroll inside it rather than with the page.
-app-root {
-  display: flex;
-  flex-direction: column;
-  min-height: 100%;
-}
+// Full-height frame (spec 07, NBK-79): `app-root` is a row of the sidebar
+// and the page column, exactly the viewport high (app.scss). The routed page
+// is a flex child of that column that grows to at least its height, so a
+// page can set `height: 100%` on its root and scroll panes inside it, while
+// a longer page simply scrolls the column. Here rather than in app.scss
+// because the page element is the router's, not in the shell's template.
 
-app-root > :not(mat-toolbar):not(router-outlet) {
+.app-shell__main > :not(router-outlet) {
   display: block;
-  flex: 1 1 auto;
-  min-height: 0;
+  flex: 1 0 auto;
 }
 
 // Keyboard focus: a 2 px ring in the text colour on every control, 1 px
@@ -261,33 +304,21 @@ app-root > :not(mat-toolbar):not(router-outlet) {
 // components' own stylesheets.
 // ---------------------------------------------------------------------------
 
-// Title bar: 48 px, white, 1 px bottom border. Its content is the shell's
-// (spec 01 "App shell").
-.mat-toolbar {
-  @include mat.toolbar-overrides(
-    (
-      container-background-color: var(--mat-sys-surface),
-      container-text-color: var(--mat-sys-on-surface),
-      standard-height: var(--app-title-bar-height),
-      mobile-height: var(--app-title-bar-height),
-    )
-  );
-  border-bottom: 1px solid var(--mat-sys-outline-variant);
-}
-
-// Cards: white, 8 px corners, a border instead of the raised shadow. The
-// pages keep Material's default (raised) appearance, so the border is given
-// to every card rather than only the `outlined` appearance.
+// Cards: flat white, no corner, border or shadow (spec 07, NBK-78). The
+// Document and Search pages hold their content in a `mat-card`, which on a
+// white page now reads as the page itself rather than a card on a canvas.
 .mat-mdc-card {
   @include mat.card-overrides(
     (
       elevated-container-color: var(--mat-sys-surface),
       elevated-container-elevation: none,
-      filled-container-color: var(--mat-sys-surface-container-low),
+      elevated-container-shape: 0,
+      filled-container-color: var(--mat-sys-surface),
+      filled-container-shape: 0,
       outlined-outline-color: var(--mat-sys-outline-variant),
+      outlined-container-shape: 0,
     )
   );
-  border: 1px solid var(--mat-sys-outline-variant);
 }
 
 // Buttons. The four named variants later specs refer to map onto Material's
@@ -339,7 +370,7 @@ app-root > :not(mat-toolbar):not(router-outlet) {
   }
 }
 
-// Secondary buttons are white, not transparent, so they read on the canvas.
+// Secondary buttons are white, not transparent, so they read on any subtle surface (the sidebar, a hovered row).
 .mat-mdc-outlined-button:not(:disabled) {
   background-color: var(--mat-sys-surface);
 }

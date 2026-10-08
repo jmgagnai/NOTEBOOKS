@@ -11,12 +11,12 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
-import { ThreadNavigator } from '../chat/thread-navigator';
+import { ChatStore } from '../chat/chat.store';
 import { ThreadView } from '../chat/thread-view';
 import { DocumentFilter } from '../documents/document-filter';
 import { DocumentList, isInProgress } from '../documents/document-list';
@@ -24,7 +24,6 @@ import { DocumentsEmptyState } from '../documents/documents-empty-state';
 import { Document, DocumentsStore } from '../documents/documents.store';
 import { UploadBatchPanel } from '../documents/upload-batch-panel';
 import { UPLOAD_ACCEPT } from '../documents/upload-rules';
-import { EditableTitle } from '../shared/editable-title';
 import { showPageTitle } from '../shared/page-title';
 import { UndoSnackBar } from '../shared/undo-snack-bar';
 import { NotebooksStore } from './notebooks.store';
@@ -70,14 +69,14 @@ function droppedEntries(dataTransfer: DataTransfer | null): {
 }
 
 /**
- * A Notebook's workspace (NBK-5, framed in NBK-35): a slim header, then
- * three cards side by side — the Chat Threads navigator, the open Thread and
- * the Documents panel with its rows (`DocumentList`, NBK-42) and their
- * upload, open, delete, restore and download actions. Notebooks have no
- * dedicated `GET /notebooks/:id` endpoint, so the Notebook itself (its
- * title, for the header and the browser tab) is looked up from
- * `NotebooksStore`'s already-loaded list by route id, the same list the
- * top-level Notebooks page uses.
+ * A Notebook's workspace (NBK-5, framed in NBK-35, header row gone since
+ * NBK-82): two panes side by side — the open Thread and the Documents panel
+ * with its rows (`DocumentList`, NBK-42) and their upload, open, delete,
+ * restore and download actions. Notebooks have no dedicated
+ * `GET /notebooks/:id` endpoint, so the Notebook itself (its title, for the
+ * browser tab and the landing) is looked up from `NotebooksStore`'s
+ * already-loaded list by route id, the same list the top-level Notebooks
+ * page uses.
  *
  * Each row links to the Document itself, where the Abstract (NBK-7), the
  * Executive Summary and the full converted content live.
@@ -85,16 +84,16 @@ function droppedEntries(dataTransfer: DataTransfer | null): {
  * While open, it also follows this Notebook's live app events (NBK-6) so a
  * Document's row tracks the background pipeline without a refresh.
  *
- * The chat cards (NBK-10, split in NBK-34) are the Notebook's Chat Threads
- * and the open Thread. Per NBK-1 a Notebook's detail page is "composed of a
- * sources panel ... [and] a chat panel", so the two live on one page; the
- * Thread navigator owns the chat store's loading and live stream.
+ * The chat pane (NBK-10, split in NBK-34) is the open Thread. Per NBK-1 a
+ * Notebook's detail page is "composed of a sources panel ... [and] a chat
+ * panel", so the two live on one page. The Chat Threads navigator sits in
+ * the app's sidebar since NBK-79, but this page owns the chat store's
+ * lifecycle (see `ngOnInit`).
  */
 @Component({
   selector: 'app-notebook-detail-page',
   standalone: true,
   imports: [
-    EditableTitle,
     MatButtonModule,
     MatIconModule,
     MatProgressSpinnerModule,
@@ -102,8 +101,6 @@ function droppedEntries(dataTransfer: DataTransfer | null): {
     DocumentFilter,
     DocumentList,
     DocumentsEmptyState,
-    RouterLink,
-    ThreadNavigator,
     ThreadView,
     UploadBatchPanel,
   ],
@@ -123,14 +120,13 @@ function droppedEntries(dataTransfer: DataTransfer | null): {
 export class NotebookDetailPage implements OnInit, OnDestroy {
   private readonly route = inject(ActivatedRoute);
 
-  protected readonly notebooksStore = inject(NotebooksStore);
+  private readonly notebooksStore = inject(NotebooksStore);
   protected readonly store = inject(DocumentsStore);
+  private readonly chatStore = inject(ChatStore);
   private readonly undoSnackBar = inject(UndoSnackBar);
 
   protected readonly notebookId = this.route.snapshot.paramMap.get('notebookId')!;
-  protected readonly notebook = computed(
-    () => this.notebooksStore.notebooks().find((n) => n.id === this.notebookId) ?? null,
-  );
+  protected readonly notebook = computed(() => this.notebooksStore.byId(this.notebookId));
 
   // The browser tab names the Notebook (NBK-35, NBK-61) so several open
   // Notebooks are distinguishable; it follows a rename.
@@ -140,46 +136,34 @@ export class NotebookDetailPage implements OnInit, OnDestroy {
     void this.notebooksStore.loadNotebooks();
     void this.store.loadDocuments(this.notebookId);
     this.store.watchNotebook(this.notebookId);
+    // The Chat Threads (which opens the most recent one, see
+    // `ChatStore.loadThreads`) and the live stream their answers arrive on —
+    // the same one the Document status badges follow (NBK-6), so no second
+    // connection is opened. The page's job rather than the navigator's
+    // (spec 07, NBK-79): the navigator now sits in the sidebar, which drops
+    // it when collapsed, and that must not reset the open Thread.
+    void this.chatStore.loadThreads(this.notebookId);
+    this.chatStore.watchNotebook(this.notebookId);
   }
 
   ngOnDestroy(): void {
-    // The store is root-provided and outlives this page, so the live
-    // connection has to be closed explicitly or it would leak across
-    // navigations.
+    // The stores are root-provided and outlive this page, so the live
+    // connections have to be closed explicitly or they would leak across
+    // navigations; `reset` also clears the open Chat Thread, which would
+    // otherwise show up on the next Notebook opened.
     this.store.stopWatching();
+    this.chatStore.reset();
   }
 
   /**
    * Whether the navigation here asked for the title to open for editing:
    * "Create Notebook" does (spec 05 story 3), because the title it gave the
    * new Notebook is a placeholder. Read while the router is still
-   * activating this page, the only moment the navigation's state is at hand.
+   * activating this page, the only moment the navigation's state is at hand,
+   * and handed to the Thread view, whose landing holds the title (NBK-82).
    */
-  private editTitleOnArrival =
+  protected readonly editTitleOnArrival =
     inject(Router).currentNavigation()?.extras.state?.['editTitle'] === true;
-
-  private readonly headerTitle = viewChild(EditableTitle);
-
-  // Once the Notebook has loaded and the header has rendered its title, so
-  // the box opens on the real title rather than the "Notebook" placeholder;
-  // once only, so a later rename or list reload does not reopen it.
-  private readonly openTitleOnArrival = effect(() => {
-    const header = this.headerTitle();
-    if (!this.editTitleOnArrival || !header || !this.notebook()) return;
-    this.editTitleOnArrival = false;
-    afterNextRender(() => header.edit(), { injector: this.injector });
-  });
-
-  /**
-   * Renaming in place (NBK-35): the header title is an `app-editable-title`
-   * (NBK-41), which only hands over a title that differs from the current
-   * one, so nothing is sent for a click-and-click-away.
-   */
-  protected rename(title: string): void {
-    const notebook = this.notebook();
-    if (!notebook) return;
-    void this.notebooksStore.renameNotebook(notebook.id, title);
-  }
 
   /**
    * Whether the Documents panel is hidden (NBK-37), so the Thread takes its
@@ -200,7 +184,7 @@ export class NotebookDetailPage implements OnInit, OnDestroy {
 
   /**
    * Restores the panel and hands focus to its hide control: "Show Documents"
-   * is gone from the header the moment the panel is back, so the keyboard
+   * is gone from the Chat pane the moment the panel is back, so the keyboard
    * would otherwise land on the body. The focus waits for the render that
    * removes `inert` — a focus call on an inert element is silently ignored.
    */
