@@ -1,0 +1,178 @@
+// The app's left sidebar (NBK-79, spec 07 "App shell → sidebar"): full
+// height on the subtle grey surface, about 280 px wide, or a 56 px icon rail
+// collapsed. The host is the shell's first column; the routed page fills the
+// rest (app.scss).
+:host {
+  display: flex;
+  flex: none;
+  height: 100%;
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: 280px;
+  height: 100%;
+  padding: 8px;
+  gap: 4px;
+  border-right: 1px solid var(--mat-sys-outline-variant);
+  background: var(--app-sidebar-surface);
+
+  // The rail: one column of 32 px icon controls, centred in 56 px.
+  &--collapsed {
+    width: 56px;
+    align-items: center;
+
+    .sidebar__head {
+      flex-direction: column;
+      padding: 0;
+    }
+
+    .sidebar__item,
+    .sidebar__account {
+      justify-content: center;
+      width: var(--app-control-height);
+      padding: 0;
+    }
+  }
+
+  &__head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 40px;
+    padding: 0 0 0 8px;
+  }
+
+  // Spec 06 (NBK-59): the mark and the name form one link home. Only the
+  // name shrinks — the mark (which sizes itself) and the toggle keep theirs.
+  &__brand {
+    display: inline-flex;
+    flex: 1 1 auto;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    color: inherit;
+    text-decoration: none;
+    border-radius: var(--mat-sys-corner-small);
+  }
+
+  &--collapsed &__brand {
+    flex: none;
+    padding: 4px;
+  }
+
+  &__name {
+    min-width: 0;
+    overflow: hidden;
+    font: var(--mat-sys-title-medium);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  &__toggle {
+    flex: none;
+  }
+
+  &__items {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 8px 0 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  // A destination row: icon and label in a 32 px row, the current page on
+  // the selected fill the Chat Thread rows use (NBK-43), so "where am I"
+  // reads the same at both levels of the sidebar.
+  &__item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    box-sizing: border-box;
+    height: var(--app-control-height);
+    padding: 0 8px;
+    border-radius: var(--mat-sys-corner-small);
+    color: var(--mat-sys-on-surface);
+    font: var(--mat-sys-body-medium);
+    text-decoration: none;
+
+    &:hover {
+      background: var(--mat-sys-surface-container-high);
+    }
+
+    &--current {
+      background: var(--app-selected-fill);
+      font-weight: 600;
+
+      &:hover {
+        background: var(--app-selected-fill-hover);
+      }
+    }
+  }
+
+  &__label {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  // The Chat Threads take whatever height is left, and scroll inside it.
+  &__threads {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    margin-top: 8px;
+  }
+
+  &__spacer {
+    flex: 1 1 auto;
+  }
+
+  &__foot {
+    display: flex;
+    padding-top: 4px;
+    border-top: 1px solid var(--mat-sys-outline-variant);
+  }
+
+  // Avatar and e-mail as one plain button (no Material chrome), the whole
+  // row its hit area; collapsed, just the round avatar.
+  &__account {
+    display: flex;
+    flex: 1 1 auto;
+    align-items: center;
+    gap: 8px;
+    box-sizing: border-box;
+    min-width: 0;
+    height: 40px;
+    padding: 0 8px;
+    border: 0;
+    border-radius: var(--mat-sys-corner-small);
+    background: none;
+    color: var(--mat-sys-on-surface);
+    font: var(--mat-sys-body-medium);
+    text-align: left;
+    cursor: pointer;
+
+    &:hover {
+      background: var(--mat-sys-surface-container-high);
+    }
+  }
+
+  &--collapsed &__account {
+    flex: none;
+    height: var(--app-control-height);
+    border-radius: var(--app-corner-round);
+  }
+
+  &__email {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+}

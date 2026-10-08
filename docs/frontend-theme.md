@@ -15,8 +15,8 @@ a deliberate exception carries a `theme-exempt: <why>` comment on its line.
 Segoe UI (`bold-weight` and `medium-weight` both 600) and density `-2`, the
 compact step. Material emits its `--mat-sys-*` system tokens; the same `html`
 block then overrides them with the values below, so every Material component
-picks them up. A few component-level `mat.*-overrides` mixins follow for the
-toolbar, cards, buttons and menus.
+picks them up. A few component-level `mat.*-overrides` mixins follow for
+cards, buttons and menus.
 
 Density `-2` is what gives 32 px buttons and icon buttons and 48 px outlined
 form fields. Material hides the floating label at this density only for the
@@ -125,18 +125,20 @@ body (`body-medium`).
 
 | Token | Value | Meaning |
 |---|---|---|
-| `--app-title-bar-height` | 48 px | the `mat-toolbar` height; pages fill `100vh` minus it |
+| `--app-title-bar-height` | 48 px | the Notebook page's header row (the title bar it matched is gone since NBK-79) |
 | `--app-control-height` | 32 px | buttons, icon buttons, the plain `.app-button` variants |
 | `--app-icon-size-small` | 14 px | a glyph inside a 24 px avatar (the assistant's sparkle) |
 | `--app-copilot-gradient` | azure → violet → magenta at 135° | the Copilot sparkle; used by `<app-sparkle-avatar>` (the assistant's chat avatar) and nowhere else, per spec 01 |
 
-`app-root` is a flex column; the routed page element (whatever follows the
-toolbar) gets `flex: 1 1 auto; min-height: 0`. That leaves it no definite
-height for a percentage to resolve against, so a page that wants panes
-scrolling inside the viewport sets
-`height: calc(100vh - var(--app-title-bar-height))` on its own root (as
-`notebook-detail-page.scss` does) and lets the children scroll. `body`
-carries the page background (`--mat-sys-background`, white since spec 07).
+`app-root` is a flex row exactly the viewport high (spec 07, NBK-79): the
+sidebar (`app-sidebar`, about 280 px, a 56 px rail when collapsed, on
+`--app-sidebar-surface`), then `main.app-shell__main`, a flex column that
+scrolls. The routed page element inside it gets `flex: 1 0 auto`, so it is
+at least the column's height and a longer page scrolls the column, not the
+window. A page that wants panes scrolling inside the viewport sets
+`height: 100%` on its own root (as `notebook-detail-page.scss` does) and
+lets the children scroll. `body` carries the page background
+(`--mat-sys-background`, white since spec 07).
 
 ## Focus
 
@@ -207,7 +209,9 @@ Registered names: `add`, `history` (the Chat Threads navigator's title,
 NBK-43), `search`, `more-horizontal`, `delete`,
 `arrow-download`, `open`, `send`, `rename`, `chevron-down`, `notebook`,
 `document`, `sparkle`, `dismiss`, `checkmark`, `warning`, `arrow-left`,
-`panel-right-contract`, `panel-right-expand`, `sign-out`, and the Document
+`panel-right-contract`, `panel-right-expand`, `sign-out`,
+`panel-left-contract` and `panel-left-expand` (the sidebar's collapse
+toggle, NBK-79), and the Document
 rows' type icons (NBK-42) `document-pdf`, `document-text` (Word),
 `document-one-page` (text, Markdown), `document-table` (Excel, CSV), with
 `document` for anything else, and `folder` (the Notebook rows on the home
@@ -238,7 +242,7 @@ import it: `index.html` (`<title>`, favicons) and `public/manifest.webmanifest`.
 
 | Image | Path | Where, at what size |
 |---|---|---|
-| Mark (the cat's head alone) | `/copycat-mark.svg` (`COPYCAT_MARK_SRC`) | title bar, 24 px, named by `APP_NAME` as the home link; the two empty states (Notebooks home, a Notebook's Documents panel; the Chat Thread one went in NBK-81), 64 px, decorative |
+| Mark (the cat's head alone) | `/copycat-mark.svg` (`COPYCAT_MARK_SRC`) | sidebar, 24 px, named by `APP_NAME` as the home link; the two empty states (Notebooks home, a Notebook's Documents panel; the Chat Thread one went in NBK-81), 64 px, decorative |
 | Logo (the full scene) | `/copycat-logo.svg` (`COPYCAT_LOGO_SRC`) | sign-in and register pages, 96 px (`<app-auth-brand>`) |
 
 The mark is always `<app-copycat-mark>` (`shared/copycat-mark.ts`), an
@@ -247,15 +251,13 @@ not themed. Inputs: `size`, its height in px (default 64; the width follows
 the artwork, which is wider than tall), and an optional `label`. Without a
 label the mark is decorative (empty `alt`, `aria-hidden`), which is right
 wherever text beside it already says what it means; with one, the label is
-its `alt`, as in the title bar where the mark names the home link.
+its `alt`, as in the sidebar where the mark names the home link.
 
 The empty states no longer show the `sparkle` or `document` icons; the mark
 replaced them (NBK-62). Both icons stay registered for their other uses.
 
 ## Material components with Fluent overrides
 
-- `mat-toolbar`: white, text colour, 48 px (`--app-title-bar-height`), 1 px
-  bottom border.
 - `mat-card`: flat white, square, no border, no shadow (spec 07; was 8 px with a 1 px border).
 - Menus (`.mat-mdc-menu-panel`): white, 8 px, 1 px border, `level3` shadow.
 - Tooltips: dark `inverse-surface` on light, via the system tokens alone.

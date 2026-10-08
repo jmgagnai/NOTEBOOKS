@@ -1,16 +1,15 @@
 @use '../workspace-card';
 
 // The Notebook workspace (NBK-35): a column of header and pane grid filling
-// the viewport under the title bar, so the panes scroll and the page never
-// does. `100vh` minus the bar rather than `height: 100%`: the routed element
-// is a flex child of an `app-root` with only a min-height, so a percentage
-// would have nothing definite to resolve against.
+// the page column beside the sidebar (NBK-79), so the panes scroll and the
+// page never does. The shell gives that column a definite height, which is
+// what `100%` resolves against.
 .notebook-detail-page {
   position: relative;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
-  height: calc(100vh - var(--app-title-bar-height));
+  height: 100%;
 
   // The page header: as high as the title bar, so the two read as one chrome.
   &__header {
@@ -43,29 +42,29 @@
     white-space: nowrap;
   }
 
-  // The three panes: navigator 240 px, Thread view the rest, Documents
-  // 300 px (200/260 under 1100 px); one column under 900 px, the navigator at
-  // its natural height, the Thread view taking the rest, Documents a strip
-  // of about a third (spec 02 "Page structure"). Flat since spec 07
-  // (NBK-78): the panes are white and touch, and the 1 px gaps between them
-  // let the grid's border-colour background through as the dividing lines —
+  // The two panes: the Thread view takes the width, Documents 300 px
+  // (260 under 1100 px); one column under 900 px, the Thread view taking the
+  // rest and Documents a strip of about a third (spec 02 "Page structure").
+  // The Chat Threads column went to the sidebar (NBK-79). Flat since spec 07
+  // (NBK-78): the panes are white and touch, and the 1 px gap between them
+  // lets the grid's border-colour background through as the dividing line —
   // one rule that holds for the columns and for the stacked rows alike.
   &__workspace {
     flex: 1 1 auto;
     min-height: 0;
     display: grid;
-    grid-template-columns: 240px 1fr 300px;
+    grid-template-columns: 1fr 300px;
     gap: 1px;
     border-top: 1px solid var(--mat-sys-outline-variant);
     background: var(--mat-sys-outline-variant);
 
     @media (max-width: 1100px) {
-      grid-template-columns: 200px 1fr 260px;
+      grid-template-columns: 1fr 260px;
     }
 
     @media (max-width: 900px) {
       grid-template-columns: 1fr;
-      grid-template-rows: auto minmax(240px, 1fr) minmax(160px, 32%);
+      grid-template-rows: minmax(240px, 1fr) minmax(160px, 32%);
     }
 
     @media (prefers-reduced-motion: no-preference) {
@@ -79,16 +78,12 @@
     // (the line) with it, so the Thread view takes the width; under 900 px
     // it is the strip's row that goes. The pane itself slides out below.
     &--documents-hidden {
-      grid-template-columns: 240px 1fr 0;
+      grid-template-columns: 1fr 0;
       gap: 1px 0;
-
-      @media (max-width: 1100px) {
-        grid-template-columns: 200px 1fr 0;
-      }
 
       @media (max-width: 900px) {
         grid-template-columns: 1fr;
-        grid-template-rows: auto minmax(240px, 1fr) 0;
+        grid-template-rows: minmax(240px, 1fr) 0;
       }
     }
   }

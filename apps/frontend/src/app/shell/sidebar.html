@@ -1,0 +1,128 @@
+<!--
+  One labelled navigation landmark for the whole sidebar (spec 07 story 19);
+  the Chat Threads inside it keep their own, so a screen reader can still
+  jump straight to them. Collapsed, every label goes and each destination
+  stays as an icon control named by `aria-label` and shown by its tooltip;
+  expanded, the visible text names it and the tooltips are off.
+-->
+<nav class="sidebar" [class.sidebar--collapsed]="collapsed()" aria-label="Sidebar">
+  <div class="sidebar__head">
+    <!-- NBK-59: the mark's alt names the link; the visible name is hidden
+         from assistive tech so the app name is announced once, not twice.
+         Collapsed, the link names itself, which also keeps the tooltip from
+         describing it with the same words a second time. -->
+    <a
+      class="sidebar__brand"
+      routerLink="/"
+      [attr.aria-label]="collapsed() ? appName : null"
+      [matTooltip]="appName"
+      [matTooltipDisabled]="!collapsed()"
+      matTooltipPosition="right"
+    >
+      <app-copycat-mark [size]="24" [label]="appName" />
+      @if (!collapsed()) {
+        <span class="sidebar__name" aria-hidden="true">{{ appName }}</span>
+      }
+    </a>
+    <button
+      mat-icon-button
+      type="button"
+      class="sidebar__toggle"
+      [attr.aria-label]="collapsed() ? 'Expand sidebar' : 'Collapse sidebar'"
+      [matTooltip]="collapsed() ? 'Expand sidebar' : 'Collapse sidebar'"
+      matTooltipPosition="right"
+      [attr.aria-expanded]="!collapsed()"
+      (click)="toggle()"
+    >
+      <mat-icon [svgIcon]="collapsed() ? 'panel-left-expand' : 'panel-left-contract'" />
+    </button>
+  </div>
+
+  <ul class="sidebar__items">
+    <li>
+      <a
+        class="sidebar__item"
+        routerLink="/"
+        routerLinkActive="sidebar__item--current"
+        [routerLinkActiveOptions]="{ exact: true }"
+        ariaCurrentWhenActive="page"
+        [attr.aria-label]="collapsed() ? 'Notebooks' : null"
+        matTooltip="Notebooks"
+        [matTooltipDisabled]="!collapsed()"
+        matTooltipPosition="right"
+      >
+        <mat-icon svgIcon="notebook" />
+        @if (!collapsed()) {
+          <span class="sidebar__label">Notebooks</span>
+        }
+      </a>
+    </li>
+    <!--
+      Search only inside a Notebook (spec 07 stories 5–6): a search is always
+      of one Notebook, so the home has nothing to offer it for. Its name
+      keeps the old header link's, "Search this Notebook".
+    -->
+    @if (notebookId(); as notebookId) {
+      <li>
+        <a
+          class="sidebar__item"
+          [routerLink]="['/notebooks', notebookId, 'search']"
+          routerLinkActive="sidebar__item--current"
+          ariaCurrentWhenActive="page"
+          aria-label="Search this Notebook"
+          matTooltip="Search this Notebook"
+          [matTooltipDisabled]="!collapsed()"
+          matTooltipPosition="right"
+        >
+          <mat-icon svgIcon="search" />
+          @if (!collapsed()) {
+            <span class="sidebar__label">Search</span>
+          }
+        </a>
+      </li>
+    }
+  </ul>
+
+  <!--
+    The open Notebook's Chat Threads, on its page only (spec 07 story 12),
+    and not in the rail: there is no room for a row there. The navigator is
+    the one the page used to hold (NBK-43), unchanged; the page still loads
+    the Threads, so dropping it here loses nothing.
+  -->
+  @if (!collapsed() && onNotebookPage() && notebookId(); as notebookId) {
+    <nav class="sidebar__threads" aria-label="Chat Threads">
+      <app-thread-navigator [notebookId]="notebookId" />
+    </nav>
+  } @else {
+    <span class="sidebar__spacer"></span>
+  }
+
+  <!--
+    Who is signed in, at the bottom (spec 07 story 13): the avatar and the
+    e-mail, opening the account menu the title bar's avatar opened (NBK-30).
+    The button keeps its name; the e-mail beside the avatar is what it shows.
+  -->
+  <div class="sidebar__foot">
+    <button
+      type="button"
+      class="sidebar__account"
+      [matMenuTriggerFor]="accountMenu"
+      [attr.aria-label]="'Account menu for ' + email()"
+      [matTooltip]="'Account menu for ' + email()"
+      [matTooltipDisabled]="!collapsed()"
+      matTooltipPosition="right"
+    >
+      <app-avatar [email]="email()" />
+      @if (!collapsed()) {
+        <span class="sidebar__email">{{ email() }}</span>
+      }
+    </button>
+    <mat-menu #accountMenu="matMenu" xPosition="after" yPosition="above">
+      <button mat-menu-item disabled>{{ email() }}</button>
+      <button mat-menu-item class="sidebar__sign-out" (click)="signOut.emit()">
+        <mat-icon svgIcon="sign-out" />
+        <span>Sign out</span>
+      </button>
+    </mat-menu>
+  </div>
+</nav>

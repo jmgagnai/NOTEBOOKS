@@ -16,7 +16,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
-import { ThreadNavigator } from '../chat/thread-navigator';
+import { ChatStore } from '../chat/chat.store';
 import { ThreadView } from '../chat/thread-view';
 import { DocumentFilter } from '../documents/document-filter';
 import { DocumentList, isInProgress } from '../documents/document-list';
@@ -71,8 +71,7 @@ function droppedEntries(dataTransfer: DataTransfer | null): {
 
 /**
  * A Notebook's workspace (NBK-5, framed in NBK-35): a slim header, then
- * three cards side by side — the Chat Threads navigator, the open Thread and
- * the Documents panel with its rows (`DocumentList`, NBK-42) and their
+ * two panes side by side — the open Thread and the Documents panel with its rows (`DocumentList`, NBK-42) and their
  * upload, open, delete, restore and download actions. Notebooks have no
  * dedicated `GET /notebooks/:id` endpoint, so the Notebook itself (its
  * title, for the header and the browser tab) is looked up from
@@ -85,10 +84,11 @@ function droppedEntries(dataTransfer: DataTransfer | null): {
  * While open, it also follows this Notebook's live app events (NBK-6) so a
  * Document's row tracks the background pipeline without a refresh.
  *
- * The chat cards (NBK-10, split in NBK-34) are the Notebook's Chat Threads
- * and the open Thread. Per NBK-1 a Notebook's detail page is "composed of a
- * sources panel ... [and] a chat panel", so the two live on one page; the
- * Thread navigator owns the chat store's loading and live stream.
+ * The chat pane (NBK-10, split in NBK-34) is the open Thread. Per NBK-1 a
+ * Notebook's detail page is "composed of a sources panel ... [and] a chat
+ * panel", so the two live on one page. The Chat Threads navigator sits in
+ * the app's sidebar since NBK-79, but this page owns the chat store's
+ * lifecycle (see `ngOnInit`).
  */
 @Component({
   selector: 'app-notebook-detail-page',
@@ -103,7 +103,6 @@ function droppedEntries(dataTransfer: DataTransfer | null): {
     DocumentList,
     DocumentsEmptyState,
     RouterLink,
-    ThreadNavigator,
     ThreadView,
     UploadBatchPanel,
   ],
@@ -125,6 +124,7 @@ export class NotebookDetailPage implements OnInit, OnDestroy {
 
   protected readonly notebooksStore = inject(NotebooksStore);
   protected readonly store = inject(DocumentsStore);
+  private readonly chatStore = inject(ChatStore);
   private readonly undoSnackBar = inject(UndoSnackBar);
 
   protected readonly notebookId = this.route.snapshot.paramMap.get('notebookId')!;
@@ -140,13 +140,23 @@ export class NotebookDetailPage implements OnInit, OnDestroy {
     void this.notebooksStore.loadNotebooks();
     void this.store.loadDocuments(this.notebookId);
     this.store.watchNotebook(this.notebookId);
+    // The Chat Threads (which opens the most recent one, see
+    // `ChatStore.loadThreads`) and the live stream their answers arrive on —
+    // the same one the Document status badges follow (NBK-6), so no second
+    // connection is opened. The page's job rather than the navigator's
+    // (spec 07, NBK-79): the navigator now sits in the sidebar, which drops
+    // it when collapsed, and that must not reset the open Thread.
+    void this.chatStore.loadThreads(this.notebookId);
+    this.chatStore.watchNotebook(this.notebookId);
   }
 
   ngOnDestroy(): void {
-    // The store is root-provided and outlives this page, so the live
-    // connection has to be closed explicitly or it would leak across
-    // navigations.
+    // The stores are root-provided and outlive this page, so the live
+    // connections have to be closed explicitly or they would leak across
+    // navigations; `reset` also clears the open Chat Thread, which would
+    // otherwise show up on the next Notebook opened.
     this.store.stopWatching();
+    this.chatStore.reset();
   }
 
   /**
