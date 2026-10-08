@@ -6,6 +6,7 @@ import { ThreadNavigator } from './thread-navigator';
 import { ThreadView } from './thread-view';
 import { ChatService } from '../api/services/chat.service';
 import { AppEvent, AppEventsService } from '../events/app-events.service';
+import { provideAppIcons } from '../shared/fluent-icons';
 
 const NOTEBOOK_ID = '11111111-1111-1111-1111-111111111111';
 const DOCUMENT_ID = '22222222-2222-2222-2222-222222222222';
@@ -59,6 +60,22 @@ function citation(overrides: Partial<Record<string, unknown>> = {}) {
     charEnd: 167,
     ...overrides,
   };
+}
+
+/** The initials avatar beside the message whose author line is the n-th one. */
+function avatarOf(messageIndex: number): HTMLElement {
+  const row = screen.getAllByTestId('chat-message-author')[messageIndex].closest('li')!;
+  return within(row).getByTestId('chat-user-avatar');
+}
+
+/**
+ * What a tooltip says, read the way assistive technology reads it: Material
+ * registers the message as the element's `aria-describedby` target, so the
+ * text is reachable without simulating a hover and waiting out its delay.
+ */
+async function tooltipOf(element: HTMLElement): Promise<string | undefined> {
+  await waitFor(() => expect(element.getAttribute('aria-describedby')).toBeTruthy());
+  return document.getElementById(element.getAttribute('aria-describedby')!)?.textContent?.trim();
 }
 
 /**
@@ -129,6 +146,7 @@ describe('Chat panel (ThreadNavigator + ThreadView)', () => {
       // client, never Angular's own services).
       providers: [
         provideRouter([]),
+        provideAppIcons(),
         { provide: ChatService, useValue: chatService },
         appEvents.provider,
       ],
@@ -240,13 +258,13 @@ describe('Chat panel (ThreadNavigator + ThreadView)', () => {
     });
 
     // A shared Thread several people contributed to has to say who asked
-    // what — that is the whole point of recording it (ADR-0001).
+    // what — that is the whole point of recording it (ADR-0001). Spec 04
+    // (NBK-44) shows the e-mail's local part on the line and keeps the full
+    // e-mail on the avatar, so attribution stays exact without repeating
+    // "@example.com" on every message.
     const askers = screen.getAllByTestId('chat-message-author').map((el) => el.textContent?.trim());
-    expect(askers).toEqual([
-      'alice@example.com',
-      'Assistant, for alice@example.com',
-      'bob@example.com',
-    ]);
+    expect(askers).toEqual(['alice', 'Assistant', 'bob']);
+    expect(await tooltipOf(avatarOf(askers.indexOf('bob')))).toBe('bob@example.com');
   });
 
   it('sends a question and appends both it and the answer to the Chat Thread', async () => {
@@ -658,6 +676,62 @@ describe('Chat panel (ThreadNavigator + ThreadView)', () => {
       await waitFor(() => {
         expect(screen.queryByText('An answer in some other Thread.')).toBeNull();
       });
+    });
+  });
+
+  // Spec 04 "Message rendering": questions read as speech, answers as the
+  // page's prose. The tests check the parts a reader relies on to tell the
+  // two apart and to know who asked — never the colours or alignment.
+  describe('NBK-44: message rendering', () => {
+    async function openExchange() {
+      await renderPanel({
+        listChatThreads: vi.fn().mockResolvedValue([thread()]) as never,
+        listChatMessages: vi.fn().mockResolvedValue([
+          message({
+            id: 'q1',
+            role: 'user',
+            content: 'What was revenue in Q3?',
+            askedBy: participant('jane.doe@example.com'),
+          }),
+          message({
+            id: 'a1',
+            role: 'assistant',
+            content: 'Revenue in Q3 was 12.4M.',
+            askedBy: participant('jane.doe@example.com'),
+          }),
+        ]) as never,
+      });
+      fireEvent.click(await screen.findByRole('button', { name: 'Open Revenue questions' }));
+      await screen.findByText('Revenue in Q3 was 12.4M.');
+    }
+
+    function rowOf(text: string): HTMLElement {
+      return screen.getByText(text).closest('li')!;
+    }
+
+    it("shows a question beside the asker's initials avatar and an answer beside the sparkle avatar", async () => {
+      await openExchange();
+
+      const question = rowOf('What was revenue in Q3?');
+      expect(within(question).getByTestId('chat-user-avatar').textContent?.trim()).toBe('JD');
+      expect(within(question).queryByTestId('chat-assistant-avatar')).toBeNull();
+
+      const answer = rowOf('Revenue in Q3 was 12.4M.');
+      expect(within(answer).getByTestId('chat-assistant-avatar')).toBeTruthy();
+      expect(within(answer).queryByTestId('chat-user-avatar')).toBeNull();
+      expect(within(answer).getByTestId('chat-message-author').textContent?.trim()).toBe(
+        'Assistant',
+      );
+    });
+
+    // The e-mail is still there for whoever needs it exactly — on the avatar
+    // — but a shared Thread must not read as a column of addresses.
+    it('keeps the full e-mail off every message line, in the avatar tooltip only', async () => {
+      await openExchange();
+
+      const list = rowOf('What was revenue in Q3?').parentElement!;
+      expect(within(list).queryByText(/@example\.com/)).toBeNull();
+      expect(await tooltipOf(avatarOf(0))).toBe('jane.doe@example.com');
     });
   });
 });
