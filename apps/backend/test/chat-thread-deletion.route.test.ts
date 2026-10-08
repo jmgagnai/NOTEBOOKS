@@ -5,6 +5,9 @@ import type { Pool } from 'pg';
 import { buildApp } from '../src/app.js';
 import { runMigrations } from '../src/db/migrate.js';
 import { createPool } from '../src/db/pool.js';
+import { createOpenRouterEmbedder } from '../src/llm/embeddings.js';
+import { EMBEDDING_DIMENSIONS } from '../src/llm/models.js';
+import { createOpenRouterCompleter } from '../src/llm/openrouter.js';
 
 /**
  * NBK-95: only its author deletes a Chat Thread, softly — its messages and
@@ -12,7 +15,7 @@ import { createPool } from '../src/db/pool.js';
  * backend's `ADMIN_EMAILS`) restores one (GLOSSARY.md, ADR-0001 amendment).
  */
 describe('Chat Thread deletion', () => {
-  const ADMIN = 'root@example.com';
+  const ADMINISTRATOR = 'root@example.com';
   let container: StartedPostgreSqlContainer;
   let pool: Pool;
   let app: FastifyInstance;
@@ -159,6 +162,67 @@ describe('Chat Thread deletion', () => {
       expect(ask.json()).toEqual({ message: 'This Chat Thread was deleted.' });
     });
 
+    // The author deletes the Thread while an answer is still being written
+    // in it: the exchange must not land in a deleted Thread (NBK-95: every
+    // write treats a deleted Thread as absent), and the asker is told why.
+    it('records nothing in a Chat Thread deleted while its answer was being written', async () => {
+      const author = await signIn();
+      const { threadId, url } = await threadOf(author);
+      const stubFetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+        const body = JSON.parse(String(init?.body)) as { input?: unknown };
+        const json = (payload: unknown) =>
+          new Response(JSON.stringify(payload), {
+            headers: { 'content-type': 'application/json' },
+          });
+        if (String(input).endsWith('/embeddings')) {
+          // Mid-answer — after the route found the Thread, before it writes
+          // — the author's delete lands. Embedding the question is the one
+          // call every answer makes (with no Documents the model is not
+          // asked at all).
+          await pool.query('UPDATE chat_threads SET deleted_at = now() WHERE id = $1', [threadId]);
+          const texts = (Array.isArray(body.input) ? body.input : [body.input]) as string[];
+          return json({
+            data: texts.map((_, index) => ({
+              index,
+              embedding: new Array<number>(EMBEDDING_DIMENSIONS).fill(1),
+            })),
+          });
+        }
+        return json({ choices: [{ message: { content: 'Revenue was 12.4M.' } }] });
+      }) as typeof globalThis.fetch;
+      const withChat = await buildApp({
+        pool,
+        chat: {
+          complete: createOpenRouterCompleter({ apiKey: 'k', fetch: stubFetch, retries: 0 }),
+          embed: createOpenRouterEmbedder({
+            apiKey: 'k',
+            model: 'e',
+            fetch: stubFetch,
+            retries: 0,
+          }),
+          model: 'm',
+        },
+      });
+      try {
+        const ask = await withChat.inject({
+          method: 'POST',
+          url: `${url}/messages`,
+          cookies: { session: author },
+          payload: { content: 'And in Q4?' },
+        });
+
+        expect(ask.statusCode).toBe(404);
+        expect(ask.json()).toEqual({ message: 'This Chat Thread was deleted.' });
+        const { rows } = await pool.query(
+          'SELECT count(*)::int AS n FROM chat_messages WHERE chat_thread_id = $1',
+          [threadId],
+        );
+        expect(rows[0].n).toBe(1);
+      } finally {
+        await withChat.close();
+      }
+    });
+
     it('logs the deletion with what an Administrator needs to find it', async () => {
       const info = vi.spyOn(console, 'info').mockImplementation(() => {});
       const author = await signIn('ada@example.com');
@@ -177,11 +241,11 @@ describe('Chat Thread deletion', () => {
   describe('POST /notebooks/:notebookId/threads/:threadId/restore', () => {
     it('lets an Administrator bring a deleted Chat Thread back, with its messages', async () => {
       const author = await signIn();
-      const admin = await signIn(ADMIN);
+      const administrator = await signIn(ADMINISTRATOR);
       const { notebookId, threadId, url } = await threadOf(author);
       await remove(url, author);
 
-      const response = await restore(url, admin);
+      const response = await restore(url, administrator);
 
       expect(response.statusCode).toBe(200);
       expect((response.json() as { id: string }).id).toBe(threadId);
@@ -207,11 +271,11 @@ describe('Chat Thread deletion', () => {
       const unconfigured = await buildApp({ pool });
       try {
         const author = await signIn();
-        const admin = await signIn(ADMIN);
+        const administrator = await signIn(ADMINISTRATOR);
         const { url } = await threadOf(author);
         await remove(url, author);
 
-        expect((await restore(url, admin, unconfigured)).statusCode).toBe(403);
+        expect((await restore(url, administrator, unconfigured)).statusCode).toBe(403);
       } finally {
         await unconfigured.close();
       }
@@ -219,10 +283,10 @@ describe('Chat Thread deletion', () => {
 
     it('answers 404 for a Chat Thread that is not deleted', async () => {
       const author = await signIn();
-      const admin = await signIn(ADMIN);
+      const administrator = await signIn(ADMINISTRATOR);
       const { url } = await threadOf(author);
 
-      expect((await restore(url, admin)).statusCode).toBe(404);
+      expect((await restore(url, administrator)).statusCode).toBe(404);
     });
   });
 });

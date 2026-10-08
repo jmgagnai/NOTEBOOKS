@@ -315,6 +315,27 @@ export const ChatStore = signalStore(
       }
     }
 
+    /**
+     * Closes the open Chat Thread (NBK-81, spec 07 "Middle pane"): the
+     * Thread view's back arrow returns to the Notebook landing. Only the
+     * client lets go — the Thread stays in the list and nothing is sent to
+     * the server, so an answer still being written there keeps being
+     * recorded, as when another Thread is opened. Not a reload either:
+     * `loadThreads` would reopen the newest Thread (NBK-43), and the
+     * landing must stay. A question in flight and failed questions are
+     * kept: they belong to their Thread, which may be opened again.
+     */
+    function closeThread(): void {
+      patchState(store, {
+        activeThreadId: null,
+        messages: [],
+        messagesLoading: false,
+        streamingAnswer: null,
+        // The error row is the closed Thread's (or about an ask in it).
+        error: null,
+      });
+    }
+
     return {
       /**
        * Loads the Notebook's Chat Threads and, when none is open, opens the
@@ -409,36 +430,10 @@ export const ChatStore = signalStore(
           return;
         }
         patchState(store, { threads: store.threads().filter((t) => t.id !== threadId) });
-        if (store.activeThreadId() === threadId) {
-          patchState(store, {
-            activeThreadId: null,
-            messages: [],
-            messagesLoading: false,
-            streamingAnswer: null,
-          });
-        }
+        if (store.activeThreadId() === threadId) closeThread();
       },
 
-      /**
-       * Closes the open Chat Thread (NBK-81, spec 07 "Middle pane"): the
-       * Thread view's back arrow returns to the Notebook landing. Only the
-       * client lets go — the Thread stays in the list and nothing is sent to
-       * the server, so an answer still being written there keeps being
-       * recorded, as when another Thread is opened. Not a reload either:
-       * `loadThreads` would reopen the newest Thread (NBK-43), and the
-       * landing must stay. A question in flight and failed questions are
-       * kept: they belong to their Thread, which may be opened again.
-       */
-      closeThread(): void {
-        patchState(store, {
-          activeThreadId: null,
-          messages: [],
-          messagesLoading: false,
-          streamingAnswer: null,
-          // The error row is the closed Thread's (or about an ask in it).
-          error: null,
-        });
-      },
+      closeThread,
 
       /**
        * Asks a question and appends the exchange.

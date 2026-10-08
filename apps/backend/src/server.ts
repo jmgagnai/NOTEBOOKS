@@ -29,11 +29,9 @@ const DOCUMENTS_BUCKET = process.env.DOCUMENTS_BUCKET ?? 'rag-notebook-documents
 // per NBK-1.
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 // Who may restore a deleted Chat Thread (NBK-95): a comma-separated list of
-// emails. Unset or empty, no one may. See docs/administration.md.
-const ADMIN_EMAILS = (process.env.ADMIN_EMAILS ?? '')
-  .split(',')
-  .map((email) => email.trim())
-  .filter((email) => email !== '');
+// emails, normalised by `buildApp`. Unset or empty, no one may. See
+// docs/administration.md.
+const ADMIN_EMAILS = (process.env.ADMIN_EMAILS ?? '').split(',');
 
 /**
  * Says which Postgres answered, or which one didn't. A Homebrew or MacPorts

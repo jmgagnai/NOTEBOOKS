@@ -126,7 +126,9 @@ export async function buildApp({
   registerChatRoutes(app, {
     pool,
     chat,
-    administrators: new Set(administrators.map((email) => email.trim().toLowerCase())),
+    administrators: new Set(
+      administrators.map((email) => email.trim().toLowerCase()).filter((email) => email !== ''),
+    ),
   });
   registerSearchRoutes(app, { pool, embed });
   if (s3 && documentsBucket) {

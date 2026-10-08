@@ -1,3 +1,4 @@
+import { TestBed } from '@angular/core/testing';
 import { fireEvent, screen, waitFor, within } from '@testing-library/angular';
 import {
   ASK,
@@ -7,6 +8,7 @@ import {
   sendButton,
   thread,
 } from '../chat/chat-panel.spec-helpers';
+import { ChatStore } from '../chat/chat.store';
 import {
   NEWER_THREAD,
   NOTEBOOK_ID,
@@ -171,5 +173,22 @@ describe('DocumentDetailPage — chat beside the Document', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Show chat' }));
       expect(chatPane()).toBeTruthy();
     });
+  });
+
+  // NBK-95: deleting the Chat Thread open in the pane — from the sidebar,
+  // whose navigator calls this store method — leaves the empty question box.
+  it('shows the empty question box when the open Chat Thread is deleted', async () => {
+    await renderPage(documents(), undefined, {
+      listChatThreads: vi.fn().mockResolvedValue([thread()]),
+      listChatMessages: vi.fn().mockResolvedValue([]),
+      deleteChatThread: vi.fn().mockResolvedValue(null),
+    } as never);
+    await within(chatPane()).findByText('Revenue questions');
+
+    await TestBed.inject(ChatStore).deleteThread(NOTEBOOK_ID, 'thread-1');
+
+    await waitFor(() => expect(within(chatPane()).queryByText('Revenue questions')).toBeNull());
+    expect(within(chatPane()).getByLabelText('Ask a question')).toBeTruthy();
+    expect(screen.getByRole('heading', { level: 1, name: 'Quarterly Report 2025' })).toBeTruthy();
   });
 });

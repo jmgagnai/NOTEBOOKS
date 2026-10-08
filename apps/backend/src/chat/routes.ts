@@ -385,6 +385,16 @@ export function registerChatRoutes(
         answer.text,
         answer.citations,
       );
+      if (!exchange) {
+        // Deleted by its author while the answer was being written (NBK-95):
+        // nothing is recorded, and the preview others saw stream is dropped
+        // the way a failed answer's is.
+        await stream.failed('This Chat Thread was deleted.').catch((err: unknown) => {
+          request.log.warn({ err }, 'Could not announce a dropped chat answer.');
+        });
+        await reply.status(404).send({ message: 'This Chat Thread was deleted.' });
+        return;
+      }
 
       // Published only now that the row exists, so the event can name it:
       // this is what turns a client's chunk preview into the persisted

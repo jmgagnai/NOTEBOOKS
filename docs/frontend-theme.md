@@ -168,7 +168,7 @@ instead (`chat/composer.scss`, NBK-45).
 
 ## Button variants
 
-Four variants, by name. On Material buttons they are the directives; on plain
+Four variants, by name, and a fifth for irreversible dialog actions. On Material buttons they are the directives; on plain
 `<button>`/`<a>` elements (panes built outside Material) they are the
 `.app-button` classes, drawn from the same tokens.
 
@@ -178,6 +178,7 @@ Four variants, by name. On Material buttons they are the directives; on plain
 | Secondary | `mat-stroked-button` | `.app-button .app-button--secondary` | white, 1 px `outline` border, text colour |
 | Subtle | `mat-button` | `.app-button` alone | no border, text colour; hover `surface-container-high` |
 | Icon button | `mat-icon-button` | `.app-button .app-button--icon` | 32 px square, subtle, 20 px icon; needs a `matTooltip` carrying the accessible name |
+| Destructive (dialogs only) | `mat-flat-button` with `--mat-button-filled-container-color: var(--mat-sys-error)` and `--mat-button-filled-label-text-color: var(--mat-sys-on-error)` | — | filled `error`, for the confirming action of a dialog that cannot be undone (NBK-95's delete-Thread dialog); its Cancel is Subtle |
 
 All variants are 32 px high with 4 px corners and a 14/600 label; disabled
 state uses `--app-text-disabled` on `surface-container-high` (primary) or a

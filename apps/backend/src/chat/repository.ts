@@ -327,6 +327,8 @@ const INSERT_MESSAGE = `
  * Two statements rather than one two-row `VALUES`, so the `seq` the question
  * gets is unambiguously lower than the answer's — a Chat Thread's order is
  * read back from that column, not from a timestamp the two rows share.
+ *
+ * Returns `null`, writing nothing, when the Thread was deleted meanwhile.
  */
 export async function appendQuestionAndAnswer(
   pool: Pool,
@@ -335,8 +337,16 @@ export async function appendQuestionAndAnswer(
   question: string,
   answer: string,
   citations: ResolvedCitation[] = [],
-): Promise<{ question: ChatMessage; answer: ChatMessage }> {
+): Promise<{ question: ChatMessage; answer: ChatMessage } | null> {
   return inTransaction(pool, async (client) => {
+    // The Thread may have been deleted while its answer was being written
+    // (NBK-95). Locked rather than merely read, so a delete either lands
+    // first — and nothing is written — or waits for this exchange.
+    const live = await client.query(
+      'SELECT 1 FROM chat_threads WHERE id = $1 AND deleted_at IS NULL FOR UPDATE',
+      [threadId],
+    );
+    if (live.rowCount !== 1) return null;
     const questionRows = await client.query<ChatMessageRow>(INSERT_MESSAGE, [
       threadId,
       askerId,
