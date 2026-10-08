@@ -56,9 +56,10 @@ colour role; nothing else in the app uses tertiary.
 | Intent | Token | Value |
 |---|---|---|
 | Controls (buttons, inputs, badges, menus' items) | `--mat-sys-corner-extra-small`, `--mat-sys-corner-small`, `--mat-sys-corner-full` | 4 px |
-| Menus, the composer, inner blocks (panes and `mat-card` are square since spec 07) | `--mat-sys-corner-medium`, `--mat-sys-corner-large` | 8 px |
+| Menus, inner blocks (panes and `mat-card` are square since spec 07) | `--mat-sys-corner-medium`, `--mat-sys-corner-large` | 8 px |
 | Chat bubbles | `--mat-sys-corner-extra-large` | 12 px |
-| Fully round: avatars, Citation chips | `--app-corner-round` | 9999 px |
+| Fully round: avatars, Citation chips, the composer's send button | `--app-corner-round` | 9999 px |
+| The composer's pill (spec 07, the app's one pill) | `--app-corner-pill` | 28 px |
 | Elevation | `--mat-sys-level0` to `--mat-sys-level2` | `none` (a 1 px border instead) |
 | Floating overlays (menus, dialogs) | `--mat-sys-level3` to `--mat-sys-level5` | soft shadow |
 
@@ -214,7 +215,8 @@ toggle, NBK-79), and the Document
 rows' type icons (NBK-42) `document-pdf`, `document-text` (Word),
 `document-one-page` (text, Markdown), `document-table` (Excel, CSV), with
 `document` for anything else, and `folder` (the Notebook rows on the home
-and the Notebook landing, spec 07). `FluentIconName`
+and the Notebook landing, spec 07), and `arrow-up` (the composer's send
+button, NBK-83). `FluentIconName`
 is the union of them. An unknown name renders an empty icon and logs through
 the `ErrorHandler`; it does not break the page.
 

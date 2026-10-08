@@ -20,9 +20,14 @@
   </div>
 }
 
+<!--
+  The pill (spec 07 "Composer", NBK-83): the textarea and the send button
+  on one row, the send button kept at the bottom as the draft grows. No
+  attach and no microphone: the app has neither feature (story 46).
+-->
 <div class="composer" [class.composer--closed]="closed()" [class.composer--answering]="answering()">
   @if (answering()) {
-    <!-- Along the top edge; the spinner below is what is announced. -->
+    <!-- Along the top edge; the spinner beside the box is what is announced. -->
     <mat-progress-bar class="composer__progress" mode="indeterminate" aria-hidden="true" />
   }
   <textarea
@@ -36,24 +41,28 @@
     (input)="draft.set($any($event.target).value); fit()"
     (keydown.enter)="onEnter($event)"
   ></textarea>
-  <div class="composer__bar">
-    <span class="composer__hint">{{ hint() }}</span>
-    @if (answering()) {
-      <span class="composer__answering" role="status" aria-label="Answering">
-        <mat-progress-spinner mode="indeterminate" diameter="20" aria-hidden="true" />
-      </span>
-    } @else {
-      <button
-        mat-icon-button
-        type="button"
-        class="composer__send"
-        aria-label="Send"
-        matTooltip="Send"
-        [disabled]="!canSend()"
-        (click)="send()"
-      >
-        <mat-icon svgIcon="send" />
-      </button>
-    }
-  </div>
+  @if (answering()) {
+    <span class="composer__answering" role="status" aria-label="Answering">
+      <mat-progress-spinner mode="indeterminate" diameter="20" aria-hidden="true" />
+    </span>
+  } @else {
+    <button
+      mat-icon-button
+      type="button"
+      class="composer__send"
+      aria-label="Send"
+      matTooltip="Send"
+      [disabled]="!canSend()"
+      (click)="send()"
+    >
+      <mat-icon svgIcon="arrow-up" />
+    </button>
+  }
+</div>
+
+<div class="composer__foot">
+  @if (threadOpen()) {
+    <span class="composer__caveat">AI-generated content may be incorrect</span>
+  }
+  <span class="composer__hint">{{ hint() }}</span>
 </div>
