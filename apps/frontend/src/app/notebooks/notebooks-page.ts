@@ -1,11 +1,22 @@
 import { DatePipe, NgTemplateOutlet } from '@angular/common';
-import { Component, computed, inject, OnInit, signal } from '@angular/core';
+import {
+  Component,
+  computed,
+  effect,
+  inject,
+  OnInit,
+  signal,
+  untracked,
+  viewChild,
+} from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
+import { MatMenuModule } from '@angular/material/menu';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { EditableTitle } from '../shared/editable-title';
 import { UndoSnackBar } from '../shared/undo-snack-bar';
-import { Notebook, NotebooksStore } from './notebooks.store';
+import { NotebooksStore } from './notebooks.store';
 
 /**
  * What "Create Notebook" names a new Notebook (spec 05 "Create"): the create
@@ -26,8 +37,10 @@ const UNTITLED_NOTEBOOK = 'Untitled Notebook';
   standalone: true,
   imports: [
     DatePipe,
+    EditableTitle,
     MatButtonModule,
     MatIconModule,
+    MatMenuModule,
     MatProgressSpinnerModule,
     NgTemplateOutlet,
     RouterLink,
@@ -49,8 +62,19 @@ export class NotebooksPage implements OnInit {
   // Guards against a double click creating two Untitled Notebooks.
   protected readonly creating = signal(false);
 
-  protected readonly editingId = signal<string | null>(null);
-  protected readonly editingTitle = signal('');
+  /** The Notebook whose card is showing the rename box, picked from its "…" menu. */
+  protected readonly renamingId = signal<string | null>(null);
+
+  // Only the card being renamed renders the editable title, and its box
+  // opens as soon as it appears: the menu's "Rename" is the activation, so
+  // the user is not asked to click the title a second time (NBK-56).
+  // Untracked, so a list reload re-binding the title cannot reopen the box
+  // and throw away what is being typed.
+  private readonly renamingTitle = viewChild(EditableTitle);
+  private readonly openRenameBox = effect(() => {
+    const title = this.renamingTitle();
+    if (title) untracked(() => title.edit());
+  });
 
   ngOnInit(): void {
     void this.store.loadNotebooks();
@@ -67,23 +91,7 @@ export class NotebooksPage implements OnInit {
     }
   }
 
-  protected startRename(notebook: Notebook): void {
-    this.editingId.set(notebook.id);
-    this.editingTitle.set(notebook.title);
-  }
-
-  protected onEditTitleInput(event: Event): void {
-    this.editingTitle.set((event.target as HTMLInputElement).value);
-  }
-
-  protected cancelRename(): void {
-    this.editingId.set(null);
-  }
-
-  protected saveRename(id: string): void {
-    const title = this.editingTitle().trim();
-    this.editingId.set(null);
-    if (!title) return;
+  protected rename(id: string, title: string): void {
     void this.store.renameNotebook(id, title);
   }
 
