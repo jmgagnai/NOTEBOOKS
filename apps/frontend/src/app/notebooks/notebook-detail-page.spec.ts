@@ -2102,8 +2102,7 @@ describe('NotebookDetailPage', () => {
       expect(screen.getByRole('region', { name: 'Chat' })).toBeTruthy();
       const show = showDocumentsButton()!;
       expect(show).toBeTruthy();
-      // The panel header's count line since NBK-48: none of the three is ready yet.
-      expect(show.textContent?.replace(/\s+/g, ' ').trim()).toBe('0/3 ready');
+      expect(show.textContent?.replace(/\s+/g, ' ').trim()).toBe('Documents 3');
     });
 
     it('"Show Documents" restores the panel, goes away, and focuses "Hide Documents"', async () => {
@@ -2152,10 +2151,20 @@ describe('NotebookDetailPage', () => {
       return within(documentsPanel()).getByTestId('documents-count').textContent?.trim();
     }
 
-    it('the panel header reads "<n> Documents" when every Document is ready, "<ready>/<n> ready" otherwise', async () => {
+    it('the panel header reads "<n> Documents" when every Document is ready', async () => {
       await renderWithUpload(vi.fn(), [
         documentFor('a.txt', { status: 'ready' }),
         documentFor('b.txt', { status: 'ready' }),
+      ]);
+      expect(panelCount()).toBe('2 Documents');
+    });
+
+    // A failed Document is not on its way to ready: its row carries the
+    // warning, and the count no longer reads as work in progress.
+    it('reads "<n> Documents" when nothing is ingesting, even with a failed Document', async () => {
+      await renderWithUpload(vi.fn(), [
+        documentFor('a.txt', { status: 'ready' }),
+        documentFor('b.txt', { status: 'failed' }),
       ]);
       expect(panelCount()).toBe('2 Documents');
     });
@@ -2183,22 +2192,24 @@ describe('NotebookDetailPage', () => {
         data: { documentId: 'doc-b.txt', versionId: 'v-b.txt-1', status: 'ready' },
       });
 
-      await waitFor(() => expect(panelCount()).toBe('2/3 ready'));
+      // b.txt was the last one ingesting; c.txt's failure is its row's to show.
+      await waitFor(() => expect(panelCount()).toBe('3 Documents'));
       expect(listDocuments).toHaveBeenCalledTimes(1);
     });
 
-    it('"Show Documents" reads the same count as the panel header', async () => {
+    // Spec 02 / NBK-37: the header button is "Documents <count>", the plain
+    // number, whatever is still ingesting; the ready line is the panel's.
+    it('"Show Documents" reads "Documents <n>", with the Document count only', async () => {
       await renderWithUpload(vi.fn(), [
         documentFor('a.txt', { status: 'ready' }),
         documentFor('b.txt', { status: 'queued' }),
       ]);
-      const count = panelCount();
+      expect(panelCount()).toBe('1/2 ready');
 
       fireEvent.click(within(documentsPanel()).getByRole('button', { name: 'Hide Documents' }));
 
       const show = screen.getByRole('button', { name: 'Show Documents' });
-      expect(count).toBe('1/2 ready');
-      expect(within(show).getByText('1/2 ready')).toBeTruthy();
+      expect(show.textContent?.replace(/\s+/g, ' ').trim()).toBe('Documents 2');
     });
 
     const LIBRARY = [
@@ -2252,6 +2263,32 @@ describe('NotebookDetailPage', () => {
 
       expect(shownFilenames()).toEqual([]);
       expect(within(documentsPanel()).getByText('No Documents match')).toBeTruthy();
+    });
+
+    // The filter box goes with the last Document, so a filter left in it
+    // would be invisible — and would hide whatever arrives next.
+    it('forgets the filter when the list empties, so the next Document shows', async () => {
+      await render(NotebookDetailPage, {
+        providers: pageProviders({
+          documents: {
+            listDocuments: vi.fn().mockResolvedValue([documentFor('report.txt')]),
+            deleteDocument: vi.fn().mockResolvedValue(null),
+          },
+          transfer: {
+            uploadDocument: vi.fn().mockResolvedValue(documentFor('budget.xlsx')),
+          },
+        }),
+      });
+      await screen.findByText('report.txt');
+      fireEvent.input(filterBox(), { target: { value: 'report' } });
+
+      fireEvent.click(await rowMenuItem('report.txt', 'Delete'));
+      await screen.findByText('No Documents yet.');
+      pick([fileNamed('budget.xlsx')]);
+
+      expect(await within(documentsPanel()).findByText('budget.xlsx')).toBeTruthy();
+      expect(within(documentsPanel()).queryByText('No Documents match')).toBeNull();
+      expect(filterBox().value).toBe('');
     });
 
     it('filters without any request: the list fetched on arrival is all it reads', async () => {

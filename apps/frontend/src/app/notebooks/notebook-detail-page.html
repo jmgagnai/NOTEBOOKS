@@ -60,9 +60,9 @@
     </button>
     <!--
       Only while the Documents panel is hidden (NBK-37): the way back, named
-      for what it does, reading the count so the user knows what they are
-      bringing back. The count is the panel header's own line (NBK-48) —
-      "25 Documents" or "23/25 ready" — so the two cannot disagree.
+      for what it does, reading "Documents <count>" (spec 02) so the user
+      knows what they are bringing back. The plain count, not the panel
+      header's ready line: a hidden panel is about size, not progress.
     -->
     @if (documentsHidden()) {
       <button
@@ -73,7 +73,8 @@
         (click)="showDocuments()"
       >
         <mat-icon svgIcon="panel-right-expand" />
-        <span class="notebook-detail-page__count">{{ documentCount() }}</span>
+        Documents
+        <span class="notebook-detail-page__count">{{ store.documents().length }}</span>
       </button>
     }
     <!--

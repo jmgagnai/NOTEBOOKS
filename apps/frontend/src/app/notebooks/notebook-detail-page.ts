@@ -20,7 +20,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { ThreadNavigator } from '../chat/thread-navigator';
 import { ThreadView } from '../chat/thread-view';
 import { DocumentFilter } from '../documents/document-filter';
-import { DocumentList } from '../documents/document-list';
+import { DocumentList, isInProgress } from '../documents/document-list';
 import { DocumentsEmptyState } from '../documents/documents-empty-state';
 import { Document, DocumentsStore } from '../documents/documents.store';
 import { UploadBatchPanel } from '../documents/upload-batch-panel';
@@ -204,20 +204,33 @@ export class NotebookDetailPage implements OnInit, OnDestroy {
   }
 
   /**
-   * The Notebook's size and how much of it is ready (NBK-48): "25 Documents",
-   * or "23/25 ready" while some are still ingesting or failed. One line read
-   * by both the panel header and "Show Documents", so the two never disagree;
-   * it follows the store, so App Events move it without a refetch.
+   * The panel header's count (NBK-48): "23/25 ready" while some Document is
+   * still ingesting, else "25 Documents". A failed Document does not hold the
+   * in-progress form: it is not on its way to ready, and its row already
+   * carries the warning. It follows the store, so App Events move it without
+   * a refetch.
    */
   protected readonly documentCount = computed(() => {
     const documents = this.store.documents();
-    const ready = documents.filter((d) => d.status === 'ready').length;
-    if (ready < documents.length) return `${ready}/${documents.length} ready`;
+    if (documents.some((d) => isInProgress(d.status))) {
+      const ready = documents.filter((d) => d.status === 'ready').length;
+      return `${ready}/${documents.length} ready`;
+    }
     return documents.length === 1 ? '1 Document' : `${documents.length} Documents`;
   });
 
   /** What the user typed in "Filter Documents" (NBK-48). */
   protected readonly documentFilter = signal('');
+
+  /**
+   * The filter box is only rendered while there are Documents, so once the
+   * last one goes its text would linger out of sight and hide the next
+   * upload behind "No Documents match". Forgetting it with the list keeps
+   * what is filtered always on screen.
+   */
+  private readonly forgetFilterWhenEmpty = effect(() => {
+    if (this.store.documents().length === 0) this.documentFilter.set('');
+  });
 
   /**
    * The rows the panel lists (NBK-48): the store's Documents whose filename
