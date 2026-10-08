@@ -7,6 +7,7 @@ import {
   FULL_MARKDOWN,
   activatedRoute,
   renderPage,
+  supersededVersionDetail,
 } from './document-detail-page.spec-helpers';
 
 /**
@@ -49,19 +50,7 @@ describe('DocumentDetailPage — opened from a Citation', () => {
   // What `GET .../documents/:id/versions/:versionId` returns for the pinned
   // v1: its own artifacts throughout, and nothing of v2 except where it
   // says v2 is now the latest.
-  const PINNED_VERSION_DETAIL = {
-    documentId: DOCUMENT_ID,
-    notebookId: NOTEBOOK_ID,
-    filename: 'quarterly.pdf',
-    documentCreatedAt: '2026-01-01T00:00:00.000Z',
-    version: {
-      id: OLD_VERSION_ID,
-      versionNumber: 1,
-      mimeType: 'application/pdf',
-      sizeBytes: 90,
-      createdAt: '2025-12-01T00:00:00.000Z',
-    },
-    status: 'ready',
+  const PINNED_VERSION_DETAIL = supersededVersionDetail(OLD_VERSION_ID, {
     abstract: 'The Abstract as v1 had it.',
     chatSnippet: 'The Chat Snippet as v1 had it.',
     executiveSummary:
@@ -71,9 +60,7 @@ describe('DocumentDetailPage — opened from a Citation', () => {
       authors: ['B. Bookkeeper'],
       documentType: 'report',
     },
-    isLatestVersion: false,
-    latestVersionNumber: 2,
-  };
+  });
 
   function citationRoute(extra: Record<string, string> = {}) {
     return activatedRoute({

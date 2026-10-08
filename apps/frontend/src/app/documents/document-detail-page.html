@@ -111,7 +111,7 @@
           <h2>Executive Summary</h2>
           @if (document.executiveSummary) {
             <app-markdown-view [markdown]="executiveSummary()" />
-          } @else if (document.status === 'failed') {
+          } @else if (versionFailed()) {
             <!--
               NBK-90: a failed Version will never get one, so this says why
               rather than that it is on its way, under a failure sentence
@@ -157,7 +157,7 @@
                 [highlightFrom]="citedFrom()"
                 [highlightTo]="citedTo()"
               />
-            } @else if (document.status === 'failed') {
+            } @else if (versionFailed()) {
               <!-- NBK-90: as for the Executive Summary above. -->
               <p class="document-detail-page__pending">
                 This Document has no Converted Markdown: its Ingestion failed before conversion
