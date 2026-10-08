@@ -157,3 +157,11 @@ export async function renderRouted(
   await TestBed.inject(AuthStore).checkSession();
   return rendered;
 }
+
+/** A chat client for a Notebook holding those two Chat Threads, both empty. */
+export function twoThreads(): Partial<ChatService> {
+  return {
+    listChatThreads: vi.fn().mockResolvedValue([OLDER_THREAD, NEWER_THREAD]) as never,
+    listChatMessages: vi.fn().mockResolvedValue([]) as never,
+  };
+}

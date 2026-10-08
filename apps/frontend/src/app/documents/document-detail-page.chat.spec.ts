@@ -15,6 +15,7 @@ import {
   SUMMARIZED_DETAIL,
   chatPane,
   renderPage,
+  twoThreads,
 } from './document-detail-page.spec-helpers';
 
 /**
@@ -138,12 +139,6 @@ describe('DocumentDetailPage — chat beside the Document', () => {
   // Spec 08 (NBK-87): a Citation link names the Chat Thread it was cited
   // in, so a pasted or reloaded link opens beside that Thread.
   describe('with the Chat Thread named in the link', () => {
-    const twoThreads = () =>
-      ({
-        listChatThreads: vi.fn().mockResolvedValue([OLDER_THREAD, NEWER_THREAD]),
-        listChatMessages: vi.fn().mockResolvedValue([]),
-      }) as never;
-
     it('opens the named Chat Thread rather than the newest', async () => {
       await renderPage(documents(), activatedRoute({ thread: 'thread-old' }), twoThreads());
 

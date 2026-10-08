@@ -2,12 +2,11 @@ import { TestBed } from '@angular/core/testing';
 import { fireEvent, screen, waitFor, within } from '@testing-library/angular';
 import {
   DOCUMENT_ID,
-  NEWER_THREAD,
   NOTEBOOK_ID,
-  OLDER_THREAD,
   SUMMARIZED_DETAIL,
   chatPane,
   renderRouted,
+  twoThreads,
 } from './document-detail-page.spec-helpers';
 import { ChatStore } from '../chat/chat.store';
 
@@ -20,10 +19,7 @@ import { ChatStore } from '../chat/chat.store';
  */
 describe('DocumentDetailPage — the open Chat Thread between pages', () => {
   const renderApp = () =>
-    renderRouted({ getDocument: vi.fn().mockResolvedValue(SUMMARIZED_DETAIL) }, {
-      listChatThreads: vi.fn().mockResolvedValue([OLDER_THREAD, NEWER_THREAD]),
-      listChatMessages: vi.fn().mockResolvedValue([]),
-    } as never);
+    renderRouted({ getDocument: vi.fn().mockResolvedValue(SUMMARIZED_DETAIL) }, twoThreads());
 
   const openThreadTitle = (title: string) => screen.findByRole('heading', { name: title });
 
@@ -68,7 +64,7 @@ describe('DocumentDetailPage — the open Chat Thread between pages', () => {
   });
 
   // Spec 08 (NBK-87): the Thread a reader is in wins over the one a link
-  // names — following a Citation from it must not swap the conversation.
+  // names — following a Citation from it must not swap the Chat Thread.
   it('keeps the Chat Thread already open over the one the link names', async () => {
     const { navigate } = await renderApp();
     await navigate(`/notebooks/${NOTEBOOK_ID}`);

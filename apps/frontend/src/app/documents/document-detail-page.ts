@@ -8,8 +8,9 @@ import {
   signal,
   untracked,
 } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { filter } from 'rxjs';
+import { ActivatedRoute, NavigationSkipped, Router, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
@@ -144,15 +145,30 @@ export class DocumentDetailPage implements OnInit, OnDestroy {
 
   /**
    * Follows the route: on arrival, and on every Citation followed from the
-   * chat pane after it. Keyed on the Document, the Version and the range,
-   * so following the same passage again re-opens it if it was collapsed.
+   * chat pane after it. Keyed on the Document and the whole query — Version,
+   * Chunk, range — so any other Citation is followed even when it shares the
+   * Version or the start of its range.
    */
   private readonly followRoute = effect(() => {
     const documentId = this.documentId();
+    this.query();
     const versionId = this.citedVersionId();
-    this.citedFrom();
     untracked(() => void this.show(documentId, versionId));
   });
+
+  /**
+   * A Citation followed again to the URL already on screen is a navigation
+   * the router skips, so the route never changes; the reader still asked to
+   * see the cited Chunk, which they may have hidden since.
+   */
+  private readonly followAgain = inject(Router)
+    .events.pipe(
+      filter((event) => event instanceof NavigationSkipped),
+      takeUntilDestroyed(),
+    )
+    .subscribe(() => {
+      if (this.citedVersionId() !== null) this.expanded.set(true);
+    });
 
   /**
    * True when this page is showing a Version the Document has since moved
@@ -249,18 +265,20 @@ export class DocumentDetailPage implements OnInit, OnDestroy {
   /**
    * Shows `documentId`, at the pinned Version when a Citation named one.
    *
-   * The Version already on screen is not read again: a Citation to the very
-   * passage-holding Version the reader is looking at only has to open the
-   * full content and move the mark, which is what makes checking an answer
+   * The Version already on screen is not read again: a Citation to the
+   * Version the reader is looking at only has to open its full Converted
+   * Markdown and move the mark, which is what makes checking an answer
    * instant. Anything else — another Document, another Version of this
-   * one — is a fresh read, as on arrival.
+   * one — is a fresh read, as on arrival. A link naming no Version means
+   * the latest, so a superseded Version on screen is read again for it
+   * (back from a Citation to an old Version, say).
    */
   private async show(documentId: string, versionId: string | null): Promise<void> {
     const open = this.store.openDocument();
     const onScreen =
       open !== null &&
       open.id === documentId &&
-      (versionId === null || open.version.id === versionId);
+      (versionId === null ? open.isLatestVersion : open.version.id === versionId);
     if (versionId !== null) this.expanded.set(true);
     if (onScreen) {
       if (versionId !== null) {
