@@ -85,6 +85,9 @@ export class ThreadView {
   /** The Thread card's scrolling region (NBK-53); absent while loading or empty. */
   private readonly messageList = viewChild<ElementRef<HTMLElement>>('messageList');
 
+  /** The row of the question in flight, while there is one (NBK-70). */
+  private readonly pendingRow = viewChild<ElementRef<HTMLElement>>('pendingQuestion');
+
   /** The row of the answer being streamed, while there is one. */
   private readonly streamingRow = viewChild<ElementRef<HTMLElement>>('streamingAnswer');
 
@@ -116,28 +119,19 @@ export class ThreadView {
       );
     });
 
-    // Rule 2 (story 15c): the question just sent comes into view at the
-    // bottom. The store renders nothing optimistically, so the question is
-    // on screen only once the exchange is recorded — and if its answer
-    // streamed meanwhile, rule 3 has already placed the view, which the
-    // recorded exchange must not move.
-    let askedAt: { streamSeen: string | null; messageCount: number } | null = null;
+    // Rule 2 (story 15c, NBK-71): the question just sent comes into view at
+    // the bottom, the moment its pending row appears. Keyed on the pending
+    // question itself, so returning to its Thread mid-ask (rule 1 already
+    // lands at the end) and the recorded question replacing it are not moves:
+    // the recorded one sits where the preview was, already in view.
+    let seenPending: PendingQuestion | null = null;
     effect(() => {
-      const sending = this.store.sending();
-      const messageCount = this.store.messages().length;
-      if (sending) {
-        askedAt ??= { streamSeen: seenStream, messageCount };
-        return;
-      }
-      if (!askedAt) return;
-      const streamed = seenStream !== askedAt.streamSeen;
-      const recorded = messageCount > askedAt.messageCount;
-      askedAt = null;
-      if (streamed || !recorded) return;
-      this.afterRender((list) => {
-        const questions = list.querySelectorAll<HTMLElement>('.thread-view__message--user');
-        questions[questions.length - 1]?.scrollIntoView?.({ block: 'end', behavior: 'smooth' });
-      });
+      const pending = this.pendingQuestion();
+      if (pending === null || pending === seenPending) return;
+      seenPending = pending;
+      this.afterRender(() =>
+        this.pendingRow()?.nativeElement.scrollIntoView?.({ block: 'end', behavior: 'smooth' }),
+      );
     });
   }
 

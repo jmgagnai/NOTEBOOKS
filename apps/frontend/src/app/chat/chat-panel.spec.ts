@@ -1087,22 +1087,22 @@ describe('Chat panel (ThreadNavigator + ThreadView)', () => {
       expect(scrollIntoView).not.toHaveBeenCalled();
     });
 
-    // Story 15c. The store renders nothing optimistically — the question
-    // appears when the server has recorded it — so this is the moment it can
-    // be brought into view, at the bottom where the newest exchange sits.
-    it('brings the question just asked into view at the bottom when it lands', async () => {
+    // Story 15c (NBK-71): the question shows the moment it is sent, as a
+    // pending question (NBK-70), so that is the moment it comes into view, at
+    // the bottom where the newest exchange sits. The recorded question taking
+    // its place is the same question already in view, so it is not a move.
+    it('brings the question just asked into view at the bottom on send, and not again when it is recorded', async () => {
       const { settle } = await askInFlight();
+
+      const pending = screen.getByTestId('chat-pending-question');
+      await waitFor(() => expect(scrolled(scrollIntoView)).toEqual([pending]));
+      expect(scrollIntoView).toHaveBeenCalledWith(expect.objectContaining({ block: 'end' }));
 
       settle(q3Exchange());
 
-      // The pending question (NBK-70) carries the same text until the
-      // recorded one replaces it.
       await waitFor(() => expect(screen.queryByTestId('chat-pending-question')).toBeNull());
-      const question = (
-        await screen.findByText('What was revenue in Q3?', { selector: 'p' })
-      ).closest('li');
-      await waitFor(() => expect(scrolled(scrollIntoView)).toEqual([question]));
-      expect(scrollIntoView).toHaveBeenCalledWith(expect.objectContaining({ block: 'end' }));
+      await screen.findByText('Revenue in Q3 was 12.4M.');
+      expect(scrollIntoView).toHaveBeenCalledTimes(1);
       expect(scrollTo).not.toHaveBeenCalled();
     });
 
@@ -1111,6 +1111,9 @@ describe('Chat panel (ThreadNavigator + ThreadView)', () => {
     // the recorded answer taking the preview's place is not a move either.
     it("brings the answer's start to the top on its first block, and then leaves the view alone", async () => {
       const { settle } = await askInFlight();
+      // The send's own move (rule 2) is the test above's; set it aside.
+      await waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
+      scrollIntoView.mockClear();
 
       appEvents.events.next(chunk(0, '## Revenue'));
 
