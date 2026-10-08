@@ -1451,6 +1451,43 @@ describe('NotebookDetailPage', () => {
       expect(warning).toBeTruthy();
     });
 
+    // Spec NBK-63 story 7: which part of Ingestion failed, where that helps —
+    // an unexplained failure and a timeout say which step it was.
+    it.each([
+      [
+        { reason: 'unexpected', failedAt: 'converting' },
+        'Something went wrong on our side while converting this Document.',
+      ],
+      [
+        { reason: 'unexpected', failedAt: 'summarizing' },
+        'Something went wrong on our side while summarizing this Document.',
+      ],
+      [
+        { reason: 'unexpected', failedAt: 'indexing' },
+        'Something went wrong on our side while indexing this Document.',
+      ],
+      [
+        { reason: 'timed-out', failedAt: 'converting' },
+        'Converting this file took too long. Try a smaller file, or split it.',
+      ],
+      [
+        { reason: 'timed-out', failedAt: 'summarizing' },
+        'Summarizing this file took too long. Try a smaller file, or split it.',
+      ],
+      [
+        { reason: 'timed-out', failedAt: null },
+        'Converting this file took too long. Try a smaller file, or split it.',
+      ],
+    ] as const)('names the step in the warning for %j', async (failure, description) => {
+      await renderWithUpload(vi.fn(), [
+        documentFor('step.pdf', { status: 'failed', failure: { ...failure } }),
+      ]);
+
+      expect(
+        within(documentRow('step.pdf')).getByRole('img', { name: 'Ingestion failed', description }),
+      ).toBeTruthy();
+    });
+
     // NBK-67: a user watching an upload learns why it failed the moment it
     // does, and a reason never outlives the failure it explained.
     it('takes the failure reason from the status App Event and drops it once the Version moves on', async () => {
