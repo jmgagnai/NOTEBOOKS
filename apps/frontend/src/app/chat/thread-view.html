@@ -52,55 +52,29 @@
               <span class="thread-view__message-author" data-testid="chat-message-author">{{
                 author(message)
               }}</span>
-              <!--
-                The prose, with each source marker turned into a link to the
-                exact Document Version and chunk it cites (NBK-12). A marker
-                the backend recorded no Citation for stays plain text — it
-                named a Chunk the answer was not grounded in.
-              -->
-              <p class="thread-view__message-content">
-                @for (segment of segments(message.content, message.citations); track $index) {
-                  @if (segment.citation; as citation) {
-                    <a
-                      class="thread-view__marker"
-                      [attr.aria-label]="'Citation ' + citation.marker"
-                      [title]="citationName(citation) + ' (v' + citation.versionNumber + ')'"
-                      [routerLink]="citationLink(citation)"
-                      [queryParams]="citationParams(citation)"
-                      >{{ segment.text }}</a
-                    >
-                  } @else {
-                    <span>{{ segment.text }}</span>
-                  }
-                }
-              </p>
+              @if (message.role === 'assistant') {
+                <!--
+                  The answer as Markdown, each source marker a Citation chip
+                  linking to the exact Document Version and chunk it cites
+                  (NBK-12, NBK-52). A question stays plain text: it is what
+                  was typed, not Markdown.
+                -->
+                <app-answer-body
+                  class="thread-view__message-content"
+                  [notebookId]="notebookId()"
+                  [content]="message.content"
+                  [citations]="message.citations"
+                />
+              } @else {
+                <p class="thread-view__message-content">{{ message.content }}</p>
+              }
 
               @if (message.citations.length > 0) {
                 <!--
-                  And the same Citations as a named list, so the sources are
-                  readable without hunting through the prose for brackets.
+                  And the same Citations grouped by Document Version, so the
+                  sources are readable without hunting through the prose.
                 -->
-                <ul class="thread-view__citations">
-                  @for (citation of message.citations; track citation.id) {
-                    <li class="thread-view__citation" data-testid="chat-citation">
-                      <a
-                        [routerLink]="citationLink(citation)"
-                        [queryParams]="citationParams(citation)"
-                      >
-                        <span class="thread-view__citation-marker">[{{ citation.marker }}]</span>
-                        <span class="thread-view__citation-name">{{ citationName(citation) }}</span>
-                        <!--
-                          The Version is named, because a Citation may well
-                          point at a superseded one — and a reader who follows
-                          it needs to know that is deliberate.
-                        -->
-                        <span class="thread-view__citation-version"
-                          >v{{ citation.versionNumber }}</span
-                        >
-                      </a>
-                    </li>
-                  }
-                </ul>
+                <app-citation-groups [notebookId]="notebookId()" [citations]="message.citations" />
               }
             </div>
             @if (message.role === 'user') {
@@ -135,26 +109,17 @@
             <app-sparkle-avatar class="thread-view__avatar thread-view__avatar--live" />
             <div class="thread-view__body thread-view__answer">
               <span class="thread-view__message-author">Assistant, answering…</span>
-              @for (block of streamingBlocks(); track block.index) {
-                <p class="thread-view__message-content">
-                  @for (segment of block.segments; track $index) {
-                    @if (segment.citation; as citation) {
-                      <a
-                        class="thread-view__marker"
-                        [attr.aria-label]="'Citation ' + citation.marker"
-                        [title]="citationName(citation) + ' (v' + citation.versionNumber + ')'"
-                        [routerLink]="citationLink(citation)"
-                        [queryParams]="citationParams(citation)"
-                        >{{ segment.text }}</a
-                      >
-                    } @else {
-                      <span>{{ segment.text }}</span>
-                    }
-                  }
-                </p>
-              }
-
               @if (store.streamingAnswer(); as streaming) {
+                <!-- Each block through the same Markdown path as a recorded answer. -->
+                @for (block of streamingBlocks(); track block.index) {
+                  <app-answer-body
+                    class="thread-view__message-content"
+                    [notebookId]="notebookId()"
+                    [content]="block.text"
+                    [citations]="streaming.citations"
+                  />
+                }
+
                 @if (streaming.citations.length > 0) {
                   <!--
                     The Citations arrive with the completion event, never with
@@ -162,24 +127,10 @@
                     text, so there was no earlier event they could have
                     travelled on.
                   -->
-                  <ul class="thread-view__citations">
-                    @for (citation of streaming.citations; track citation.id) {
-                      <li class="thread-view__citation" data-testid="chat-citation">
-                        <a
-                          [routerLink]="citationLink(citation)"
-                          [queryParams]="citationParams(citation)"
-                        >
-                          <span class="thread-view__citation-marker">[{{ citation.marker }}]</span>
-                          <span class="thread-view__citation-name">{{
-                            citationName(citation)
-                          }}</span>
-                          <span class="thread-view__citation-version"
-                            >v{{ citation.versionNumber }}</span
-                          >
-                        </a>
-                      </li>
-                    }
-                  </ul>
+                  <app-citation-groups
+                    [notebookId]="notebookId()"
+                    [citations]="streaming.citations"
+                  />
                 }
               }
             </div>
