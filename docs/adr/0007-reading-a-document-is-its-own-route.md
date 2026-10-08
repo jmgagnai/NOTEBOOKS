@@ -94,3 +94,19 @@ history. The two things the stories *do* ask for are covered:
 A list endpoint is a new product surface (version history UI, what to show per
 entry, whether to offer restore) with no story behind it. Adding it because
 the resource tree looks incomplete is how speculative endpoints get built.
+
+## Amendment (2026-10-08): reading and asking now share the Document page
+
+§1 argued that reading is "a different activity from asking" and that
+interleaving them was asked for nowhere. The Copilot Notebooks page view —
+the reference for the Document page redesign that follows spec 07 — does ask
+for it: the Document is read with a Chat Thread beside it.
+
+**Decision: the Document page gains a chat pane, and stays a route.** The
+reasons §1 actually rested on are untouched by this: the URL a Citation
+links to (`/notebooks/:notebookId/documents/:documentId?version=…`), the width a
+200+ page Document needs (it keeps the larger share of the page), and fetching
+the Converted Markdown only on request. What changes is the last bullet only —
+the page is no longer reading *instead of* asking. Turning the Document into a
+panel of the Notebook page (the literal three-panel reading of NBK-1) is still
+rejected, for the Citation-link reason above.

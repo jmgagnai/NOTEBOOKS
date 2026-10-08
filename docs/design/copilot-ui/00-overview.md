@@ -20,6 +20,7 @@ workspace layout, then the panes it holds).
 | 05 | Notebooks home and sign-in pages | 01 |
 | 06 | Copycat brand: name, mascot and favicon (assets in `brand/`) | 01 (shell), 05 (sign-in page) |
 | 07 | Closer Copilot pass: sidebar, Notebook landing, flat panes (supersedes parts of 01, 02, 04, 05) | 01–06 |
+| 08 | Editorial Document page, with chat beside it (supersedes spec 07 stories 12 and 56) | 07 |
 
 ## Settled by prototype
 
