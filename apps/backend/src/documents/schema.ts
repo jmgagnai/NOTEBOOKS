@@ -53,6 +53,18 @@ export const failureReasonSchema = z.enum([
 ]);
 export type FailureReason = z.infer<typeof failureReasonSchema>;
 
+// The failure reasons a Retry is offered for (NBK-110): those a second
+// attempt on the same file could change — a missing file since restored, a
+// provider or service back up, a conversion that ran out of time under load.
+// `no-text-layer` and `unreadable` are the file's own: the same file fails
+// the same way. Mirrored by `RETRYABLE_FAILURE_REASONS` in the frontend's
+// documents/failure-reason.ts.
+export const RETRYABLE_FAILURE_REASONS: readonly FailureReason[] = [
+  'unexpected',
+  'service-unavailable',
+  'timed-out',
+];
+
 // The status a Document Version was in when its Stage gave up: the existing
 // in-progress status names, so no second vocabulary for "stage" appears.
 export const failedAtSchema = z.enum(['converting', 'summarizing', 'indexing']);
@@ -188,3 +200,8 @@ export type DocumentVersionContentParams = z.infer<typeof documentVersionContent
 
 export const documentVersionParamsSchema = documentVersionDownloadParamsSchema;
 export type DocumentVersionParams = z.infer<typeof documentVersionParamsSchema>;
+
+// A Retry's answer (NBK-110): the status the Version went back to, which is
+// the status its failed Stage consumes. What follows arrives as status App
+// Events, as for an upload.
+export const retryIngestionResponseSchema = z.object({ status: documentStatusSchema });

@@ -1,5 +1,7 @@
 import type { Pool } from 'pg';
 import { inTransaction } from '../db/transaction.js';
+import { publishAppEvent } from '../events/bus.js';
+import { versionStatusChanged } from '../ingestion/stage.js';
 import { notebookIsActive } from '../notebooks/active-notebooks.js';
 import type {
   Document,
@@ -8,9 +10,11 @@ import type {
   DocumentStatus,
   DocumentVersion,
   DocumentVersionDetail,
+  DocumentVersionParams,
   FailedAt,
   FailureReason,
 } from './schema.js';
+import { RETRYABLE_FAILURE_REASONS } from './schema.js';
 
 /**
  * Exactly the columns a `Document` (as the API returns it) is built from — a
@@ -466,4 +470,79 @@ export async function findDownloadableVersion(
   return row
     ? { storageKey: row.storage_key, mimeType: row.mime_type, filename: row.filename }
     : null;
+}
+
+/**
+ * Where a Retry puts a Version back (NBK-110): the status the failed Stage
+ * consumes, so that Stage picks it up. Conversion when no Stage was recorded
+ * (a failure from before NBK-64) or there is no Converted Markdown to resume
+ * from, which a later Stage would fail on again.
+ */
+const RESUMES_AT: Record<FailedAt, DocumentStatus> = {
+  converting: 'queued',
+  summarizing: 'converted',
+  indexing: 'summarized',
+};
+
+export type RetryIngestionResult =
+  | { outcome: 'retried'; status: DocumentStatus }
+  | { outcome: 'not-found' }
+  | { outcome: 'not-retryable' };
+
+/** A Version the Notebook can still see: neither it, its Document nor its Notebook deleted. */
+const VISIBLE_VERSION = `v.id = $3 AND v.document_id = $2 AND d.id = v.document_id AND d.notebook_id = $1
+  AND v.deleted_at IS NULL AND d.deleted_at IS NULL
+  AND ${notebookIsActive('d.notebook_id')}`;
+
+/**
+ * Puts a failed Document Version back where its failed Stage picks it up
+ * (NBK-110), clearing the failure, and announces the new status; the caller
+ * then enqueues that Stage. Per ADR-0001 there is no ownership check.
+ *
+ * Only from `failed`, for a retryable reason, on the Document's latest
+ * Version, in one statement: of two retries at once, only the first still
+ * finds the row `failed`, so one run starts.
+ */
+export async function retryIngestion(
+  pool: Pool,
+  { notebookId, documentId, versionId }: DocumentVersionParams,
+): Promise<RetryIngestionResult> {
+  return inTransaction(pool, async (client) => {
+    const { rows } = await client.query<{ status: DocumentStatus; filename: string }>(
+      `UPDATE document_versions v
+       SET ingestion_status = CASE
+             WHEN v.markdown IS NULL OR v.failed_at IS NULL THEN '${RESUMES_AT.converting}'
+             ELSE $5::jsonb ->> v.failed_at
+           END,
+           failure_reason = NULL,
+           failed_at = NULL,
+           ingestion_error = NULL
+       FROM documents d
+       WHERE ${VISIBLE_VERSION}
+         AND v.ingestion_status = 'failed'
+         AND v.failure_reason = ANY($4::text[])
+         AND v.version_number = (
+           SELECT max(latest.version_number) FROM document_versions latest
+           WHERE latest.document_id = v.document_id AND latest.deleted_at IS NULL
+         )
+       RETURNING v.ingestion_status AS status, d.filename`,
+      [notebookId, documentId, versionId, RETRYABLE_FAILURE_REASONS, RESUMES_AT],
+    );
+    const retried = rows[0];
+    if (retried) {
+      await publishAppEvent(
+        client,
+        versionStatusChanged(
+          { notebookId, documentId, versionId, filename: retried.filename },
+          retried.status,
+        ),
+      );
+      return { outcome: 'retried', status: retried.status };
+    }
+    const { rowCount } = await client.query(
+      `SELECT 1 FROM document_versions v, documents d WHERE ${VISIBLE_VERSION}`,
+      [notebookId, documentId, versionId],
+    );
+    return rowCount === 1 ? { outcome: 'not-retryable' } : { outcome: 'not-found' };
+  });
 }

@@ -106,6 +106,18 @@
       <mat-icon svgIcon="open" />
       Open
     </a>
+    @if (canRetry(document)) {
+      <!-- NBK-110: Ingestion again on the same file, from the Stage that failed. -->
+      <button
+        mat-menu-item
+        type="button"
+        [attr.aria-label]="'Retry ' + document.filename"
+        (click)="retry.emit(document)"
+      >
+        <mat-icon svgIcon="arrow-clockwise" />
+        Retry
+      </button>
+    }
     <button
       mat-menu-item
       type="button"

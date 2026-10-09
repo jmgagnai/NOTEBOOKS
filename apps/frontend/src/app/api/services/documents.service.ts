@@ -24,6 +24,8 @@ import { listDocuments } from '../fn/documents/list-documents';
 import { ListDocuments$Params } from '../fn/documents/list-documents';
 import { restoreDocument } from '../fn/documents/restore-document';
 import { RestoreDocument$Params } from '../fn/documents/restore-document';
+import { retryIngestion } from '../fn/documents/retry-ingestion';
+import { RetryIngestion$Params } from '../fn/documents/retry-ingestion';
 import { uploadDocument } from '../fn/documents/upload-document';
 import { UploadDocument$Params } from '../fn/documents/upload-document';
 
@@ -617,6 +619,47 @@ export class DocumentsService extends BaseService {
 'sizeBytes': number;
 'createdAt': string;
 };
+} => r.body);
+  }
+
+  /** Path part for operation `retryIngestion()` */
+  static readonly RetryIngestionPath = '/notebooks/{notebookId}/documents/{documentId}/versions/{versionId}/retry';
+
+  /**
+   * Retry the Ingestion of a failed Document Version.
+   *
+   * Runs Ingestion again on the same file, from the Stage that failed (NBK-110): only for a Version that is failed for a reason a second attempt could change (unexpected, service-unavailable, timed-out). Reports 409 otherwise, including while a Retry is already under way. Answers with the status the Version went back to; the rest arrives as status App Events. Per ADR-0001 there is no ownership check.
+   *
+   * This method provides access to the full `HttpResponse`, allowing access to response headers.
+   * To access only the response body, use `retryIngestion()` instead.
+   *
+   * This method doesn't expect any request body.
+   */
+  retryIngestion$Response(params: RetryIngestion$Params, context?: HttpContext): Promise<StrictHttpResponse<{
+'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'indexing' | 'ready' | 'failed';
+}>> {
+    const obs = retryIngestion(this.http, this.rootUrl, params, context);
+    return firstValueFrom(obs);
+  }
+
+  /**
+   * Retry the Ingestion of a failed Document Version.
+   *
+   * Runs Ingestion again on the same file, from the Stage that failed (NBK-110): only for a Version that is failed for a reason a second attempt could change (unexpected, service-unavailable, timed-out). Reports 409 otherwise, including while a Retry is already under way. Answers with the status the Version went back to; the rest arrives as status App Events. Per ADR-0001 there is no ownership check.
+   *
+   * This method provides access only to the response body.
+   * To access the full response (for headers, for example), `retryIngestion$Response()` instead.
+   *
+   * This method doesn't expect any request body.
+   */
+  retryIngestion(params: RetryIngestion$Params, context?: HttpContext): Promise<{
+'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'indexing' | 'ready' | 'failed';
+}> {
+    const resp = this.retryIngestion$Response(params, context);
+    return resp.then((r: StrictHttpResponse<{
+'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'indexing' | 'ready' | 'failed';
+}>): {
+'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'indexing' | 'ready' | 'failed';
 } => r.body);
   }
 

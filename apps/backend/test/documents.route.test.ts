@@ -850,6 +850,236 @@ describe('Document routes', () => {
     });
   });
 
+  // NBK-110: a Version that failed for a reason a second attempt could
+  // change is retried on the same file, from the Stage that failed.
+  describe('NBK-110: POST .../versions/:versionId/retry', () => {
+    type Stage = 'convert' | 'summarize' | 'embed';
+
+    /** An app whose JobQueue records which Stage was enqueued, for which Version. */
+    async function appRecordingJobs() {
+      const enqueued: Array<{ stage: Stage; versionId: string }> = [];
+      const record = (stage: Stage) => async (payload: { versionId: string }) => {
+        enqueued.push({ stage, versionId: payload.versionId });
+      };
+      const recording = await buildApp({
+        pool,
+        s3: createS3Client(s3Config),
+        documentsBucket: DOCUMENTS_BUCKET,
+        jobs: {
+          enqueueConvertToMarkdown: record('convert'),
+          enqueueSummarizeDocument: record('summarize'),
+          enqueueEmbedChunks: record('embed'),
+          stop: async () => {},
+        },
+      });
+      return { recording, enqueued };
+    }
+
+    /**
+     * An uploaded Document whose Version then failed, as a Stage records it:
+     * converted already, unless it failed converting or `converted` is false.
+     */
+    async function failedDocument(
+      email: string,
+      reason: string,
+      failedAt: string | null,
+      { converted = failedAt !== 'converting' } = {},
+    ) {
+      const session = await loginAsNewUser(email);
+      const notebookId = await createNotebook(session, 'Retries');
+      const upload = await uploadFile(session, notebookId, 'saga.pdf', 'a long saga');
+      const { id: documentId, latestVersion } = upload.json() as {
+        id: string;
+        latestVersion: { id: string };
+      };
+      await pool.query(
+        `UPDATE document_versions
+         SET ingestion_status = 'failed', failure_reason = $2, failed_at = $3,
+             ingestion_error = 'The specified key does not exist.',
+             markdown = CASE WHEN $4 THEN '# A long saga' ELSE NULL END
+         WHERE id = $1`,
+        [latestVersion.id, reason, failedAt, converted],
+      );
+      return { session, notebookId, documentId, versionId: latestVersion.id };
+    }
+
+    const retryUrl = (d: { notebookId: string; documentId: string; versionId: string }) =>
+      `/notebooks/${d.notebookId}/documents/${d.documentId}/versions/${d.versionId}/retry`;
+
+    async function versionRow(versionId: string) {
+      const { rows } = await pool.query<{
+        ingestion_status: string;
+        failure_reason: string | null;
+        failed_at: string | null;
+        ingestion_error: string | null;
+      }>(
+        'SELECT ingestion_status, failure_reason, failed_at, ingestion_error FROM document_versions WHERE id = $1',
+        [versionId],
+      );
+      return rows[0];
+    }
+
+    it.each([
+      ['converting', 'queued', 'convert'],
+      ['summarizing', 'converted', 'summarize'],
+      ['indexing', 'summarized', 'embed'],
+    ] as const)(
+      'restarts a Version that failed at %s from there: back to %s, %s enqueued',
+      async (failedAt, status, stage) => {
+        const { recording, enqueued } = await appRecordingJobs();
+        try {
+          const failed = await failedDocument(
+            `retry-${failedAt}@example.com`,
+            'unexpected',
+            failedAt,
+          );
+
+          const response = await recording.inject({
+            method: 'POST',
+            url: retryUrl(failed),
+            cookies: { session: failed.session },
+          });
+
+          expect(response.statusCode).toBe(202);
+          expect(response.json()).toEqual({ status });
+          expect(await versionRow(failed.versionId)).toEqual({
+            ingestion_status: status,
+            failure_reason: null,
+            failed_at: null,
+            ingestion_error: null,
+          });
+          expect(enqueued).toEqual([{ stage, versionId: failed.versionId }]);
+        } finally {
+          await recording.close();
+        }
+      },
+    );
+
+    it('retries a timed-out or unavailable-service failure too', async () => {
+      for (const reason of ['timed-out', 'service-unavailable']) {
+        const failed = await failedDocument(`retry-${reason}@example.com`, reason, 'converting');
+        const response = await app.inject({
+          method: 'POST',
+          url: retryUrl(failed),
+          cookies: { session: failed.session },
+        });
+        expect(response.statusCode, reason).toBe(202);
+      }
+    });
+
+    it('refuses a failure the same file would repeat, and a Version that has not failed', async () => {
+      for (const reason of ['no-text-layer', 'unreadable']) {
+        const failed = await failedDocument(`retry-no-${reason}@example.com`, reason, 'converting');
+        const response = await app.inject({
+          method: 'POST',
+          url: retryUrl(failed),
+          cookies: { session: failed.session },
+        });
+        expect(response.statusCode, reason).toBe(409);
+        expect((await versionRow(failed.versionId)).ingestion_status).toBe('failed');
+      }
+
+      const notFailed = await failedDocument(
+        'retry-not-failed@example.com',
+        'unexpected',
+        'converting',
+      );
+      await pool.query(
+        `UPDATE document_versions
+         SET ingestion_status = 'queued', failure_reason = NULL, failed_at = NULL
+         WHERE id = $1`,
+        [notFailed.versionId],
+      );
+      const response = await app.inject({
+        method: 'POST',
+        url: retryUrl(notFailed),
+        cookies: { session: notFailed.session },
+      });
+      expect(response.statusCode).toBe(409);
+    });
+
+    // A Stage after conversion found no Converted Markdown: resuming there
+    // would fail the same way, so the Retry converts again.
+    it('restarts from conversion when there is no Converted Markdown to resume from', async () => {
+      const { recording, enqueued } = await appRecordingJobs();
+      try {
+        const failed = await failedDocument(
+          'retry-no-markdown@example.com',
+          'unexpected',
+          'summarizing',
+          {
+            converted: false,
+          },
+        );
+
+        const response = await recording.inject({
+          method: 'POST',
+          url: retryUrl(failed),
+          cookies: { session: failed.session },
+        });
+
+        expect(response.json()).toEqual({ status: 'queued' });
+        expect(enqueued).toEqual([{ stage: 'convert', versionId: failed.versionId }]);
+      } finally {
+        await recording.close();
+      }
+    });
+
+    it("refuses a Version that is not its Document's latest", async () => {
+      const failed = await failedDocument('retry-older@example.com', 'unexpected', 'converting');
+      await pool.query(
+        `INSERT INTO document_versions (document_id, version_number, mime_type, size_bytes, storage_key)
+         VALUES ($1, 2, 'application/pdf', 1, 'newer')`,
+        [failed.documentId],
+      );
+
+      const response = await app.inject({
+        method: 'POST',
+        url: retryUrl(failed),
+        cookies: { session: failed.session },
+      });
+
+      expect(response.statusCode).toBe(409);
+    });
+
+    it('reports 404 for a deleted Document', async () => {
+      const failed = await failedDocument('retry-deleted@example.com', 'unexpected', 'converting');
+      await app.inject({
+        method: 'DELETE',
+        url: `/notebooks/${failed.notebookId}/documents/${failed.documentId}`,
+        cookies: { session: failed.session },
+      });
+
+      const response = await app.inject({
+        method: 'POST',
+        url: retryUrl(failed),
+        cookies: { session: failed.session },
+      });
+
+      expect(response.statusCode).toBe(404);
+    });
+
+    it('starts one run for two retries at once', async () => {
+      const { recording, enqueued } = await appRecordingJobs();
+      try {
+        const failed = await failedDocument('retry-twice@example.com', 'unexpected', 'converting');
+        const retry = () =>
+          recording.inject({
+            method: 'POST',
+            url: retryUrl(failed),
+            cookies: { session: failed.session },
+          });
+
+        const codes = (await Promise.all([retry(), retry()])).map((r) => r.statusCode).sort();
+
+        expect(codes).toEqual([202, 409]);
+        expect(enqueued).toHaveLength(1);
+      } finally {
+        await recording.close();
+      }
+    });
+  });
+
   describe('NBK-64: failure reason', () => {
     // What a converter really leaves in `ingestion_error`: diagnostics and a
     // setup hint, written for developers. None of it may reach a browser.

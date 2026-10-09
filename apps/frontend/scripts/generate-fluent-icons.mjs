@@ -22,6 +22,7 @@ const NAMES = [
   'more-horizontal',
   'delete',
   'arrow-download',
+  'arrow-clockwise',
   'open',
   'rename',
   'chevron-down',

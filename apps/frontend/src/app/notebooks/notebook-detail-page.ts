@@ -348,4 +348,8 @@ export class NotebookDetailPage implements OnInit, OnDestroy {
   protected download(document: Document): void {
     void this.store.downloadDocumentVersion(this.notebookId, document);
   }
+
+  protected retry(document: Document): void {
+    void this.store.retryIngestion(this.notebookId, document);
+  }
 }

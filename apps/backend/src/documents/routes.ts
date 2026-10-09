@@ -19,6 +19,7 @@ import {
   findDownloadableVersion,
   listDocuments,
   restoreDocument,
+  retryIngestion,
   softDeleteDocument,
 } from './repository.js';
 import {
@@ -32,6 +33,8 @@ import {
   documentVersionParamsSchema,
   listDocumentsResponseSchema,
   notebookIdParamsSchema,
+  retryIngestionResponseSchema,
+  type DocumentStatus,
 } from './schema.js';
 
 export interface RegisterDocumentRoutesOptions {
@@ -47,6 +50,16 @@ export interface RegisterDocumentRoutesOptions {
    */
   jobs?: JobQueue;
 }
+
+/**
+ * The Stage that picks a Version up at each status a Retry leaves it in
+ * (NBK-110): the status each Stage consumes, as in GLOSSARY.md "Ingestion".
+ */
+const STAGE_CONSUMING: Partial<Record<DocumentStatus, Exclude<keyof JobQueue, 'stop'>>> = {
+  queued: 'enqueueConvertToMarkdown',
+  converted: 'enqueueSummarizeDocument',
+  summarized: 'enqueueEmbedChunks',
+};
 
 /**
  * Registers Document routes, nested under a Notebook. Every route sits
@@ -358,6 +371,61 @@ export function registerDocumentRoutes(
         return;
       }
       await reply.status(200).send(result.document);
+    },
+  );
+
+  app.withTypeProvider<ZodTypeProvider>().post(
+    '/notebooks/:notebookId/documents/:documentId/versions/:versionId/retry',
+    {
+      preHandler: authGuard,
+      schema: {
+        operationId: 'retryIngestion',
+        tags: ['documents'],
+        summary: 'Retry the Ingestion of a failed Document Version',
+        description:
+          'Runs Ingestion again on the same file, from the Stage that failed (NBK-110): only for a ' +
+          'Version that is failed for a reason a second attempt could change (unexpected, ' +
+          'service-unavailable, timed-out). Reports 409 otherwise, including while a Retry is ' +
+          'already under way. Answers with the status the Version went back to; the rest arrives ' +
+          'as status App Events. Per ADR-0001 there is no ownership check.',
+        params: documentVersionParamsSchema,
+        response: {
+          202: retryIngestionResponseSchema,
+          404: errorResponseSchema,
+          409: errorResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const { documentId, versionId } = request.params;
+      const result = await retryIngestion(pool, request.params);
+      if (result.outcome === 'not-found') {
+        await reply.status(404).send({ message: 'Document Version not found.' });
+        return;
+      }
+      if (result.outcome === 'not-retryable') {
+        await reply.status(409).send({
+          message:
+            'This Document Version cannot be retried: it has not failed, is already being retried, ' +
+            'or failed in a way the same file would repeat.',
+        });
+        return;
+      }
+
+      // After the commit, as for an upload: the Version, back at the status
+      // its Stage consumes, is the record of the work owed if this fails.
+      if (jobs) {
+        try {
+          await jobs[STAGE_CONSUMING[result.status] ?? 'enqueueConvertToMarkdown']({
+            documentId,
+            versionId,
+          });
+        } catch (err) {
+          request.log.error({ err }, 'Could not enqueue the retried Ingestion Stage.');
+        }
+      }
+
+      await reply.status(202).send({ status: result.status });
     },
   );
 

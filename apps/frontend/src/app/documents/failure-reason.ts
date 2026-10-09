@@ -55,3 +55,25 @@ export function failureSentence(failure: DocumentFailure | null): string {
   const sentence = failure && FAILURE_SENTENCES[failure.reason];
   return sentence ? sentence(failure.failedAt) : FAILURE_SENTENCES.unexpected(null);
 }
+
+/**
+ * The failure reasons a Retry is offered for (NBK-110): those a second
+ * attempt on the same file could change. `no-text-layer` and `unreadable` are
+ * the file's own, and fail the same way again. Mirrors
+ * `RETRYABLE_FAILURE_REASONS` in the backend's documents/schema.ts, which
+ * refuses the rest with 409.
+ */
+export const RETRYABLE_FAILURE_REASONS: readonly FailureReason[] = [
+  'unexpected',
+  'service-unavailable',
+  'timed-out',
+];
+
+/** Whether a Document's latest Version failed in a way a Retry could change. */
+export function canRetry(document: { status: string; failure: DocumentFailure | null }): boolean {
+  return (
+    document.status === 'failed' &&
+    document.failure !== null &&
+    RETRYABLE_FAILURE_REASONS.includes(document.failure.reason)
+  );
+}
