@@ -12,6 +12,7 @@ import { SearchService } from './api/services/search.service';
 import { AppEvent, AppEventsService } from './events/app-events.service';
 import { provideAppIcons } from './shared/fluent-icons';
 import { APP_NAME } from './shared/brand';
+import { answeringLater } from './shared/answer-later.spec-helpers';
 import { pinToday } from './chat/chat-panel.spec-helpers';
 
 // App-level seam-3 test (NBK-3): renders the real shell through the real
@@ -59,18 +60,18 @@ async function renderSignedIn(
       { provide: AuthService, useValue: { getCurrentUser, logout } },
       {
         provide: NotebooksService,
-        useValue: { listNotebooks: vi.fn().mockResolvedValue([RESEARCH]) },
+        useValue: answeringLater({ listNotebooks: vi.fn().mockResolvedValue([RESEARCH]) }),
       },
       {
         provide: DocumentsService,
-        useValue: {
+        useValue: answeringLater({
           listDocuments: vi.fn().mockResolvedValue([]),
           getDocument: vi.fn().mockReturnValue(new Promise(() => {})),
-        },
+        }),
       },
       {
         provide: ChatService,
-        useValue: {
+        useValue: answeringLater({
           listChatThreads: vi.fn().mockResolvedValue(threads),
           listChatMessages: vi.fn().mockResolvedValue([]),
           createChatThread: vi
@@ -78,7 +79,7 @@ async function renderSignedIn(
             .mockImplementation(({ body }: { body: { title: string } }) =>
               Promise.resolve(thread('thread-started', body.title, '2026-02-01T00:00:00.000Z')),
             ),
-        },
+        }),
       },
       { provide: SearchService, useValue: { searchNotebook: vi.fn() } },
       { provide: AppEventsService, useValue: { stream: () => events.asObservable() } },

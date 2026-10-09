@@ -15,6 +15,7 @@ import { SearchPage } from '../search/search-page';
 import { AuthStore } from '../auth/auth.store';
 import { SIGNED_IN, appEventsStub, thread } from '../chat/chat-panel.spec-helpers';
 import { provideAppIcons } from '../shared/fluent-icons';
+import { answeringLater } from '../shared/answer-later.spec-helpers';
 
 // Shared by the Document page's area specs (CODING_STANDARDS.md, "Test
 // helpers in a seam-3 spec").
@@ -97,8 +98,8 @@ export async function renderPage(
     providers: [
       provideAppIcons(),
       route,
-      { provide: DocumentsService, useValue: documentsService },
-      { provide: ChatService, useValue: noChat() },
+      { provide: DocumentsService, useValue: answeringLater(documentsService) },
+      { provide: ChatService, useValue: answeringLater(noChat()) },
       { provide: NotebooksService, useValue: { listNotebooks: vi.fn().mockResolvedValue([]) } },
       { provide: AuthService, useValue: { getCurrentUser: vi.fn().mockResolvedValue(SIGNED_IN) } },
       appEvents.provider,
@@ -146,10 +147,13 @@ export async function renderRouted(
       { provide: NotebooksService, useValue: { listNotebooks: vi.fn().mockResolvedValue([]) } },
       {
         provide: DocumentsService,
-        useValue: { listDocuments: vi.fn().mockResolvedValue([]), ...documentsService },
+        useValue: answeringLater({
+          listDocuments: vi.fn().mockResolvedValue([]),
+          ...documentsService,
+        }),
       },
-      { provide: ChatService, useValue: chatService },
-      { provide: SearchService, useValue: searchService },
+      { provide: ChatService, useValue: answeringLater(chatService) },
+      { provide: SearchService, useValue: answeringLater(searchService) },
       { provide: DocumentTransferService, useValue: {} },
       { provide: AuthService, useValue: { getCurrentUser: vi.fn().mockResolvedValue(SIGNED_IN) } },
       appEvents.provider,

@@ -9,6 +9,7 @@ import { Elsewhere, RouterShell } from '../notebooks/notebook-detail-page.spec-h
 import { pinToday } from '../chat/chat-panel.spec-helpers';
 import { APP_NAME } from '../shared/brand';
 import { provideAppIcons } from '../shared/fluent-icons';
+import { answeringLater } from '../shared/answer-later.spec-helpers';
 
 const NOTEBOOK_ID = '11111111-1111-1111-1111-111111111111';
 const SEARCH_URL = `/notebooks/${NOTEBOOK_ID}/search`;
@@ -87,7 +88,7 @@ async function renderSearch(
         provide: NotebooksService,
         useValue: { listNotebooks: vi.fn().mockResolvedValue(notebooks) },
       },
-      { provide: SearchService, useValue: { searchNotebook, searchChatThreads } },
+      { provide: SearchService, useValue: answeringLater({ searchNotebook, searchChatThreads }) },
     ],
   });
   await rendered.navigate(url);

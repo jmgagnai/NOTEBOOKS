@@ -568,7 +568,7 @@ describe('Chat panel (ThreadNavigator + ThreadView) — asking', () => {
       const createChatThread = vi.fn();
       const { sendChatMessage } = await draftAQuestion({ createChatThread });
 
-      expect(screen.getByTestId('chat-messages').children).toHaveLength(0);
+      expect((await screen.findByTestId('chat-messages')).children).toHaveLength(0);
       expect(screen.queryByText(INVITATION)).toBeNull();
       expect(screen.queryByRole('button', { name: SUMMARIZE })).toBeNull();
 

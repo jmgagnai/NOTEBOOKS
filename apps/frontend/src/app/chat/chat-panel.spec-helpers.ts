@@ -12,6 +12,7 @@ import { ChatService } from '../api/services/chat.service';
 import { NotebooksService } from '../api/services/notebooks.service';
 import { AppEvent, AppEventsService } from '../events/app-events.service';
 import { provideAppIcons } from '../shared/fluent-icons';
+import { answeringLater } from '../shared/answer-later.spec-helpers';
 
 export const NOTEBOOK_ID = '11111111-1111-1111-1111-111111111111';
 export const DOCUMENT_ID = '22222222-2222-2222-2222-222222222222';
@@ -300,7 +301,7 @@ export async function renderPanel(chatService: Partial<ChatService>) {
     providers: [
       provideRouter([]),
       provideAppIcons(),
-      { provide: ChatService, useValue: chatService },
+      { provide: ChatService, useValue: answeringLater(chatService) },
       // The Notebook landing (NBK-81) shows and renames the Notebook's title
       // through the Notebooks store; the page, not the panel, loads it.
       { provide: NotebooksService, useValue: { listNotebooks: vi.fn().mockResolvedValue([]) } },

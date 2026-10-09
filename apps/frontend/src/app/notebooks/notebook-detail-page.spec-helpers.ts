@@ -9,6 +9,7 @@ import { DocumentsService } from '../api/services/documents.service';
 import { DocumentTransferService } from '../documents/document-transfer.service';
 import { AppEvent, AppEventsService } from '../events/app-events.service';
 import { provideAppIcons } from '../shared/fluent-icons';
+import { answeringLater } from '../shared/answer-later.spec-helpers';
 
 export const NOTEBOOK_ID = '11111111-1111-1111-1111-111111111111';
 
@@ -49,7 +50,7 @@ export function activatedRouteFor(notebookId: string) {
 export function chatServiceStub(
   chat: Record<string, unknown> = { listChatThreads: vi.fn().mockResolvedValue([]) },
 ) {
-  return { provide: ChatService, useValue: chat };
+  return { provide: ChatService, useValue: answeringLater(chat) };
 }
 
 /**
@@ -102,8 +103,8 @@ export function pageProviders({
   return [
     ...(inRouterShell ? [] : [activatedRouteFor(NOTEBOOK_ID)]),
     provideAppIcons(),
-    { provide: NotebooksService, useValue: notebooks },
-    { provide: DocumentsService, useValue: documents },
+    { provide: NotebooksService, useValue: answeringLater(notebooks) },
+    { provide: DocumentsService, useValue: answeringLater(documents) },
     chatServiceStub(chat),
     { provide: DocumentTransferService, useValue: transfer },
     appEvents.provider,

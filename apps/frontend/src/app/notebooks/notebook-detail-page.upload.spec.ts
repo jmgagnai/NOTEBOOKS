@@ -433,12 +433,14 @@ describe('NotebookDetailPage — upload batches', () => {
     // for "navigating away and back" to mean anything.
     it('keeps the batch going, and shows it again, across in-app navigation away and back', async () => {
       const uploads = heldUploads();
-      // The second visit re-reads the list, and by then the first file is
-      // stored — as the real backend would report.
-      const listDocuments = vi
-        .fn()
-        .mockResolvedValueOnce([])
-        .mockResolvedValue([documentFor('1.txt')]);
+      // Each visit re-reads the list, which holds the files landed by then —
+      // as the real backend would report.
+      const stored: ReturnType<typeof documentFor>[] = [];
+      const land = (filename: string) => {
+        stored.push(documentFor(filename));
+        uploads.land(filename);
+      };
+      const listDocuments = vi.fn().mockImplementation(() => Promise.resolve([...stored]));
       const { navigate } = await render(RouterShell, {
         routes: [
           { path: 'notebooks/:notebookId', component: NotebookDetailPage },
@@ -461,7 +463,7 @@ describe('NotebookDetailPage — upload batches', () => {
       await screen.findByText('Somewhere else');
       expect(screen.queryByRole('list', { name: 'Upload progress' })).toBeNull();
       // A file landing while the page is away is not lost...
-      uploads.land('1.txt');
+      land('1.txt');
 
       await navigate(`/notebooks/${NOTEBOOK_ID}`);
       // ...the batch is still shown, in progress, with what landed meanwhile...
@@ -473,11 +475,11 @@ describe('NotebookDetailPage — upload batches', () => {
       expect((screen.getByLabelText('Upload Documents') as HTMLInputElement).disabled).toBe(true);
       // ...and Documents keep landing on the re-created page; no file was
       // sent twice.
-      uploads.land('2.txt');
+      land('2.txt');
       expect(await screen.findByText('2 uploaded, 0 skipped, 0 failed')).toBeTruthy();
-      const cards = screen.getByRole('list', { name: 'Documents' });
-      expect(within(cards).getByText('1.txt')).toBeTruthy();
-      expect(within(cards).getByText('2.txt')).toBeTruthy();
+      const cards = await screen.findByRole('list', { name: 'Documents' });
+      expect(await within(cards).findByText('1.txt')).toBeTruthy();
+      expect(await within(cards).findByText('2.txt')).toBeTruthy();
       expect(uploads.uploadDocument).toHaveBeenCalledTimes(2);
     });
 
