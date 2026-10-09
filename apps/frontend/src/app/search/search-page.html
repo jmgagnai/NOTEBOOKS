@@ -76,20 +76,20 @@
                 searched for bold, then which Document it is from and where.
               -->
               <ul class="search-page__results">
-                @for (result of store.chunks(); track result.match.chunkId) {
+                @for (chunk of store.chunks(); track chunk.match.chunkId) {
                   <li>
                     <a
                       class="search-page__result"
-                      [routerLink]="['/notebooks', notebookId, 'documents', result.documentId]"
-                      [queryParams]="chunkLink(result.match)"
+                      [routerLink]="['/notebooks', notebookId, 'documents', chunk.documentId]"
+                      [queryParams]="chunkLink(chunk.match)"
                       [state]="openedFromSearch"
                     >
                       <span class="search-page__result-body">
                         <app-marked-text
                           class="search-page__result-excerpt"
-                          [segments]="result.excerpt"
+                          [segments]="chunk.excerpt"
                         />
-                        <span class="search-page__result-meta">{{ whereFrom(result) }}</span>
+                        <span class="search-page__result-meta">{{ whereFrom(chunk) }}</span>
                       </span>
                     </a>
                   </li>

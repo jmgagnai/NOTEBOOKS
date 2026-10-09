@@ -143,8 +143,8 @@ export class SearchPage implements OnDestroy {
   );
 
   /** Which Document a Chunk is from, and where: "<title or filename> · <heading › heading>". */
-  protected whereFrom(result: ChunkResult): string {
-    return [result.title ?? result.filename, result.headingPath.join(' › ')]
+  protected whereFrom(chunk: ChunkResult): string {
+    return [chunk.title ?? chunk.filename, chunk.headingPath.join(' › ')]
       .filter((part) => part !== '')
       .join(' · ');
   }

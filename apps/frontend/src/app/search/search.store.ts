@@ -137,7 +137,7 @@ export const SearchStore = signalStore(
         // the Chat Threads' Exchanges, both by keyword (NBK-97, NBK-104).
         // The API's spelling of the flag ('true'), not the page URL's ('1').
         const params = { notebookId, q: trimmed, ...(exact ? { exact: 'true' as const } : {}) };
-        const [chunks, exchanges] = await Promise.all([
+        const [foundChunks, foundExchanges] = await Promise.all([
           settle(searchService.searchNotebook(params) as Promise<Found<ChunkResult>>),
           settle(searchService.searchChatThreads(params) as Promise<Found<ExchangeResult>>),
         ]);
@@ -145,12 +145,13 @@ export const SearchStore = signalStore(
         patchState(store, {
           searching: false,
           searched: true,
-          chunks: chunks.value?.results ?? [],
-          chunksError: chunks.error,
-          exchanges: exchanges.value?.results ?? [],
-          exchangesError: exchanges.error,
+          chunks: foundChunks.value?.results ?? [],
+          chunksError: foundChunks.error,
+          exchanges: foundExchanges.value?.results ?? [],
+          exchangesError: foundExchanges.error,
           // Both correct against the same Notebook's words, so either says it.
-          correctedQuery: chunks.value?.correctedQuery ?? exchanges.value?.correctedQuery ?? null,
+          correctedQuery:
+            foundChunks.value?.correctedQuery ?? foundExchanges.value?.correctedQuery ?? null,
         });
       },
 
