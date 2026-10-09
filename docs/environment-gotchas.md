@@ -205,6 +205,60 @@ a version that was then rewritten and had to be undone by hand.
   Only do this while the branch is unmerged: once merged, a migration is
   history and the fix is a new migration.
 
+## Saving a backend file stops a conversion in progress
+
+The same `tsx watch` restart (above) also ends any Docling conversion in
+progress. A restarted worker first removes its predecessor's conversion
+containers (NBK-111), then runs their jobs again. The old process, still
+shutting down, records the killed conversion as a failed attempt
+(`unexpected`, since NBK-112). Restarts come from more than deliberate
+edits:
+
+- every save of a file under `apps/backend/src`;
+- the pre-commit hook's Prettier run rewriting staged backend files;
+- `git checkout` of a branch that changes them.
+
+On 2026-10-09 a 156 KB PDF used up all four attempts this way while backend
+work went on, and ended `failed` until it was retried. Before a long
+conversion you need to finish, stop editing the backend, or let it run in a
+worktree's backend instead. A Document failed this way can be retried from
+its menu (NBK-110).
+
+## `git push` fails with HTTP 400 and "the remote end hung up"
+
+```text
+error: RPC failed; HTTP 400 curl 22 The requested URL returned error: 400
+send-pack: unexpected disconnect while reading sideband packet
+```
+
+Authentication is fine (`gh auth status`, `git ls-remote` both work), and
+`-c http.version=HTTP/1.1` does not help. What does is a larger post buffer,
+which sends the pack in one request instead of chunked:
+
+```bash
+git -c http.postBuffer=524288000 push -u origin <branch>
+```
+
+Pass it per command rather than setting it in the git config. It was needed
+once (PR #72, 2026-10-09); the same push worked a few minutes later without
+it.
+
+## macOS holds a new script's first run for seconds
+
+macOS scans a newly written executable on its first run. The stand-in
+`docker` scripts the converter tests write (`test/support/scripted-docker.ts`)
+can therefore take about 2 s to start the first time, and about 10 ms after.
+A test that kills the stand-in after a short timeout then kills it before it
+ran a line: its log of calls is empty, and the test fails only when run with
+its neighbours.
+
+Run the stand-in once before the timed part, as `docling.converter.test.ts`
+does:
+
+```ts
+await promisify(execFile)(docker, ['warm-up']);
+```
+
 ## Reaching `.env` from a git worktree
 
 `.env` is gitignored, so a fresh worktree does not have it. `scripts/jira.mjs`
