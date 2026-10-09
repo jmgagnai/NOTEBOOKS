@@ -274,6 +274,20 @@ describe('Docling converter: named failures (scripted docker)', () => {
     expect(failure).toMatchObject({ reason: 'unreadable' });
   });
 
+  // NBK-112: killed from outside — out of memory, its container removed
+  // (NBK-111), Docker stopped — says nothing about the file, and a Retry may
+  // well succeed.
+  it.each([
+    ['exit 137', 'exits 137 (SIGKILL)'],
+    ['exit 143', 'exits 143 (SIGTERM)'],
+    ['kill -9 $$', 'is itself killed by a signal'],
+  ])("is 'unexpected', not 'unreadable', when docker %s: it %s", async (body) => {
+    const failure = await convertWith(await scriptedDocker(body));
+
+    expect(failure).toBeInstanceOf(IngestionFailure);
+    expect(failure).toMatchObject({ reason: 'unexpected' });
+  });
+
   it("is 'unreadable' when Docling exits 0 but writes no Markdown", async () => {
     const failure = await convertWith(await scriptedDocker("echo 'failed to convert'; exit 0"));
 

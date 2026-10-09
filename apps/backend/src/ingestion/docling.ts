@@ -314,10 +314,17 @@ export function createDoclingConverter(options: DoclingOptions = {}): MarkdownCo
         }
         // NBK-65: Docling crashing on a Document is the Document being
         // unreadable to it; the diagnostics stay in the message, for
-        // operators, and never decide the reason.
+        // operators, and never decide the reason. A conversion killed from
+        // outside is not (NBK-112): out of memory, its container removed
+        // (NBK-111), Docker stopped — the file may be fine, and a Retry may
+        // succeed. 137 and 143 are 128 + SIGKILL and SIGTERM, which is how
+        // `docker run` reports its container killed. Migration 0020 finds
+        // the killed failures recorded before this by the message below:
+        // reword it and that migration no longer describes it.
+        const killed = signal !== null || code === 137 || code === 143;
         reject(
           new IngestionFailure(
-            'unreadable',
+            killed ? 'unexpected' : 'unreadable',
             `Docling exited with ${signal ? `signal ${signal}` : `code ${code}`}: ${output}`,
           ),
         );
