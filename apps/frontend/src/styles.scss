@@ -517,3 +517,11 @@ h6 {
   width: 20px;
   height: 20px;
 }
+
+// A renamable title's tooltip says how to rename it, and is there the moment
+// the pointer is (no show delay, no fade-in): it is read in passing on the
+// way to a click. Global, since a tooltip renders in the overlay, outside the
+// component that asks for it (app/shared/editable-title.ts).
+.mat-mdc-tooltip.editable-title-tooltip {
+  animation: none;
+}

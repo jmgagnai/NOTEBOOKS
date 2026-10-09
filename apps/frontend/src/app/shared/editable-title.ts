@@ -2,6 +2,7 @@ import {
   afterNextRender,
   ChangeDetectionStrategy,
   Component,
+  DestroyRef,
   effect,
   ElementRef,
   inject,
@@ -22,6 +23,15 @@ import { MatTooltipModule } from '@angular/material/tooltip';
  * the matching `--mat-sys-title-*` role.
  */
 export type EditableTitleSize = 'page' | 'large' | 'medium' | 'small';
+
+/**
+ * How long a first click waits for a second before it counts as a single
+ * one: under the operating systems' double-click intervals (macOS 500 ms at
+ * most, Windows 500 ms by default) in practice — two clicks a reader means
+ * as one double-click land within about 250 ms — without a single click
+ * feeling slow.
+ */
+const DOUBLE_CLICK_MS = 250;
 
 /**
  * A title that is renamed in place (NBK-41, spec 02 "Header"): a button that
@@ -58,7 +68,11 @@ export type EditableTitleSize = 'page' | 'large' | 'medium' | 'small';
         type="button"
         class="editable-title__button"
         [matTooltip]="tooltip()"
-        (click)="edit()"
+        matTooltipShowDelay="0"
+        matTooltipClass="editable-title-tooltip"
+        (click)="onClick($event)"
+        (dblclick)="onDoubleClick()"
+        (keydown.f2)="edit()"
       >
         {{ title() }}
       </button>
@@ -85,6 +99,16 @@ export class EditableTitle {
 
   readonly size = input<EditableTitleSize>('large');
 
+  /**
+   * What opens the box: a click (the default), or only a double-click, for
+   * a title whose single click goes somewhere — then it is `pressed`. F2
+   * opens it from the keyboard either way.
+   */
+  readonly renameOn = input<'click' | 'doubleClick'>('click');
+
+  /** A single click — or Enter or Space — on a title renamed by double-click. */
+  readonly pressed = output<void>();
+
   /** The committed title, only when it differs from `title`. */
   readonly titleChange = output<string>();
 
@@ -103,12 +127,15 @@ export class EditableTitle {
   private readonly box = viewChild<ElementRef<HTMLInputElement>>('box');
   private readonly button = viewChild<ElementRef<HTMLButtonElement>>('button');
   private readonly injector = inject(Injector);
+  private pendingPress: ReturnType<typeof setTimeout> | null = null;
 
   // The box appears on demand, so it is focused when it does — otherwise a
   // click on the title would leave the keyboard nowhere.
   // `focus()` as well as `select()`: browsers differ on whether selecting
   // the text also moves the focus, and closing hands the focus back only
   // from a box that had it.
+  private readonly cleanup = inject(DestroyRef).onDestroy(() => this.cancelPress());
+
   private readonly focusBox = effect(() => {
     const box = this.box()?.nativeElement;
     box?.focus();
@@ -122,6 +149,39 @@ export class EditableTitle {
   edit(): void {
     this.draft.set(this.title());
     this.editing.set(true);
+  }
+
+  /**
+   * A double-click arrives as a first click, a second click, then the
+   * dblclick, so a first click waits to see whether a second follows before
+   * it counts as a press. Enter or Space on the button (no pointer, `detail`
+   * 0) is a press straight away.
+   */
+  protected onClick(event: MouseEvent): void {
+    if (this.renameOn() === 'click') {
+      this.edit();
+      return;
+    }
+    this.cancelPress();
+    if (event.detail === 0) {
+      this.pressed.emit();
+    } else if (event.detail === 1) {
+      this.pendingPress = setTimeout(() => {
+        this.pendingPress = null;
+        this.pressed.emit();
+      }, DOUBLE_CLICK_MS);
+    }
+  }
+
+  protected onDoubleClick(): void {
+    if (this.renameOn() !== 'doubleClick') return;
+    this.cancelPress();
+    this.edit();
+  }
+
+  private cancelPress(): void {
+    if (this.pendingPress !== null) clearTimeout(this.pendingPress);
+    this.pendingPress = null;
   }
 
   /**
