@@ -337,6 +337,10 @@ export class DocumentDetailPage implements OnInit, OnDestroy {
   protected toggleFullContent(): void {
     if (this.expanded()) {
       this.expanded.set(false);
+      // The view rendering it is gone, and with it what it last said: the
+      // next one to render says afresh (review: a stale bar beside the
+      // spinner of a Version still loading).
+      this.contentProgress.set(1);
       return;
     }
     const versionId = this.targetVersionId();

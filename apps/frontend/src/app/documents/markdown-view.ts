@@ -92,8 +92,9 @@ function scrollingAncestor(element: HTMLElement): Element | null {
  * the document's start, and the rest is added a slice at a time between
  * tasks, the page staying usable throughout; `progress` says how much is
  * there. Blocks added above the reader's position would push it
- * down, so the view moves by what they added: not every browser anchors
- * scrolling itself (Safari does not).
+ * down, so the view moves by what they added. It does this itself, with the
+ * browser's own anchoring turned off for the blocks (markdown-view.scss):
+ * Safari does not anchor, and Chrome anchoring as well moved the text twice.
  */
 @Component({
   selector: 'app-markdown-view',
@@ -161,12 +162,19 @@ export class MarkdownView {
   });
 
   constructor() {
-    // A new document — or a new Citation into it — starts again from its
-    // first slice.
+    // A new document starts again from its first slice; so does a new
+    // Citation into this one, unless the cited block is already rendered.
+    let renderedBlocks: MarkdownBlock[] | null = null;
     effect(() => {
       const blocks = this.blocks();
       const cited = this.highlightFrom() === null ? -1 : blocks.findIndex((b) => this.isCited(b));
-      untracked(() => this.startRendering(blocks.length, cited));
+      untracked(() => {
+        const { first, last } = this.window();
+        const alreadyShown = cited >= first && cited < last;
+        if (blocks === renderedBlocks && (cited < 0 || alreadyShown)) return;
+        renderedBlocks = blocks;
+        this.startRendering(cited);
+      });
     });
     inject(DestroyRef).onDestroy(() => this.stopRendering());
 
@@ -176,10 +184,7 @@ export class MarkdownView {
     // breaking a render over.
     afterRenderEffect(() => {
       if (this.highlightFrom() === null || this.blocks().length === 0) return;
-      const cited = this.host.nativeElement.querySelector<HTMLElement>(
-        '[data-testid="cited-passage"]',
-      );
-      cited?.scrollIntoView?.({ block: 'center' });
+      this.cited()?.scrollIntoView?.({ block: 'center' });
     });
   }
 
@@ -187,42 +192,50 @@ export class MarkdownView {
    * Renders the first slice — around block `cited`, or from the start when
    * none is — and schedules the rest.
    */
-  private startRendering(total: number, cited: number): void {
+  private startRendering(cited: number): void {
     this.stopRendering();
+    const total = this.blocks().length;
     const first = cited < 0 ? 0 : Math.max(0, cited - LEAD);
     this.window.set({ first, last: Math.min(total, first + FIRST_SLICE) });
-    this.reportAndContinue(total);
+    this.reportAndContinue();
   }
 
   /** One more slice below what is rendered, and one above, then the next. */
-  private renderMore(total: number): void {
+  private renderMore(): void {
+    const total = this.blocks().length;
     const { first, last } = this.window();
     const above = Math.max(0, first - SLICE);
     const anchor = above < first ? this.anchor() : null;
-    const before = anchor?.getBoundingClientRect().top ?? 0;
+    const scroller = anchor ? scrollingAncestor(this.host.nativeElement) : null;
+    const anchorBefore = anchor?.getBoundingClientRect().top ?? 0;
+    const scrollBefore = scroller?.scrollTop ?? 0;
     this.window.set({ first: above, last: Math.min(total, last + SLICE) });
-    if (anchor) {
+    if (anchor && scroller) {
       // What the new blocks above added, taken back off the scroll, so the
-      // text the reader is looking at stays where it is.
+      // text the reader is looking at stays where it is. The blocks render
+      // up to a frame later, and the reader may scroll meanwhile: the anchor
+      // moved by what was added less what they scrolled, so their scroll is
+      // added back rather than undone.
       afterNextRender(
         {
           write: () => {
-            const moved = anchor.getBoundingClientRect().top - before;
-            const scroller = scrollingAncestor(this.host.nativeElement);
-            if (moved !== 0 && scroller) scroller.scrollTop += moved;
+            const scrolled = scroller.scrollTop - scrollBefore;
+            const added = anchor.getBoundingClientRect().top - anchorBefore + scrolled;
+            if (added !== 0) scroller.scrollTop += added;
           },
         },
         { injector: this.injector },
       );
     }
-    this.reportAndContinue(total);
+    this.reportAndContinue();
   }
 
-  private reportAndContinue(total: number): void {
+  private reportAndContinue(): void {
+    const total = this.blocks().length;
     const { first, last } = this.window();
     const done = total === 0 || (first === 0 && last === total);
     this.progress.emit(total === 0 ? 1 : (last - first) / total);
-    if (!done) this.pending = setTimeout(() => this.renderMore(total));
+    if (!done) this.pending = setTimeout(() => this.renderMore());
   }
 
   private stopRendering(): void {
@@ -230,12 +243,15 @@ export class MarkdownView {
     this.pending = null;
   }
 
+  /** The first block of the cited range, once rendered. */
+  private cited(): HTMLElement | null {
+    return this.host.nativeElement.querySelector<HTMLElement>('[data-testid="cited-passage"]');
+  }
+
   /** The block the reader's position is kept on: the cited one, else the first shown. */
   private anchor(): HTMLElement | null {
-    const host = this.host.nativeElement;
     return (
-      host.querySelector<HTMLElement>('[data-testid="cited-passage"]') ??
-      host.querySelector<HTMLElement>('.markdown-view__block')
+      this.cited() ?? this.host.nativeElement.querySelector<HTMLElement>('.markdown-view__block')
     );
   }
 

@@ -38,7 +38,7 @@
         (markdown-view.ts): this says the rest is still on its way, along the
         bottom of the header, which stays in view however far the reader is.
       -->
-      @if (expanded() && contentProgress() < 1) {
+      @if (expanded() && store.openContent()?.markdown && contentProgress() < 1) {
         <mat-progress-bar
           class="document-detail-page__rendering"
           mode="determinate"
