@@ -14,10 +14,21 @@ export interface SearchNotebook$Params {
  * Keywords, matched literally in the Chunks of each latest ready Version, accents and case ignored; web-search syntax ("a phrase", -word, or). Blank returns no results.
  */
   q?: string;
+
+/**
+ * 'true' to search the words as typed, with no correction of misspelt words.
+ */
+  exact?: 'true' | 'false';
   notebookId: string;
 }
 
-export function searchNotebook(http: HttpClient, rootUrl: string, params: SearchNotebook$Params, context?: HttpContext): Observable<StrictHttpResponse<Array<{
+export function searchNotebook(http: HttpClient, rootUrl: string, params: SearchNotebook$Params, context?: HttpContext): Observable<StrictHttpResponse<{
+
+/**
+ * The query actually searched, its misspelt words corrected to words the Notebook holds; null when it was searched as typed.
+ */
+'correctedQuery': string | null;
+'results': Array<{
 'documentId': string;
 'filename': string;
 
@@ -64,10 +75,12 @@ export function searchNotebook(http: HttpClient, rootUrl: string, params: Search
 'text': string;
 'match': boolean;
 }>;
-}>>> {
+}>;
+}>> {
   const rb = new RequestBuilder(rootUrl, searchNotebook.PATH, 'get');
   if (params) {
     rb.query('q', params.q, {});
+    rb.query('exact', params.exact, {});
     rb.path('notebookId', params.notebookId, {});
   }
 
@@ -76,7 +89,13 @@ export function searchNotebook(http: HttpClient, rootUrl: string, params: Search
   ).pipe(
     filter((r: any): r is HttpResponse<any> => r instanceof HttpResponse),
     map((r: HttpResponse<any>) => {
-      return r as StrictHttpResponse<Array<{
+      return r as StrictHttpResponse<{
+      
+      /**
+       * The query actually searched, its misspelt words corrected to words the Notebook holds; null when it was searched as typed.
+       */
+      'correctedQuery': string | null;
+      'results': Array<{
       'documentId': string;
       'filename': string;
       
@@ -123,7 +142,8 @@ export function searchNotebook(http: HttpClient, rootUrl: string, params: Search
       'text': string;
       'match': boolean;
       }>;
-      }>>;
+      }>;
+      }>;
     })
   );
 }

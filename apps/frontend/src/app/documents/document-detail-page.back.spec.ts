@@ -115,19 +115,22 @@ describe('DocumentDetailPage — reading only, with a way back', () => {
   });
 
   it('goes back to the search results it was opened from, without searching again', async () => {
-    const searchNotebook = vi.fn().mockResolvedValue([
-      {
-        documentId: DOCUMENT_ID,
-        filename: 'quarterly.pdf',
-        title: 'Quarterly Report 2025',
-        headingPath: ['Revenue'],
-        match: { versionId: VERSION_ID, chunkId: 'chunk-1', charStart: null, charEnd: null },
-        excerpt: [{ text: 'Revenue grew to 12.4M.', match: false }],
-      },
-    ]);
+    const searchNotebook = vi.fn().mockResolvedValue({
+      correctedQuery: null,
+      results: [
+        {
+          documentId: DOCUMENT_ID,
+          filename: 'quarterly.pdf',
+          title: 'Quarterly Report 2025',
+          headingPath: ['Revenue'],
+          match: { versionId: VERSION_ID, chunkId: 'chunk-1', charStart: null, charEnd: null },
+          excerpt: [{ text: 'Revenue grew to 12.4M.', match: false }],
+        },
+      ],
+    });
     const { navigate } = await renderApp({
       searchNotebook,
-      searchChatThreads: vi.fn().mockResolvedValue([]),
+      searchChatThreads: vi.fn().mockResolvedValue({ correctedQuery: null, results: [] }),
     });
     await navigate(`/notebooks/${NOTEBOOK_ID}/search?q=revenue`);
     fireEvent.click(await screen.findByRole('link', { name: /Quarterly Report 2025/ }));

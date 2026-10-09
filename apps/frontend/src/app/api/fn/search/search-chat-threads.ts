@@ -14,10 +14,21 @@ export interface SearchChatThreads$Params {
  * Keywords, matched literally in questions and answers, accents and case ignored; blank returns no results.
  */
   q?: string;
+
+/**
+ * 'true' to search the words as typed, with no correction of misspelt words.
+ */
+  exact?: 'true' | 'false';
   notebookId: string;
 }
 
-export function searchChatThreads(http: HttpClient, rootUrl: string, params: SearchChatThreads$Params, context?: HttpContext): Observable<StrictHttpResponse<Array<{
+export function searchChatThreads(http: HttpClient, rootUrl: string, params: SearchChatThreads$Params, context?: HttpContext): Observable<StrictHttpResponse<{
+
+/**
+ * The query actually searched, its misspelt words corrected to words the Notebook holds; null when it was searched as typed.
+ */
+'correctedQuery': string | null;
+'results': Array<{
 'threadId': string;
 'threadTitle': string;
 'askedBy': {
@@ -51,10 +62,12 @@ export function searchChatThreads(http: HttpClient, rootUrl: string, params: Sea
 'text': string;
 'match': boolean;
 }>;
-}>>> {
+}>;
+}>> {
   const rb = new RequestBuilder(rootUrl, searchChatThreads.PATH, 'get');
   if (params) {
     rb.query('q', params.q, {});
+    rb.query('exact', params.exact, {});
     rb.path('notebookId', params.notebookId, {});
   }
 
@@ -63,7 +76,13 @@ export function searchChatThreads(http: HttpClient, rootUrl: string, params: Sea
   ).pipe(
     filter((r: any): r is HttpResponse<any> => r instanceof HttpResponse),
     map((r: HttpResponse<any>) => {
-      return r as StrictHttpResponse<Array<{
+      return r as StrictHttpResponse<{
+      
+      /**
+       * The query actually searched, its misspelt words corrected to words the Notebook holds; null when it was searched as typed.
+       */
+      'correctedQuery': string | null;
+      'results': Array<{
       'threadId': string;
       'threadTitle': string;
       'askedBy': {
@@ -97,7 +116,8 @@ export function searchChatThreads(http: HttpClient, rootUrl: string, params: Sea
       'text': string;
       'match': boolean;
       }>;
-      }>>;
+      }>;
+      }>;
     })
   );
 }

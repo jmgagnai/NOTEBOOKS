@@ -5,6 +5,7 @@ import { createAuthGuard } from '../auth/guard.js';
 import { errorResponseSchema } from '../auth/schema.js';
 import { notebookExists } from '../notebooks/repository.js';
 import { EXCHANGE_RESULT_LIMIT, searchExchanges } from './exchanges.js';
+import { correct } from './correction.js';
 import { DOCUMENT_RESULT_LIMIT, searchChunks } from './repository.js';
 import {
   searchNotebookParamsSchema,
@@ -42,7 +43,9 @@ export function registerSearchRoutes(
         description:
           "Full-text search over the Chunks of each Document's latest ready Version, accents " +
           'and case ignored (no embedding, so it needs no OpenRouter key). A Document appears ' +
-          'once per matching Chunk. Per ADR-0001 there is no ownership check.',
+          'once per matching Chunk. A misspelt word is corrected to the closest word the ' +
+          'Notebook holds unless exact=true; correctedQuery says what was searched. Per ' +
+          'ADR-0001 there is no ownership check.',
         params: searchNotebookParamsSchema,
         querystring: searchNotebookQuerySchema,
         response: {
@@ -58,7 +61,11 @@ export function registerSearchRoutes(
       }
       await reply
         .status(200)
-        .send(await searchChunks(pool, request.params.notebookId, request.query.q));
+        .send(
+          await search(pool, request.params.notebookId, request.query, (query, typed) =>
+            searchChunks(pool, request.params.notebookId, query, typed),
+          ),
+        );
     },
   );
 
@@ -72,8 +79,8 @@ export function registerSearchRoutes(
         summary: `Search a Notebook's Chat Threads by keyword. Returns each matching Exchange — a question and the answer it produced — with its matches marked; up to ${EXCHANGE_RESULT_LIMIT}, best first.`,
         description:
           'Full-text search over questions and answers, accents and case ignored (no embedding, ' +
-          'so it needs no OpenRouter key). Deleted Chat Threads are left out. Per ADR-0001 ' +
-          'there is no ownership check.',
+          'so it needs no OpenRouter key). A misspelt word is corrected as for Documents. ' +
+          'Deleted Chat Threads are left out. Per ADR-0001 there is no ownership check.',
         params: searchNotebookParamsSchema,
         querystring: searchThreadsQuerySchema,
         response: {
@@ -89,7 +96,27 @@ export function registerSearchRoutes(
       }
       await reply
         .status(200)
-        .send(await searchExchanges(pool, request.params.notebookId, request.query.q));
+        .send(
+          await search(pool, request.params.notebookId, request.query, (query, typed) =>
+            searchExchanges(pool, request.params.notebookId, query, typed),
+          ),
+        );
     },
   );
+}
+
+/**
+ * One search, either kind: the query corrected first (NBK-105) unless asked
+ * for exactly, then searched, and the correction reported beside the
+ * results so the page can say what it searched for.
+ */
+async function search<T>(
+  pool: Pool,
+  notebookId: string,
+  { q, exact }: { q: string; exact: 'true' | 'false' },
+  find: (query: string, typed: string) => Promise<T[]>,
+): Promise<{ correctedQuery: string | null; results: T[] }> {
+  const { searched, correctedQuery } =
+    exact === 'true' ? { searched: q, correctedQuery: null } : await correct(pool, notebookId, q);
+  return { correctedQuery, results: await find(searched, q) };
 }

@@ -12,6 +12,11 @@ import { provideAppIcons } from '../shared/fluent-icons';
 const NOTEBOOK_ID = '11111111-1111-1111-1111-111111111111';
 const SEARCH_URL = `/notebooks/${NOTEBOOK_ID}/search`;
 
+/** What a search answers with (NBK-105): its results, and the query searched if it was corrected. */
+function found<T>(results: T[], correctedQuery: string | null = null) {
+  return { correctedQuery, results };
+}
+
 /**
  * A search result as the generated client returns it (NBK-104): one Chunk,
  * as an Excerpt, with the Document it belongs to and where it sits.
@@ -42,7 +47,7 @@ async function renderSearch(
   {
     url = SEARCH_URL,
     notebooks = [] as unknown[],
-    searchChatThreads = vi.fn().mockResolvedValue([]),
+    searchChatThreads = vi.fn().mockResolvedValue(found([])),
   } = {},
 ) {
   const rendered = await render(RouterShell, {
@@ -90,7 +95,7 @@ describe('SearchPage', () => {
     });
 
     it('offers a search box with no Search button, and sends nothing while typing', async () => {
-      const searchNotebook = vi.fn().mockResolvedValue([]);
+      const searchNotebook = vi.fn().mockResolvedValue(found([]));
       await renderSearch(searchNotebook);
 
       const input = await box();
@@ -114,7 +119,7 @@ describe('SearchPage', () => {
 
   describe('the query in the URL', () => {
     it('searches on Enter and puts the query in the URL', async () => {
-      const searchNotebook = vi.fn().mockResolvedValue([result()]);
+      const searchNotebook = vi.fn().mockResolvedValue(found([result()]));
       await renderSearch(searchNotebook);
 
       await searchFor('red planet');
@@ -125,7 +130,7 @@ describe('SearchPage', () => {
     });
 
     it('runs the query a link arrives with, and shows it in the box', async () => {
-      const searchNotebook = vi.fn().mockResolvedValue([result()]);
+      const searchNotebook = vi.fn().mockResolvedValue(found([result()]));
       await renderSearch(searchNotebook, { url: `${SEARCH_URL}?q=geology` });
 
       await screen.findByRole('link', { name: /The Red Planet/ });
@@ -134,7 +139,7 @@ describe('SearchPage', () => {
     });
 
     it('shows the same results again on coming Back from a Document, without searching again', async () => {
-      const searchNotebook = vi.fn().mockResolvedValue([result()]);
+      const searchNotebook = vi.fn().mockResolvedValue(found([result()]));
       await renderSearch(searchNotebook);
       await searchFor('red planet');
       fireEvent.click(await screen.findByRole('link', { name: /The Red Planet/ }));
@@ -162,17 +167,19 @@ describe('SearchPage', () => {
     // bold, then which Document it is from and where in it.
     it("shows each Chunk as an Excerpt, under it its Document's title and heading", async () => {
       await renderSearch(
-        vi.fn().mockResolvedValue([
-          result(),
-          result({
-            documentId: 'doc-2',
-            filename: 'notes.txt',
-            title: null,
-            headingPath: [],
-            match: { versionId: 'v-2', chunkId: 'chunk-1', charStart: 0, charEnd: 10 },
-            excerpt: [{ text: 'Mars', match: true }],
-          }),
-        ]),
+        vi.fn().mockResolvedValue(
+          found([
+            result(),
+            result({
+              documentId: 'doc-2',
+              filename: 'notes.txt',
+              title: null,
+              headingPath: [],
+              match: { versionId: 'v-2', chunkId: 'chunk-1', charStart: 0, charEnd: 10 },
+              excerpt: [{ text: 'Mars', match: true }],
+            }),
+          ]),
+        ),
       );
       await searchFor('mars');
 
@@ -192,13 +199,15 @@ describe('SearchPage', () => {
 
     it('lists the same Document once per matching Chunk', async () => {
       await renderSearch(
-        vi.fn().mockResolvedValue([
-          result(),
-          result({
-            match: { versionId: 'v-1', chunkId: 'chunk-9', charStart: 500, charEnd: 600 },
-            excerpt: [{ text: 'Mars again', match: false }],
-          }),
-        ]),
+        vi.fn().mockResolvedValue(
+          found([
+            result(),
+            result({
+              match: { versionId: 'v-1', chunkId: 'chunk-9', charStart: 500, charEnd: 600 },
+              excerpt: [{ text: 'Mars again', match: false }],
+            }),
+          ]),
+        ),
       );
       await searchFor('mars');
 
@@ -207,7 +216,7 @@ describe('SearchPage', () => {
     });
 
     it('links each result to its Chunk, the way a Citation does', async () => {
-      await renderSearch(vi.fn().mockResolvedValue([result()]));
+      await renderSearch(vi.fn().mockResolvedValue(found([result()])));
       await searchFor('mars');
 
       const link = await screen.findByRole('link', { name: /The Red Planet/ });
@@ -223,11 +232,13 @@ describe('SearchPage', () => {
 
     it('leaves the range out of the link when the Chunk could not be located', async () => {
       await renderSearch(
-        vi.fn().mockResolvedValue([
-          result({
-            match: { versionId: 'v-1', chunkId: 'chunk-7', charStart: null, charEnd: null },
-          }),
-        ]),
+        vi.fn().mockResolvedValue(
+          found([
+            result({
+              match: { versionId: 'v-1', chunkId: 'chunk-7', charStart: null, charEnd: null },
+            }),
+          ]),
+        ),
       );
       await searchFor('mars');
 
@@ -239,7 +250,7 @@ describe('SearchPage', () => {
 
   describe('states', () => {
     it('distinguishes "no matches" from "nothing searched yet"', async () => {
-      await renderSearch(vi.fn().mockResolvedValue([]));
+      await renderSearch(vi.fn().mockResolvedValue(found([])));
       expect(await screen.findByText(/Search finds the words you type/)).toBeTruthy();
 
       await searchFor('nothing like this');
@@ -269,14 +280,14 @@ describe('SearchPage', () => {
       const searchNotebook = vi
         .fn()
         .mockImplementationOnce(() => new Promise((resolve) => (answerFirst = resolve)))
-        .mockResolvedValue([result({ documentId: 'doc-2', title: 'Phobos and Deimos' })]);
+        .mockResolvedValue(found([result({ documentId: 'doc-2', title: 'Phobos and Deimos' })]));
       await renderSearch(searchNotebook);
 
       await searchFor('mars');
       await waitFor(() => expect(searchNotebook).toHaveBeenCalledTimes(1));
       await searchFor('moons');
       await screen.findByRole('link', { name: /Phobos and Deimos/ });
-      answerFirst([result()]);
+      answerFirst(found([result()]));
       await new Promise((resolve) => setTimeout(resolve, 50));
 
       expect(screen.getByRole('link', { name: /Phobos and Deimos/ })).toBeTruthy();
@@ -284,7 +295,7 @@ describe('SearchPage', () => {
     });
 
     it('does not search on Enter while an input method is composing', async () => {
-      const searchNotebook = vi.fn().mockResolvedValue([]);
+      const searchNotebook = vi.fn().mockResolvedValue(found([]));
       await renderSearch(searchNotebook);
       const input = await box();
       fireEvent.input(input, { target: { value: 'にほ' } });
@@ -321,7 +332,7 @@ describe('SearchPage', () => {
     });
 
     it('starts afresh after leaving for the Notebook, searching the query again', async () => {
-      const searchNotebook = vi.fn().mockResolvedValue([result()]);
+      const searchNotebook = vi.fn().mockResolvedValue(found([result()]));
       const { navigate } = await renderSearch(searchNotebook);
       await searchFor('mars');
       await screen.findByRole('link', { name: /The Red Planet/ });
@@ -358,8 +369,8 @@ describe('SearchPage', () => {
     }
 
     it('searches the Chat Threads alongside the Documents, Documents first', async () => {
-      const searchChatThreads = vi.fn().mockResolvedValue([exchange()]);
-      await renderSearch(vi.fn().mockResolvedValue([result()]), { searchChatThreads });
+      const searchChatThreads = vi.fn().mockResolvedValue(found([exchange()]));
+      await renderSearch(vi.fn().mockResolvedValue(found([result()])), { searchChatThreads });
 
       await searchFor('rossigny');
 
@@ -372,8 +383,8 @@ describe('SearchPage', () => {
     });
 
     it('shows a section only when it has matches', async () => {
-      await renderSearch(vi.fn().mockResolvedValue([]), {
-        searchChatThreads: vi.fn().mockResolvedValue([exchange()]),
+      await renderSearch(vi.fn().mockResolvedValue(found([])), {
+        searchChatThreads: vi.fn().mockResolvedValue(found([exchange()])),
       });
 
       await searchFor('rossigny');
@@ -384,8 +395,8 @@ describe('SearchPage', () => {
     });
 
     it("shows an Exchange: the Chat Thread's title, who asked and when, the question and the answer", async () => {
-      await renderSearch(vi.fn().mockResolvedValue([]), {
-        searchChatThreads: vi.fn().mockResolvedValue([exchange()]),
+      await renderSearch(vi.fn().mockResolvedValue(found([])), {
+        searchChatThreads: vi.fn().mockResolvedValue(found([exchange()])),
       });
       await searchFor('rossigny');
 
@@ -398,8 +409,8 @@ describe('SearchPage', () => {
     });
 
     it('opens the Chat Thread at that Exchange', async () => {
-      await renderSearch(vi.fn().mockResolvedValue([]), {
-        searchChatThreads: vi.fn().mockResolvedValue([exchange()]),
+      await renderSearch(vi.fn().mockResolvedValue(found([])), {
+        searchChatThreads: vi.fn().mockResolvedValue(found([exchange()])),
       });
       await searchFor('rossigny');
 
@@ -410,12 +421,14 @@ describe('SearchPage', () => {
     });
 
     it('renders message text as text, never as markup', async () => {
-      await renderSearch(vi.fn().mockResolvedValue([]), {
-        searchChatThreads: vi.fn().mockResolvedValue([
-          exchange({
-            question: [{ text: '<img src=x onerror=alert(1)> Étretat?', match: false }],
-          }),
-        ]),
+      await renderSearch(vi.fn().mockResolvedValue(found([])), {
+        searchChatThreads: vi.fn().mockResolvedValue(
+          found([
+            exchange({
+              question: [{ text: '<img src=x onerror=alert(1)> Étretat?', match: false }],
+            }),
+          ]),
+        ),
       });
       await searchFor('étretat');
 
@@ -430,7 +443,7 @@ describe('SearchPage', () => {
           status: 503,
           error: { message: 'Search is unavailable: no embedding model is configured.' },
         }),
-        { searchChatThreads: vi.fn().mockResolvedValue([exchange()]) },
+        { searchChatThreads: vi.fn().mockResolvedValue(found([exchange()])) },
       );
       await searchFor('rossigny');
 
@@ -446,10 +459,105 @@ describe('SearchPage', () => {
     });
 
     it('says nothing matches when neither does', async () => {
-      await renderSearch(vi.fn().mockResolvedValue([]));
+      await renderSearch(vi.fn().mockResolvedValue(found([])));
       await searchFor('zzz');
 
       expect(await screen.findByText('Nothing in this Notebook matches "zzz".')).toBeTruthy();
+    });
+  });
+
+  // NBK-105: a misspelt word is corrected before it is searched, and the
+  // page says so, with a way to search for exactly what was typed.
+  describe('a misspelt word', () => {
+    const correctedLine = () => screen.findByText(/Showing results for/);
+
+    it('says what it searched for instead, linking to what was typed', async () => {
+      await renderSearch(vi.fn().mockResolvedValue(found([result()], 'rossigny')));
+
+      await searchFor('rosigny');
+
+      const line = await correctedLine();
+      expect(line.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+        'Showing results for "rossigny". Search instead for "rosigny"',
+      );
+      const exact = within(line).getByRole('link', { name: 'rosigny' });
+      const href = new URL(exact.getAttribute('href')!, 'http://app');
+      expect(Object.fromEntries(href.searchParams)).toEqual({ q: 'rosigny', exact: '1' });
+    });
+
+    it('also when only the Chat Threads search corrected it', async () => {
+      await renderSearch(vi.fn().mockResolvedValue(found([])), {
+        searchChatThreads: vi.fn().mockResolvedValue(found([], 'rossigny')),
+      });
+
+      await searchFor('rosigny');
+
+      expect(await correctedLine()).toBeTruthy();
+    });
+
+    it('searches exactly what was typed from that link, and says nothing more', async () => {
+      const searchNotebook = vi
+        .fn()
+        .mockResolvedValueOnce(found([result()], 'rossigny'))
+        .mockResolvedValue(found([]));
+      const searchChatThreads = vi.fn().mockResolvedValue(found([]));
+      await renderSearch(searchNotebook, { searchChatThreads });
+      await searchFor('rosigny');
+
+      fireEvent.click(within(await correctedLine()).getByRole('link', { name: 'rosigny' }));
+
+      await waitFor(() =>
+        expect(searchNotebook).toHaveBeenLastCalledWith({
+          notebookId: NOTEBOOK_ID,
+          q: 'rosigny',
+          exact: 'true',
+        }),
+      );
+      expect(searchChatThreads).toHaveBeenLastCalledWith({
+        notebookId: NOTEBOOK_ID,
+        q: 'rosigny',
+        exact: 'true',
+      });
+      expect(await screen.findByText('Nothing in this Notebook matches "rosigny".')).toBeTruthy();
+      expect(screen.queryByText(/Showing results for/)).toBeNull();
+    });
+
+    it('says nothing when nothing was corrected', async () => {
+      await renderSearch(vi.fn().mockResolvedValue(found([result()])));
+
+      await searchFor('mars');
+
+      await screen.findByRole('link', { name: /The Red Planet/ });
+      expect(screen.queryByText(/Showing results for/)).toBeNull();
+    });
+
+    it('searches again, corrected, for a new query typed after an exact one', async () => {
+      const searchNotebook = vi.fn().mockResolvedValue(found([]));
+      await renderSearch(searchNotebook, { url: `${SEARCH_URL}?q=rosigny&exact=1` });
+      await waitFor(() =>
+        expect(searchNotebook).toHaveBeenCalledWith({
+          notebookId: NOTEBOOK_ID,
+          q: 'rosigny',
+          exact: 'true',
+        }),
+      );
+
+      await searchFor('hortnse');
+
+      await waitFor(() =>
+        expect(searchNotebook).toHaveBeenLastCalledWith({ notebookId: NOTEBOOK_ID, q: 'hortnse' }),
+      );
+      expect(TestBed.inject(Router).url).toBe(`${SEARCH_URL}?q=hortnse`);
+    });
+
+    it('does not reuse corrected results for the exact search of the same words', async () => {
+      const searchNotebook = vi.fn().mockResolvedValue(found([result()], 'rossigny'));
+      const { navigate } = await renderSearch(searchNotebook, { url: `${SEARCH_URL}?q=rosigny` });
+      await correctedLine();
+
+      await navigate(`${SEARCH_URL}?q=rosigny&exact=1`);
+
+      await waitFor(() => expect(searchNotebook).toHaveBeenCalledTimes(2));
     });
   });
 });

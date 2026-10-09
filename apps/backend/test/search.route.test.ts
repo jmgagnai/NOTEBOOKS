@@ -135,18 +135,33 @@ describe('Search routes — Documents, by keyword (NBK-104)', () => {
     return { documentId, versionIds };
   }
 
-  function search(session: string, notebookId: string, q: string) {
+  function search(
+    session: string,
+    notebookId: string,
+    q: string,
+    params: Record<string, string> = {},
+  ) {
     return app.inject({
       method: 'GET',
-      url: `/notebooks/${notebookId}/search?${new URLSearchParams({ q }).toString()}`,
+      url: `/notebooks/${notebookId}/search?${new URLSearchParams({ q, ...params }).toString()}`,
       cookies: { session },
     });
   }
 
-  async function results(session: string, notebookId: string, q: string) {
-    const response = await search(session, notebookId, q);
+  /** The response body: the Chunks, and the query searched if it was corrected (NBK-105). */
+  async function answer(
+    session: string,
+    notebookId: string,
+    q: string,
+    params: Record<string, string> = {},
+  ) {
+    const response = await search(session, notebookId, q, params);
     expect(response.statusCode).toBe(200);
-    return response.json() as DocumentSearchResult[];
+    return response.json() as { correctedQuery: string | null; results: DocumentSearchResult[] };
+  }
+
+  async function results(session: string, notebookId: string, q: string) {
+    return (await answer(session, notebookId, q)).results;
   }
 
   it('rejects an unauthenticated search with 401', async () => {
@@ -389,6 +404,124 @@ describe('Search routes — Documents, by keyword (NBK-104)', () => {
     await seedDocument(other, 'elsewhere.md', [{ chunks: [{ text: 'Herlock.' }] }]);
 
     expect(await results(session, notebookId, 'herlock')).toEqual([]);
+  });
+
+  describe('a misspelt word (NBK-105)', () => {
+    it('is corrected to the closest word the Notebook holds, and the correction reported', async () => {
+      const session = await signIn();
+      const notebookId = await notebookOf(session);
+      await seedDocument(notebookId, 'renine.md', [
+        { chunks: [{ text: 'Hortense flees to Rossigny with Rénine.' }] },
+      ]);
+
+      const body = await answer(session, notebookId, 'hortnse rosigny');
+
+      expect(body.correctedQuery).toBe('hortense rossigny');
+      expect(body.results.map((hit) => shown(hit.excerpt))).toEqual([
+        '[Hortense] flees to [Rossigny] with Rénine.',
+      ]);
+    });
+
+    it('is searched as typed when asked for exactly', async () => {
+      const session = await signIn();
+      const notebookId = await notebookOf(session);
+      await seedDocument(notebookId, 'renine.md', [{ chunks: [{ text: 'Rossigny.' }] }]);
+
+      expect(await answer(session, notebookId, 'rosigny', { exact: 'true' })).toEqual({
+        correctedQuery: null,
+        results: [],
+      });
+    });
+
+    it('reports no correction when every word was found as typed', async () => {
+      const session = await signIn();
+      const notebookId = await notebookOf(session);
+      await seedDocument(notebookId, 'renine.md', [{ chunks: [{ text: 'Rossigny.' }] }]);
+
+      expect((await answer(session, notebookId, 'Rossigny')).correctedQuery).toBeNull();
+    });
+
+    it('matches nothing when no word in the Notebook is close enough', async () => {
+      const session = await signIn();
+      const notebookId = await notebookOf(session);
+      await seedDocument(notebookId, 'renine.md', [{ chunks: [{ text: 'Rossigny.' }] }]);
+
+      expect(await answer(session, notebookId, 'zanzibar')).toEqual({
+        correctedQuery: null,
+        results: [],
+      });
+    });
+
+    it('never corrects a word of three letters or fewer', async () => {
+      const session = await signIn();
+      const notebookId = await notebookOf(session);
+      await seedDocument(notebookId, 'renine.md', [{ chunks: [{ text: 'The tower.' }] }]);
+
+      expect(await answer(session, notebookId, 'tha')).toEqual({
+        correctedQuery: null,
+        results: [],
+      });
+    });
+
+    it("corrects only from this Notebook's own words", async () => {
+      const session = await signIn();
+      const notebookId = await notebookOf(session);
+      const other = await notebookOf(session);
+      await seedDocument(other, 'elsewhere.md', [{ chunks: [{ text: 'Rossigny.' }] }]);
+
+      expect((await answer(session, notebookId, 'rosigny')).correctedQuery).toBeNull();
+    });
+
+    it('keeps web-search syntax around the corrected words', async () => {
+      const session = await signIn();
+      const notebookId = await notebookOf(session);
+      await seedDocument(notebookId, 'renine.md', [
+        {
+          chunks: [{ text: 'The woods of Rossigny at dawn.' }, { text: 'Rossigny woods, burnt.' }],
+        },
+      ]);
+
+      const body = await answer(session, notebookId, '"woods of rosigny" -burnt');
+
+      expect(body.correctedQuery).toBe('"woods of rossigny" -burnt');
+      expect(body.results.map((hit) => shown(hit.excerpt))).toEqual([
+        'The [woods] [of] [Rossigny] at dawn.',
+      ]);
+    });
+
+    // A "-" excludes only at the start of a term outside quotes: inside a
+    // hyphenated word, or a quoted phrase, it is part of the text.
+    it('corrects either half of a hyphenated word, and inside quotes', async () => {
+      const session = await signIn();
+      const notebookId = await notebookOf(session);
+      await seedDocument(notebookId, 'names.md', [
+        { chunks: [{ text: 'Jean-Baptiste met Hortense at the Saint-Germain market.' }] },
+      ]);
+
+      expect((await answer(session, notebookId, 'jean-batiste')).correctedQuery).toBe(
+        'jean-baptiste',
+      );
+      expect((await answer(session, notebookId, '"saint -german"')).correctedQuery).toBe(
+        '"saint -germain"',
+      );
+    });
+
+    it('ranks what matched as typed above what needed a correction', async () => {
+      const session = await signIn();
+      const notebookId = await notebookOf(session);
+      await seedDocument(notebookId, 'a.md', [
+        {
+          chunks: [{ text: 'Rossigny, Rossigny, Rossigny again.' }, { text: 'Ganimard waits.' }],
+        },
+      ]);
+
+      const body = await answer(session, notebookId, 'rosigny or ganimard');
+
+      expect(body.results.map((hit) => shown(hit.excerpt))).toEqual([
+        '[Ganimard] waits.',
+        '[Rossigny], [Rossigny], [Rossigny] again.',
+      ]);
+    });
   });
 
   it('treats a deleted Notebook as gone: 404', async () => {
