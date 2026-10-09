@@ -1,6 +1,6 @@
 import { DeferBlockBehavior, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap } from '@angular/router';
-import { render, screen } from '@testing-library/angular';
+import { render } from '@testing-library/angular';
 import { of } from 'rxjs';
 import { DocumentDetailPage } from './document-detail-page';
 import { DocumentTransferService } from './document-transfer.service';
@@ -10,6 +10,8 @@ import { AuthService } from '../api/services/auth.service';
 import { ChatService } from '../api/services/chat.service';
 import { DocumentsService } from '../api/services/documents.service';
 import { NotebooksService } from '../api/services/notebooks.service';
+import { SearchService } from '../api/services/search.service';
+import { SearchPage } from '../search/search-page';
 import { AuthStore } from '../auth/auth.store';
 import { SIGNED_IN, appEventsStub, thread } from '../chat/chat-panel.spec-helpers';
 import { provideAppIcons } from '../shared/fluent-icons';
@@ -22,8 +24,8 @@ export const DOCUMENT_ID = '22222222-2222-2222-2222-222222222222';
 export const VERSION_ID = '33333333-3333-3333-3333-333333333333';
 
 // A Citation opens this page with the Document Version it pinned, the chunk
-// it points at, that chunk's character range in the Converted Markdown and
-// the Chat Thread it was cited in — see `citationParams`. The page follows
+// it points at and that chunk's character range in the Converted Markdown
+// — see `citationParams`. The page follows
 // the route as it changes, so the stub offers it as observables too; one
 // that never changes, which is what a page opened directly sees.
 export function activatedRoute(queryParams: Record<string, string> = {}) {
@@ -73,33 +75,30 @@ export const FULL_MARKDOWN = [
 ].join('\n');
 
 /**
- * A chat client for a Notebook with no Chat Threads: what the chat pane
- * (spec 08, NBK-86) sees when a test is not about it.
+ * A chat client for a Notebook with no Chat Threads, for the routed Notebook
+ * page when a test is not about chat. The Document page itself asks nothing
+ * of it, but keeps the root Chat store for the way back (NBK-103).
  */
 export function noChat(): Partial<ChatService> {
   return { listChatThreads: vi.fn().mockResolvedValue([]) as never };
 }
 
 /**
- * Renders the real page and its root stores, chat pane included, with only
- * the generated clients and the App Event stream stubbed: the seam every
- * Document page spec tests at. Signed in the way the auth guard signs the
- * app in, so the chat pane can ask.
+ * Renders the real page and its root stores, with only the generated
+ * clients and the App Event stream stubbed: the seam every Document page
+ * spec tests at. Signed in the way the auth guard signs the app in.
  */
 export async function renderPage(
   documentsService: Partial<DocumentsService>,
   route: ReturnType<typeof activatedRoute> = activatedRoute(),
-  chatService: Partial<ChatService> = noChat(),
 ) {
   const appEvents = appEventsStub();
   const rendered = await render(DocumentDetailPage, {
-    // An answer's Markdown renderer is a deferred block (NBK-52).
-    deferBlockBehavior: DeferBlockBehavior.Playthrough,
     providers: [
       provideAppIcons(),
       route,
       { provide: DocumentsService, useValue: documentsService },
-      { provide: ChatService, useValue: chatService },
+      { provide: ChatService, useValue: noChat() },
       { provide: NotebooksService, useValue: { listNotebooks: vi.fn().mockResolvedValue([]) } },
       { provide: AuthService, useValue: { getCurrentUser: vi.fn().mockResolvedValue(SIGNED_IN) } },
       appEvents.provider,
@@ -108,9 +107,6 @@ export async function renderPage(
   await TestBed.inject(AuthStore).checkSession();
   return { ...rendered, appEvents };
 }
-
-/** The chat pane beside the Document (spec 08). */
-export const chatPane = () => screen.getByRole('region', { name: 'Chat' });
 
 /** Two Chat Threads of the Notebook, the newer one opened by default (NBK-43). */
 export const OLDER_THREAD = thread({
@@ -125,14 +121,16 @@ export const NEWER_THREAD = thread({
 });
 
 /**
- * The Document page and the Notebook page behind the real router, with a
- * page elsewhere to leave to: for what only navigation shows — the open
- * Chat Thread carried between pages, and a Citation followed inside the
- * page, which the router answers by reusing it rather than creating another.
+ * The Document page, the Notebook page and the Search page behind the real
+ * router, with a page elsewhere to leave to: for what only navigation shows
+ * — the open Chat Thread carried between pages, where the back arrow goes
+ * (NBK-103), and a Citation link followed on the open page, which the
+ * router answers by reusing it rather than creating another.
  */
 export async function renderRouted(
   documentsService: Partial<DocumentsService>,
   chatService: Partial<ChatService>,
+  searchService: Record<string, unknown> = {},
 ) {
   const appEvents = appEventsStub();
   const rendered = await render(RouterShell, {
@@ -140,6 +138,7 @@ export async function renderRouted(
     routes: [
       { path: '', component: Elsewhere },
       { path: 'notebooks/:notebookId', component: NotebookDetailPage },
+      { path: 'notebooks/:notebookId/search', component: SearchPage },
       { path: 'notebooks/:notebookId/documents/:documentId', component: DocumentDetailPage },
     ],
     providers: [
@@ -150,6 +149,7 @@ export async function renderRouted(
         useValue: { listDocuments: vi.fn().mockResolvedValue([]), ...documentsService },
       },
       { provide: ChatService, useValue: chatService },
+      { provide: SearchService, useValue: searchService },
       { provide: DocumentTransferService, useValue: {} },
       { provide: AuthService, useValue: { getCurrentUser: vi.fn().mockResolvedValue(SIGNED_IN) } },
       appEvents.provider,

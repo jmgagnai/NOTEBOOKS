@@ -1,22 +1,16 @@
-<div
-  class="thread-view"
-  [class.thread-view--landing]="!activeThread() && !compact()"
-  [class.thread-view--empty-pane]="!activeThread() && compact()"
->
+<div class="thread-view" [class.thread-view--landing]="!activeThread()">
   @if (activeThread(); as thread) {
     <div class="thread-view__head">
       <!--
         Spec 07 story 37 (NBK-81): back to the Notebook landing. It closes
-        the Thread on this client only; the Thread stays in the list. In the
-        Document page's chat pane (spec 08) there is no landing to go back
-        to, so it says what it does there: close the Thread.
+        the Thread on this client only; the Thread stays in the list.
       -->
       <button
         mat-icon-button
         type="button"
         class="thread-view__back"
-        [attr.aria-label]="backLabel()"
-        [matTooltip]="backLabel()"
+        aria-label="Back to Notebook"
+        matTooltip="Back to Notebook"
         (click)="store.closeThread()"
       >
         <mat-icon svgIcon="arrow-left" />
@@ -87,7 +81,6 @@
                 <app-answer-body
                   class="thread-view__message-content"
                   [notebookId]="notebookId()"
-                  [threadId]="thread.id"
                   [content]="message.content"
                   [citations]="message.citations"
                 />
@@ -99,7 +92,6 @@
                   -->
                   <app-citation-groups
                     [notebookId]="notebookId()"
-                    [threadId]="thread.id"
                     [citations]="message.citations"
                   />
                 }
@@ -153,7 +145,6 @@
                   <app-answer-body
                     class="thread-view__message-content"
                     [notebookId]="notebookId()"
-                    [threadId]="thread.id"
                     [content]="block.text"
                     [citations]="streaming.citations"
                   />
@@ -168,7 +159,6 @@
                   -->
                   <app-citation-groups
                     [notebookId]="notebookId()"
-                    [threadId]="thread.id"
                     [citations]="streaming.citations"
                   />
                 }
@@ -178,7 +168,7 @@
         }
       </ol>
     }
-  } @else if (!compact()) {
+  } @else {
     <!--
       The Notebook landing (NBK-81, spec 07 stories 31–32, 36): nothing but
       the Notebook and the question box under it, from which a question

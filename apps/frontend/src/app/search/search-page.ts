@@ -8,6 +8,7 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { documentKind } from '../documents/document-list';
 import { chunkLinkParams } from '../documents/chunk-link';
+import { OPENED_FROM_SEARCH } from '../documents/opened-from-search';
 import { NotebooksStore } from '../notebooks/notebooks.store';
 import { MarkedText } from './marked-text';
 import { SearchStore } from './search.store';
@@ -131,6 +132,9 @@ export class SearchPage implements OnDestroy {
 
   /** A result opens the Document at its best-matching Chunk, as a Citation does. */
   protected readonly chunkLink = chunkLinkParams;
+
+  /** And says it came from here, so the Document's back arrow returns here (NBK-103). */
+  protected readonly openedFromSearch = OPENED_FROM_SEARCH;
 
   private leavingForOneOfItsResults(): boolean {
     const next = this.router.currentNavigation()?.finalUrl;

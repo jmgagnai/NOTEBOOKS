@@ -9,21 +9,22 @@ import {
   NOTEBOOK_ID,
   SUMMARIZED_DETAIL,
   VERSION_ID,
-  chatPane,
   renderRouted,
 } from './document-detail-page.spec-helpers';
 import { citation, message, thread } from '../chat/chat-panel.spec-helpers';
+import { citationParams } from '../chat/citations';
 
 /**
- * Spec 08 (NBK-87): a Citation in the chat pane is followed inside the
- * Document page. To the Version on screen, it opens the full Converted
- * Markdown at the cited Chunk without reading the Document again; to any
- * other Document or Version, it changes only the Document pane, the Chat
- * Thread staying as it is. Through the real router, which reuses the page
- * for both rather than creating another — the behaviour these tests exist
- * for.
+ * Spec 08 (NBK-87): a Citation link followed while the Document page is
+ * already open — no longer from a chat pane beside it (NBK-103), but the
+ * router still reuses the page for any URL of its route, as browser history
+ * reaches it. To the Version on screen, it opens the full Converted Markdown
+ * at the cited Chunk without reading the Document again; to any other
+ * Document or Version, it loads that one. Through the real router, which
+ * reuses the page rather than creating another — the behaviour these tests
+ * exist for.
  */
-describe('DocumentDetailPage — a Citation followed inside the page', () => {
+describe('DocumentDetailPage — a Citation link followed on the open page', () => {
   const OTHER_DOCUMENT_ID = '99999999-9999-9999-9999-999999999999';
   const OTHER_VERSION_ID = '88888888-8888-8888-8888-888888888888';
   const CITED = 'Revenue grew to 12.4M.';
@@ -124,19 +125,33 @@ describe('DocumentDetailPage — a Citation followed inside the page', () => {
     return { documents, chat };
   }
 
-  async function openTheDocumentBesideTheAnswer() {
+  async function openTheDocument() {
     const { documents, chat } = clients();
-    const { navigate } = await renderRouted(documents, chat as never);
-    await navigate(`/notebooks/${NOTEBOOK_ID}/documents/${DOCUMENT_ID}`);
+    await renderRouted(documents, chat as never);
+    await TestBed.inject(Router).navigateByUrl(
+      `/notebooks/${NOTEBOOK_ID}/documents/${DOCUMENT_ID}`,
+    );
     await screen.findByRole('heading', { level: 1, name: 'Quarterly Report 2025' });
-    await within(chatPane()).findByRole('link', { name: 'Citation 1' });
     return { documents, chat };
   }
 
-  it('opens the full Converted Markdown at the cited Chunk, without reading the Document again', async () => {
-    const { documents } = await openTheDocumentBesideTheAnswer();
+  /** Follows the link of the answer's Citation `marker`, as a Citation in the Notebook page's Chat Thread links. */
+  function follow(marker: number): void {
+    const cited = (ANSWER.citations as ReturnType<typeof citation>[]).find(
+      (c) => c.marker === marker,
+    )!;
+    void TestBed.inject(Router).navigate(
+      ['/notebooks', NOTEBOOK_ID, 'documents', cited.documentId],
+      {
+        queryParams: citationParams(cited as never),
+      },
+    );
+  }
 
-    fireEvent.click(within(chatPane()).getByRole('link', { name: 'Citation 1' }));
+  it('opens the full Converted Markdown at the cited Chunk, without reading the Document again', async () => {
+    const { documents } = await openTheDocument();
+
+    follow(1);
 
     const cited = await screen.findByTestId('cited-passage');
     expect(cited.textContent).toContain(CITED);
@@ -147,19 +162,17 @@ describe('DocumentDetailPage — a Citation followed inside the page', () => {
     expect(TestBed.inject(Router).url).toContain(`from=${FROM}`);
   });
 
-  it('opens another Document in the Document pane, the Chat Thread staying open', async () => {
-    const { chat } = await openTheDocumentBesideTheAnswer();
+  it('opens another Document', async () => {
+    await openTheDocument();
 
-    fireEvent.click(within(chatPane()).getByRole('link', { name: 'Citation 2' }));
+    follow(2);
 
     expect(await screen.findByRole('heading', { level: 1, name: 'Supplier Review' })).toBeTruthy();
-    expect(within(chatPane()).getByText('Revenue questions')).toBeTruthy();
-    expect(chat.listChatMessages).toHaveBeenCalledTimes(1);
   });
 
   it('goes back to the Document it came from with the browser back button', async () => {
-    await openTheDocumentBesideTheAnswer();
-    fireEvent.click(within(chatPane()).getByRole('link', { name: 'Citation 2' }));
+    await openTheDocument();
+    follow(2);
     await screen.findByRole('heading', { level: 1, name: 'Supplier Review' });
 
     TestBed.inject(Location).back();
@@ -169,21 +182,20 @@ describe('DocumentDetailPage — a Citation followed inside the page', () => {
     );
   });
 
-  it('opens another Version of this Document in the Document pane', async () => {
-    const { chat } = await openTheDocumentBesideTheAnswer();
+  it('opens another Version of this Document', async () => {
+    await openTheDocument();
 
-    fireEvent.click(within(chatPane()).getByRole('link', { name: 'Citation 3' }));
+    follow(3);
 
     expect(
       await screen.findByRole('heading', { level: 1, name: 'Quarterly Report 2024' }),
     ).toBeTruthy();
     expect(screen.getByTestId('cited-version-notice')).toBeTruthy();
-    expect(chat.listChatMessages).toHaveBeenCalledTimes(1);
   });
 
   it('opens the latest Version again on going back to the plain Document link', async () => {
-    const { documents } = await openTheDocumentBesideTheAnswer();
-    fireEvent.click(within(chatPane()).getByRole('link', { name: 'Citation 3' }));
+    const { documents } = await openTheDocument();
+    follow(3);
     await screen.findByRole('heading', { level: 1, name: 'Quarterly Report 2024' });
 
     TestBed.inject(Location).back();
@@ -196,27 +208,27 @@ describe('DocumentDetailPage — a Citation followed inside the page', () => {
   });
 
   it('opens the cited Chunk again when its Citation is followed after hiding it', async () => {
-    await openTheDocumentBesideTheAnswer();
-    fireEvent.click(within(chatPane()).getByRole('link', { name: 'Citation 1' }));
+    await openTheDocument();
+    follow(1);
     await screen.findByTestId('cited-passage');
 
     fireEvent.click(screen.getByRole('button', { name: 'Hide the full Document' }));
     expect(screen.queryByTestId('cited-passage')).toBeNull();
-    fireEvent.click(within(chatPane()).getByRole('link', { name: 'Citation 1' }));
+    follow(1);
 
     expect(await screen.findByTestId('cited-passage')).toBeTruthy();
   });
 
   it('shows the Citation followed last when an earlier one answers after it', async () => {
-    const { documents } = await openTheDocumentBesideTheAnswer();
+    const { documents } = await openTheDocument();
     let answerLate!: (detail: unknown) => void;
     documents.getDocumentVersion.mockImplementationOnce(
       () => new Promise((resolve) => (answerLate = resolve)),
     );
 
-    fireEvent.click(within(chatPane()).getByRole('link', { name: 'Citation 2' }));
+    follow(2);
     await waitFor(() => expect(documents.getDocumentVersion).toHaveBeenCalledTimes(1));
-    fireEvent.click(within(chatPane()).getByRole('link', { name: 'Citation 3' }));
+    follow(3);
     await screen.findByRole('heading', { level: 1, name: 'Quarterly Report 2024' });
     answerLate(OTHER_VERSION_DETAIL);
     // Long enough for the late answer to land and render, had it been let in.
@@ -241,13 +253,13 @@ describe('DocumentDetailPage — a Citation followed inside the page', () => {
       metadata: { title: 'Quarterly Report 2025' },
       latestVersionNumber: 2,
     });
-    const { navigate } = await renderRouted(documents, clients().chat as never);
-    await navigate(
+    await renderRouted(documents, clients().chat as never);
+    await TestBed.inject(Router).navigateByUrl(
       `/notebooks/${NOTEBOOK_ID}/documents/${DOCUMENT_ID}?version=${VERSION_ID}&from=0&to=5`,
     );
     await waitFor(() => expect(documents.getDocumentVersionContent).toHaveBeenCalledTimes(1));
 
-    fireEvent.click(await within(chatPane()).findByRole('link', { name: 'Citation 1' }));
+    follow(1);
     // Followed — the page has the Citation's link — before the first fetch answers.
     await waitFor(() => expect(TestBed.inject(Router).url).toContain(`from=${FROM}`));
     deliver({ versionId: VERSION_ID, markdown: FULL_MARKDOWN });

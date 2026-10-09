@@ -84,19 +84,18 @@ export class Sidebar {
   );
 
   /**
-   * The pages with a chat pane whose Chat Thread the sidebar switches: the
-   * Notebook page (spec 07 story 12) and, since spec 08, the Document page.
-   * Not Search, which has none.
+   * The page whose open Chat Thread the sidebar switches: the Notebook page
+   * (spec 07 story 12) alone. Not Search, and no longer the Document page,
+   * which is for reading only (NBK-103).
    */
   protected readonly showsChatThreads = computed(
-    () => this.page().routeConfig?.path === NOTEBOOK_PAGE_PATH || this.onDocumentPage(),
+    () => this.page().routeConfig?.path === NOTEBOOK_PAGE_PATH,
   );
 
   /**
    * Entering the Document page collapses the sidebar to the rail (spec 08),
-   * which splits its width between the chat pane and the Document. Only on
-   * entering: expanding it there, or moving from one Document to another,
-   * is left alone.
+   * giving the reading column the width. Only on entering: expanding it
+   * there, or moving from one Document to another, is left alone.
    */
   private readonly railOnDocumentPage = effect(() => {
     if (this.onDocumentPage()) this.collapsed.set(true);

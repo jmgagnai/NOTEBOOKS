@@ -43,8 +43,6 @@ function escapeAttribute(value: string): string {
 })
 export class AnswerBody {
   readonly notebookId = input.required<string>();
-  /** The Chat Thread the answer is in, carried by every Citation link (spec 08). */
-  readonly threadId = input.required<string>();
   readonly content = input.required<string>();
   readonly citations = input.required<Citation[]>();
 
@@ -70,7 +68,7 @@ export class AnswerBody {
   );
 
   protected readonly link = (citation: Citation) => citationLink(this.notebookId(), citation);
-  protected readonly params = (citation: Citation) => citationParams(citation, this.threadId());
+  protected readonly params = (citation: Citation) => citationParams(citation);
   protected readonly title = citationTitle;
 
   constructor() {

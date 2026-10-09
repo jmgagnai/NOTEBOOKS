@@ -413,9 +413,10 @@ export const DocumentsStore = signalStore(
       // a template renders.
       let watching: Subscription | null = null;
 
-      // The open Document's reads, newest last (spec 08): Citations followed
-      // from the Document page's chat pane can overtake each other, and only
-      // the read the reader asked for last may land. Plumbing, like
+      // The open Document's reads, newest last (spec 08): the open Document
+      // page following its route — through browser history, say — can start
+      // reads that overtake each other, and only the read the reader asked
+      // for last may land. Plumbing, like
       // `watching`, so outside the state.
       let openRequest = 0;
       // The Version whose Converted Markdown is on its way, so a second ask

@@ -1,10 +1,9 @@
-// Spec 08: an editorial reading view beside a chat pane, after Copilot's
-// page view — two flat panes split by a thin line, the chat about a third,
-// the Document the rest. Each pane scrolls on its own and the page never
-// does. The routed page grows to at least the shell's column (styles.scss),
-// which is also to say it grows with its content; pinned to the host
-// instead, the panes are exactly the column's height, so a long Chat Thread
-// scrolls under a composer that stays in view.
+// Spec 08: an editorial reading view, after Copilot's page view — the
+// Document alone since NBK-103 withdrew the chat pane beside it. The
+// Document scrolls under its sticky header and the page never does. The
+// routed page grows to at least the shell's column (styles.scss), which is
+// also to say it grows with its content; pinned to the host instead, the
+// pane is exactly the column's height, so the header stays in view.
 :host {
   position: relative;
 }
@@ -15,24 +14,14 @@
   display: flex;
   background: var(--mat-sys-surface);
 
-  // The chat pane: the Thread view fills it as on the Notebook page, its
-  // message list scrolling and its composer pinned to the bottom.
-  &__chat {
-    flex: 1 1 0;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    border-right: 1px solid var(--mat-sys-outline-variant);
-  }
-
   &__document {
-    flex: 2 1 0;
+    flex: 1 1 0;
     min-width: 0;
     overflow-y: auto;
   }
 
-  // The Document pane's header row: the file it holds, then ✕. Sticky, so
-  // the filename stays in sight once the headline has scrolled away.
+  // The header row: the back arrow, then the file it holds. Sticky, so the
+  // filename stays in sight once the headline has scrolled away.
   &__header {
     position: sticky;
     top: 0;

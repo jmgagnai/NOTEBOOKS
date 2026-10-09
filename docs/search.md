@@ -120,8 +120,7 @@ hides the other). A result opens the Notebook at
 that Thread even over one already open, and `ThreadView` lands with the
 Exchange's question at the top and both halves in the cited Chunk's tint.
 That replaces NBK-53's rule 1 for that arrival only. An unknown Thread falls
-back to the newest. The Document page's chat pane reads `&message=` the same
-way.
+back to the newest.
 
 ## The index decision
 
