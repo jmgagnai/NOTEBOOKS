@@ -1,11 +1,18 @@
 import {
+  afterNextRender,
   afterRenderEffect,
   ChangeDetectionStrategy,
   Component,
   computed,
+  DestroyRef,
+  effect,
   ElementRef,
   inject,
+  Injector,
   input,
+  output,
+  signal,
+  untracked,
 } from '@angular/core';
 import { marked } from 'marked';
 
@@ -22,6 +29,28 @@ interface MarkdownBlock {
   start: number;
   end: number;
   html: string;
+}
+
+/**
+ * Blocks in the first slice, `LEAD` of them before the cited one: small, so
+ * the reader is at the Chunk at once. Then `SLICE` at a time, larger, since
+ * each slice costs a layout of the whole document so far (measured on a
+ * 5,000-block Document at a 6× CPU slowdown: the Chunk on screen in 2 s,
+ * the rest in 17 s, the page answering between slices).
+ */
+const FIRST_SLICE = 60;
+const LEAD = 20;
+const SLICE = 150;
+
+/** The nearest ancestor that scrolls, or the page itself. */
+function scrollingAncestor(element: HTMLElement): Element | null {
+  for (let el = element.parentElement; el; el = el.parentElement) {
+    const overflow = getComputedStyle(el).overflowY;
+    if ((overflow === 'auto' || overflow === 'scroll') && el.scrollHeight > el.clientHeight) {
+      return el;
+    }
+  }
+  return document.scrollingElement;
 }
 
 /**
@@ -55,13 +84,23 @@ interface MarkdownBlock {
  * links survive. That is the point of binding rather than
  * `bypassSecurityTrustHtml`: the Converted Markdown is machine-generated from
  * a file a user uploaded, so it is untrusted input and must stay sanitized.
+ *
+ * And it renders a long document a slice at a time. A 200-page Document is
+ * about 5,000 blocks, and creating and sanitising them all in one go froze
+ * the page for seconds (11 s at a 6× CPU slowdown) before it could scroll
+ * to a Citation. So the first slice is the blocks around the cited one, or
+ * the document's start, and the rest is added a slice at a time between
+ * tasks, the page staying usable throughout; `progress` says how much is
+ * there. Blocks added above the reader's position would push it
+ * down, so the view moves by what they added: not every browser anchors
+ * scrolling itself (Safari does not).
  */
 @Component({
   selector: 'app-markdown-view',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `<div class="markdown-view">
-    @for (block of blocks(); track block.start) {
+    @for (block of shown(); track block.start) {
       <div
         class="markdown-view__block"
         [class.markdown-view__block--cited]="isCited(block)"
@@ -84,7 +123,22 @@ export class MarkdownView {
   /** End of that range, exclusive. Falls back to `highlightFrom`. */
   readonly highlightTo = input<number | null>(null);
 
+  /**
+   * How much of the document is rendered, from 0 to 1: under 1 while slices
+   * are still being added, then 1. A short document is 1 straight away.
+   */
+  readonly progress = output<number>();
+
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly injector = inject(Injector);
+
+  /** The blocks rendered so far: `first` to `last`, exclusive. */
+  private readonly window = signal({ first: 0, last: 0 });
+  protected readonly shown = computed(() => {
+    const { first, last } = this.window();
+    return this.blocks().slice(first, last);
+  });
+  private pending: ReturnType<typeof setTimeout> | null = null;
 
   protected readonly blocks = computed<MarkdownBlock[]>(() => {
     const source = this.markdown();
@@ -107,6 +161,15 @@ export class MarkdownView {
   });
 
   constructor() {
+    // A new document — or a new Citation into it — starts again from its
+    // first slice.
+    effect(() => {
+      const blocks = this.blocks();
+      const cited = this.highlightFrom() === null ? -1 : blocks.findIndex((b) => this.isCited(b));
+      untracked(() => this.startRendering(blocks.length, cited));
+    });
+    inject(DestroyRef).onDestroy(() => this.stopRendering());
+
     // Scrolling is a side effect on the real DOM, so it waits until the
     // blocks are rendered. `scrollIntoView` is called defensively: it is
     // absent in some test environments, and failing to scroll is not worth
@@ -118,6 +181,62 @@ export class MarkdownView {
       );
       cited?.scrollIntoView?.({ block: 'center' });
     });
+  }
+
+  /**
+   * Renders the first slice — around block `cited`, or from the start when
+   * none is — and schedules the rest.
+   */
+  private startRendering(total: number, cited: number): void {
+    this.stopRendering();
+    const first = cited < 0 ? 0 : Math.max(0, cited - LEAD);
+    this.window.set({ first, last: Math.min(total, first + FIRST_SLICE) });
+    this.reportAndContinue(total);
+  }
+
+  /** One more slice below what is rendered, and one above, then the next. */
+  private renderMore(total: number): void {
+    const { first, last } = this.window();
+    const above = Math.max(0, first - SLICE);
+    const anchor = above < first ? this.anchor() : null;
+    const before = anchor?.getBoundingClientRect().top ?? 0;
+    this.window.set({ first: above, last: Math.min(total, last + SLICE) });
+    if (anchor) {
+      // What the new blocks above added, taken back off the scroll, so the
+      // text the reader is looking at stays where it is.
+      afterNextRender(
+        {
+          write: () => {
+            const moved = anchor.getBoundingClientRect().top - before;
+            const scroller = scrollingAncestor(this.host.nativeElement);
+            if (moved !== 0 && scroller) scroller.scrollTop += moved;
+          },
+        },
+        { injector: this.injector },
+      );
+    }
+    this.reportAndContinue(total);
+  }
+
+  private reportAndContinue(total: number): void {
+    const { first, last } = this.window();
+    const done = total === 0 || (first === 0 && last === total);
+    this.progress.emit(total === 0 ? 1 : (last - first) / total);
+    if (!done) this.pending = setTimeout(() => this.renderMore(total));
+  }
+
+  private stopRendering(): void {
+    if (this.pending !== null) clearTimeout(this.pending);
+    this.pending = null;
+  }
+
+  /** The block the reader's position is kept on: the cited one, else the first shown. */
+  private anchor(): HTMLElement | null {
+    const host = this.host.nativeElement;
+    return (
+      host.querySelector<HTMLElement>('[data-testid="cited-passage"]') ??
+      host.querySelector<HTMLElement>('.markdown-view__block')
+    );
   }
 
   /** Whether a block overlaps the highlighted range at all. */

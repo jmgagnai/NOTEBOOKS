@@ -34,6 +34,14 @@
     border-bottom: 1px solid var(--mat-sys-outline-variant);
   }
 
+  // The full Document still rendering, along the header's bottom edge.
+  &__rendering {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+  }
+
   &__header-filename {
     flex: 1;
     min-width: 0;
