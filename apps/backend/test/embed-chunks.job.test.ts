@@ -580,7 +580,13 @@ describe('embed-chunks job', () => {
        WHERE c.document_version_id = $1 ORDER BY c.chunk_index`,
       [seeded.versionId],
     );
+    // Every Chunk has its range: none drops out of the join.
+    const { rows: all } = await pool.query<{ n: string }>(
+      'SELECT count(*) AS n FROM chunks WHERE document_version_id = $1',
+      [seeded.versionId],
+    );
     expect(rows.length).toBeGreaterThan(1);
+    expect(rows).toHaveLength(Number(all[0].n));
     for (const row of rows) {
       expect(markdown.slice(row.char_start, row.char_end)).toBe(row.text);
     }

@@ -34,8 +34,9 @@ interface ChunkTextRow {
  *
  * Only the Versions asked about are read, and each one's Markdown only
  * once. The cost is one pass over those Versions' content: paid once per
- * Citation (persisted on its row, NBK-12), and on every query for a search
- * result's best Chunk (NBK-96, `docs/search.md`).
+ * Citation (persisted on its row, NBK-12), and once per Version for search
+ * results (stored in `chunk_ranges` by `storeChunkRanges`, NBK-107;
+ * ingestion stores new Versions' ranges as it writes them).
  *
  * A chunk whose text cannot be found (a Version with no Converted Markdown,
  * or text that line-ending normalisation has moved away from the source) is
@@ -121,9 +122,14 @@ export async function storeChunkRanges(
   const ids = [...ranges.keys()];
   // Into their own table, never onto `chunks`: rewriting a Chunk's row
   // would recompute its stored search vector and GIN entries (0018's note).
+  // Only for Chunks that still exist: ingestion re-running on the Version
+  // may have replaced them since they were read — its own ranges then
+  // stand — and a range for a deleted Chunk would fail the whole search.
   await pool.query(
     `INSERT INTO chunk_ranges (chunk_id, char_start, char_end)
-     SELECT * FROM unnest($1::uuid[], $2::int[], $3::int[])
+     SELECT r.chunk_id, r.char_start, r.char_end
+     FROM unnest($1::uuid[], $2::int[], $3::int[]) AS r(chunk_id, char_start, char_end)
+     JOIN chunks c ON c.id = r.chunk_id
      ON CONFLICT (chunk_id) DO UPDATE SET char_start = EXCLUDED.char_start, char_end = EXCLUDED.char_end`,
     [ids, ids.map((id) => ranges.get(id)!.charStart), ids.map((id) => ranges.get(id)!.charEnd)],
   );

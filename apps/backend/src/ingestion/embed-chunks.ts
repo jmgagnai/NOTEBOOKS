@@ -120,20 +120,27 @@ async function replaceChunks(
   await inTransaction(pool, async (client) => {
     await client.query('DELETE FROM chunks WHERE document_version_id = $1', [versionId]);
     for (const [i, chunk] of chunks.entries()) {
-      const { rows } = await client.query<{ id: string }>(
+      await client.query(
         `INSERT INTO chunks (document_version_id, chunk_index, heading_path, text, embedding)
-         VALUES ($1, $2, $3, $4, $5::vector)
-         RETURNING id`,
+         VALUES ($1, $2, $3, $4, $5::vector)`,
         [versionId, chunk.index, chunk.headingPath, chunk.text, toVectorLiteral(vectors[i])],
       );
-      const range = ranges[i];
-      if (range) {
-        await client.query(
-          'INSERT INTO chunk_ranges (chunk_id, char_start, char_end) VALUES ($1, $2, $3)',
-          [rows[0].id, range.charStart, range.charEnd],
-        );
-      }
     }
+    // The ranges in one statement, matched to the Chunks just written by
+    // their index; a Chunk that cannot be found has no row.
+    const found = chunks.flatMap((chunk, i) => (ranges[i] ? [{ chunk, range: ranges[i] }] : []));
+    await client.query(
+      `INSERT INTO chunk_ranges (chunk_id, char_start, char_end)
+       SELECT c.id, r.char_start, r.char_end
+       FROM unnest($2::int[], $3::int[], $4::int[]) AS r(chunk_index, char_start, char_end)
+       JOIN chunks c ON c.document_version_id = $1 AND c.chunk_index = r.chunk_index`,
+      [
+        versionId,
+        found.map(({ chunk }) => chunk.index),
+        found.map(({ range }) => range.charStart),
+        found.map(({ range }) => range.charEnd),
+      ],
+    );
     await client.query(
       'UPDATE document_versions SET chunk_ranges_located_at = now() WHERE id = $1',
       [versionId],

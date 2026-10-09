@@ -124,6 +124,12 @@ itself changed) can legitimately produce *fewer* chunks than the attempt
 before it, and an upsert would leave the surplus behind: stale passages a
 Citation could still point at.
 
+It also stores where each Chunk sits in the Converted Markdown (NBK-107):
+one `chunk_ranges` row per Chunk that can be found, from the same forward
+scan Citations use (`locateInMarkdown`), and it stamps the Version
+`chunk_ranges_located_at`, all in the same transaction. A search then opens
+a result at its Chunk without rescanning the Document; see `docs/search.md`.
+
 There is deliberately **no ivfflat or HNSW index** on `embedding`. pgvector
 caps both at 2000 dimensions and these vectors are 2560 — verified against
 pgvector 0.8.7, which answers `column cannot have more than 2000 dimensions
