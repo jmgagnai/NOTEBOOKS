@@ -12,6 +12,7 @@ import { SearchService } from './api/services/search.service';
 import { AppEvent, AppEventsService } from './events/app-events.service';
 import { provideAppIcons } from './shared/fluent-icons';
 import { APP_NAME } from './shared/brand';
+import { pinToday } from './chat/chat-panel.spec-helpers';
 
 // App-level seam-3 test (NBK-3): renders the real shell through the real
 // app routes and auth guard, mocking only the generated ng-openapi-gen
@@ -143,6 +144,8 @@ describe('App', () => {
   });
 
   describe('NBK-79: sidebar navigation', () => {
+    afterEach(() => vi.useRealTimers());
+
     it('marks "Notebooks" as the current page on the Notebooks home', async () => {
       await renderSignedIn('ada@example.com');
 
@@ -174,11 +177,14 @@ describe('App', () => {
     });
 
     it("lists the Notebook's Chat Threads in the sidebar on the Notebook page", async () => {
+      // Midday, so the date is Jan 1 in any time zone; this year, so it
+      // shows without one (NBK-98).
+      pinToday('2026-06-01T12:00:00.000Z');
       await renderSignedIn('ada@example.com', {
         url: `/notebooks/${NOTEBOOK_ID}`,
         threads: [
-          thread('thread-1', 'Revenue questions', '2026-01-01T00:00:00.000Z'),
-          thread('thread-2', 'Hiring plan', '2026-01-02T00:00:00.000Z'),
+          thread('thread-1', 'Revenue questions', '2026-01-01T12:00:00.000Z'),
+          thread('thread-2', 'Hiring plan', '2026-01-02T12:00:00.000Z'),
         ],
       });
 
@@ -187,7 +193,7 @@ describe('App', () => {
       // Loaded by the Notebook page, which opens the newest one (NBK-43).
       const newest = await within(threads).findByRole('button', { name: 'Open Hiring plan' });
       expect(newest.getAttribute('aria-current')).toBe('true');
-      expect(within(threads).getByText(/alice@example\.com · Jan 1/)).toBeTruthy();
+      expect(within(threads).getByText('alice@example.com · Jan 1')).toBeTruthy();
     });
 
     it('says so in the sidebar when the Notebook has no Chat Threads', async () => {

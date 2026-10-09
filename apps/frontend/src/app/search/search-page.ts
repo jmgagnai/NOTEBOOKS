@@ -1,4 +1,3 @@
-import { DatePipe } from '@angular/common';
 import { Component, computed, effect, inject, OnDestroy, signal, untracked } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, PRIMARY_OUTLET, Router, RouterLink } from '@angular/router';
@@ -12,6 +11,7 @@ import { NotebooksStore } from '../notebooks/notebooks.store';
 import { MarkedText } from './marked-text';
 import { ChunkResult, SearchStore } from './search.store';
 import { showPageTitle } from '../shared/page-title';
+import { ShortDatePipe } from '../shared/short-date.pipe';
 
 /**
  * Searching one Notebook (NBK-9), in Copilot's look since NBK-96
@@ -30,7 +30,7 @@ import { showPageTitle } from '../shared/page-title';
   selector: 'app-search-page',
   standalone: true,
   imports: [
-    DatePipe,
+    ShortDatePipe,
     MarkedText,
     MatButtonModule,
     MatIconModule,

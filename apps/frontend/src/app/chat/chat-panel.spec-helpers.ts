@@ -122,6 +122,17 @@ export function rowOf(text: string): HTMLElement {
 export const listOf = (text: string) => screen.getByText(text).closest('ol')!;
 
 /**
+ * Fixes today's date for a test (NBK-98): a short date shows its year only
+ * when it isn't the current one, so a test asserting one must say which year
+ * is current, or it changes meaning on 1 January. Only `Date` is faked; the
+ * timers the rendering waits on stay real. Undo with `vi.useRealTimers()`.
+ */
+export function pinToday(iso: string): void {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date(iso));
+}
+
+/**
  * Stands in for `scrollTo` and `scrollIntoView`, which jsdom leaves
  * unimplemented, on the prototype (NBK-53); `mock.contexts` then says which
  * element each call was on. Call in `beforeEach`, `restore` in `afterEach`.

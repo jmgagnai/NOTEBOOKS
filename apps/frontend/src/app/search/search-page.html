@@ -122,8 +122,7 @@
                       <span class="search-page__result-body">
                         <span class="search-page__result-title">{{ exchange.threadTitle }}</span>
                         <span class="search-page__result-meta"
-                          >{{ exchange.askedBy.email }} ·
-                          {{ exchange.askedAt | date: 'MMM d' }}</span
+                          >{{ exchange.askedBy.email }} · {{ exchange.askedAt | shortDate }}</span
                         >
                         <app-marked-text
                           class="search-page__result-question"
