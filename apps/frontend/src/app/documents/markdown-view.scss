@@ -7,6 +7,10 @@
   // chat answers keep the default.
   line-height: var(--markdown-view-line-height, 1.6);
   overflow-wrap: break-word;
+  // No browser scroll anchoring on the blocks: MarkdownView keeps the
+  // reader's place itself as slices arrive above it (Safari does not
+  // anchor), and Chrome anchoring as well would move the text twice.
+  overflow-anchor: none;
 
   // One wrapper per top-level Markdown block, so a Citation's character
   // range has something in the DOM to point at (NBK-12). Transparent by

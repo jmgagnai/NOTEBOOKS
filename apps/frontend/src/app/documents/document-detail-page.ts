@@ -14,6 +14,7 @@ import { Location } from '@angular/common';
 import { ActivatedRoute, NavigationSkipped, Router, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
+import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { DocumentsStore } from './documents.store';
@@ -67,6 +68,7 @@ import { withoutExecutiveSummaryTitle } from './executive-summary-title';
   imports: [
     MatButtonModule,
     MatIconModule,
+    MatProgressBarModule,
     MatProgressSpinnerModule,
     MatTooltipModule,
     MarkdownView,
@@ -140,6 +142,9 @@ export class DocumentDetailPage implements OnInit, OnDestroy {
    * it would be asking them to find it themselves.
    */
   protected readonly expanded = signal(false);
+
+  /** How much of the full Document is rendered so far, 0 to 1 (see `MarkdownView`). */
+  protected readonly contentProgress = signal(1);
 
   /**
    * Follows the route: on arrival, and on every link to it after that.
@@ -332,6 +337,10 @@ export class DocumentDetailPage implements OnInit, OnDestroy {
   protected toggleFullContent(): void {
     if (this.expanded()) {
       this.expanded.set(false);
+      // The view rendering it is gone, and with it what it last said: the
+      // next one to render says afresh (review: a stale bar beside the
+      // spinner of a Version still loading).
+      this.contentProgress.set(1);
       return;
     }
     const versionId = this.targetVersionId();

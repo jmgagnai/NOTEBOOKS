@@ -33,6 +33,19 @@
       <span class="document-detail-page__header-filename">{{
         store.openDocument()?.filename
       }}</span>
+      <!--
+        A long Document renders a slice at a time, the cited part first
+        (markdown-view.ts): this says the rest is still on its way, along the
+        bottom of the header, which stays in view however far the reader is.
+      -->
+      @if (expanded() && store.openContent()?.markdown && contentProgress() < 1) {
+        <mat-progress-bar
+          class="document-detail-page__rendering"
+          mode="determinate"
+          [value]="contentProgress() * 100"
+          aria-label="Rendering the full Document"
+        />
+      }
     </div>
 
     <article class="document-detail-page__article">
@@ -151,6 +164,7 @@
                 [markdown]="markdown"
                 [highlightFrom]="citedFrom()"
                 [highlightTo]="citedTo()"
+                (progress)="contentProgress.set($event)"
               />
             } @else if (versionFailed()) {
               <!-- NBK-90: as for the Executive Summary above. -->
