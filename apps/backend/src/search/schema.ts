@@ -1,49 +1,33 @@
 import { z } from 'zod';
-import { documentSchema } from '../documents/schema.js';
 
 export const searchNotebookParamsSchema = z.object({
   notebookId: z.string().uuid(),
 });
 export type SearchNotebookParams = z.infer<typeof searchNotebookParamsSchema>;
 
-/** How many Documents a search returns when the caller doesn't say. */
-export const DEFAULT_SEARCH_LIMIT = 10;
-/** The most a caller can ask for. */
-export const MAX_SEARCH_LIMIT = 50;
-
 export const searchNotebookQuerySchema = z.object({
   q: z
     .string()
-    .trim()
-    .min(1)
     .max(1000)
-    .describe('What to search for — keywords or a topic, matched semantically, not literally.'),
-  limit: z.coerce
-    .number()
-    .int()
-    .positive()
-    .max(MAX_SEARCH_LIMIT)
-    .default(DEFAULT_SEARCH_LIMIT)
-    .describe('How many Documents to return, best match first.'),
+    .default('')
+    .describe(
+      'Keywords, matched literally in the Chunks of each latest ready Version, accents and ' +
+        'case ignored; web-search syntax ("a phrase", -word, or). Blank returns no results.',
+    ),
 });
 export type SearchNotebookQuery = z.infer<typeof searchNotebookQuerySchema>;
 
-// One search hit. It is a *Document*, not a Chunk: retrieval ranks Chunks,
-// but per NBK-9 results are rolled up to their parent Document, so the same
-// Document never appears twice however many of its Chunks matched.
-//
-// The payload is `documentSchema` — which already carries the `abstract`,
-// the 50-100 word artifact GLOSSARY.md assigns to "search results,
-// search-result previews, and document cards" — plus the score. Reusing that
-// shape is deliberate: a search result and a document card show the same
-// thing, so the frontend renders one type in both places.
-// `match` is where that best Chunk sits (NBK-96): the same pin a Citation
-// carries, so a result links to the Document page the way a Citation does
-// and opens its Converted Markdown at that Chunk.
+/** A run of an Excerpt, `match` when it is one of the searched words. Text, never markup. */
+export const textSegmentSchema = z.object({ text: z.string(), match: z.boolean() });
+export type TextSegment = z.infer<typeof textSegmentSchema>;
+
+// Where a matching Chunk sits (NBK-96): the same pin a Citation carries, so a
+// result links to the Document page the way a Citation does and opens its
+// Converted Markdown at that Chunk.
 export const searchMatchSchema = z
   .object({
     versionId: z.string().uuid().describe('The Document Version the Chunk belongs to.'),
-    chunkId: z.string().uuid().describe("The Document's best-matching Chunk."),
+    chunkId: z.string().uuid().describe('The matching Chunk.'),
     charStart: z
       .number()
       .int()
@@ -53,26 +37,33 @@ export const searchMatchSchema = z
       ),
     charEnd: z.number().int().nullable().describe('End of that range, exclusive.'),
   })
-  .describe("Where the Document's best-matching Chunk sits — what opening the result shows.");
+  .describe('Where the matching Chunk sits — what opening the result shows.');
 
-export const searchResultSchema = documentSchema.extend({
-  title: z
-    .string()
-    .nullable()
-    .describe(
-      "The title Stage 2 extracted from the Document's latest Version, or null when it stated none — what a result is headed by (NBK-96).",
-    ),
-  match: searchMatchSchema,
-  score: z
-    .number()
-    .describe(
-      "Cosine similarity of this Document's best-matching Chunk to the query, 1 being identical. " +
-        'Results are ordered by it, best first.',
-    ),
-});
-export type SearchResult = z.infer<typeof searchResultSchema>;
+// One search hit (NBK-104): a Chunk, not a Document — a reader looks for the
+// places a word occurs, so a Document appears once per Chunk that holds it.
+export const documentSearchResultSchema = z
+  .object({
+    documentId: z.string().uuid(),
+    filename: z.string(),
+    title: z
+      .string()
+      .nullable()
+      .describe('The title Stage 2 extracted from the Version, or null when it stated none.'),
+    headingPath: z
+      .array(z.string())
+      .describe('The Markdown headings the Chunk sits under, outermost first.'),
+    match: searchMatchSchema,
+    excerpt: z
+      .array(textSegmentSchema)
+      .describe(
+        'An Excerpt (GLOSSARY.md): about two lines of the Chunk around its matches, Markdown ' +
+          'markers stripped, the matched words flagged.',
+      ),
+  })
+  .describe('A Chunk of a Document that matches the query.');
+export type DocumentSearchResult = z.infer<typeof documentSearchResultSchema>;
 
-export const searchNotebookResponseSchema = z.array(searchResultSchema);
+export const searchNotebookResponseSchema = z.array(documentSearchResultSchema);
 
 // Chat Thread search (NBK-97): one result per matching Exchange (GLOSSARY.md).
 
@@ -81,12 +72,11 @@ export const searchThreadsQuerySchema = z.object({
     .string()
     .max(1000)
     .default('')
-    .describe('Keywords, matched literally in questions and answers; blank returns no results.'),
+    .describe(
+      'Keywords, matched literally in questions and answers, accents and case ignored; blank ' +
+        'returns no results.',
+    ),
 });
-
-/** A run of an excerpt, `match` when it is one of the searched words. Text, never markup. */
-export const textSegmentSchema = z.object({ text: z.string(), match: z.boolean() });
-export type TextSegment = z.infer<typeof textSegmentSchema>;
 
 export const exchangeSearchResultSchema = z
   .object({

@@ -1,131 +1,113 @@
 import type { Pool } from 'pg';
-import { toVectorLiteral } from '../db/vector.js';
 import { locateChunkRanges } from '../documents/chunk-ranges.js';
-import { toDocument, type DocumentRow } from '../documents/repository.js';
 import { SEARCHABLE_VERSIONS_CTE } from '../documents/searchable-versions.js';
-import type { SearchResult } from './schema.js';
+import { headlineOptions, segments, TEXT_SEARCH_CONFIG, withoutTags } from './keywords.js';
+import { plainText } from './plain-text.js';
+import type { DocumentSearchResult } from './schema.js';
+
+/** The most Chunks one Documents search returns (NBK-104). */
+export const DOCUMENT_RESULT_LIMIT = 20;
 
 /**
- * Retrieval, as one statement (ADR-0003: raw SQL, no ORM).
+ * Keyword search over a Notebook's Documents (NBK-104), as one statement
+ * (ADR-0003: raw SQL, no ORM). One row per matching **Chunk**: a reader
+ * looks for the places a word occurs, so the same Document comes back once
+ * per Chunk that holds it, ranked by full-text rank.
  *
- * Three things are happening here, in this order, and each one is an
- * acceptance criterion of NBK-9:
+ * `searchable_versions` narrows the Notebook to what retrieval may read —
+ * each Document's latest non-deleted Version, only when it is `ready` —
+ * rules shared with chat retrieval and explained in
+ * `documents/searchable-versions.ts`. It consumes `$1`.
  *
- * 1. `searchable_versions` narrows the Notebook to the Documents retrieval
- *    may read: each one's latest non-deleted Version, kept only if that
- *    Version is `ready`, with the `ready` test applied *after* the Version is
- *    chosen. Both rules are GLOSSARY.md's and both are shared with chat
- *    retrieval, so they live in one place —
- *    `documents/searchable-versions.ts`, which is also where the reasoning
- *    is written down. It consumes `$1` (the Notebook id), so this query's own
- *    parameters start at `$2`.
- *
- * 2. `scored` ranks Chunks and **rolls them up to their Version**, keeping
- *    the closest (`DISTINCT ON`): a Document's score is its single best Chunk, not an
- *    average, because one strongly matching Chunk is exactly what makes a
- *    long document worth opening. Grouping is what makes a Document appear
- *    once however many of its Chunks matched.
- *
- * 3. The outer select rebuilds the Document card — including its Abstract,
- *    which per GLOSSARY.md is the artifact "used in search results,
- *    search-result previews, and document cards".
- *
- * **Why `<=>` (cosine distance) and not `<#>` (negative inner product).**
- * Qwen3-Embedding-4B returns L2-normalised vectors (‖v‖ = 1, measured — see
- * `docs/ingestion-embeddings.md`), so for this data the two operators rank
- * identically and the choice is about everything other than ordering.
- * Cosine wins twice: it is bounded in [0, 2] regardless of magnitude, so
- * `1 - distance` is a similarity a human and a UI can both read, whereas
- * `<#>` returns a *negative* dot product whose range depends on the vectors;
- * and it stays correct if a future embedding model (or an
- * `OPENROUTER_MODEL_EMBEDDING` override) returns vectors that are not
- * normalised, where inner product would quietly start ranking by length.
- *
- * There is no ANN index on `chunks.embedding` — pgvector refuses HNSW and
- * ivfflat above 2000 dimensions and these are 2560 (see migration `0007`) —
- * so this is an exact scan, bounded to one Notebook's latest ready Versions
- * by the join. `docs/search.md` records the latency measured on a realistic
- * corpus and why that is left as is for now.
+ * The match runs on `to_tsvector('simple_unaccent', text)`, the expression
+ * migration 0015 indexes: accents and case ignored, no stemming, and the
+ * query in web-search syntax (quoted phrases, `-word`, `or`).
  */
-const SEARCH_NOTEBOOK_SQL = `
+const SEARCH_CHUNKS_SQL = `
   WITH ${SEARCHABLE_VERSIONS_CTE},
-  scored AS (
-    -- One row per Version: its best Chunk and that Chunk's distance. Same
-    -- score as \`MIN(distance) ... GROUP BY\` gave, but the Chunk comes
-    -- with it (NBK-96); ties fall to the earlier Chunk.
-    SELECT DISTINCT ON (s.version_id)
-      s.version_id, c.id AS chunk_id, c.embedding <=> $2::vector AS distance
-    FROM searchable_versions s
-    JOIN chunks c ON c.document_version_id = s.version_id
-    ORDER BY s.version_id, distance ASC, c.chunk_index ASC
-  )
-  -- Aliased back to the column names a Document card is built from, so one
-  -- row maps through \`toDocument\` exactly as a listed Document does.
+  q AS (SELECT websearch_to_tsquery('${TEXT_SEARCH_CONFIG}', $2) AS query)
   SELECT
-    s.document_id AS id,
-    s.notebook_id,
-    s.filename,
-    s.document_created_at AS created_at,
-    s.version_id,
-    s.version_number,
-    s.mime_type,
-    s.size_bytes,
-    s.version_created_at,
-    s.ingestion_status,
-    -- Only \`ready\` Versions are searchable, so there is never a failure
-    -- reason to report.
-    NULL AS failure_reason,
-    NULL AS failed_at,
-    s.abstract,
-    scored.chunk_id AS match_chunk_id,
-    -- Read here rather than added to \`searchable_versions\`, which chat
-    -- retrieval shares and has no use for it.
-    NULLIF(v.metadata ->> 'title', '') AS title,
-    1 - scored.distance AS score
-  FROM scored
-  JOIN searchable_versions s ON s.version_id = scored.version_id
+    s.document_id, s.filename, s.version_id,
+    c.id AS chunk_id, c.heading_path, c.text,
+    NULLIF(v.metadata ->> 'title', '') AS title
+  FROM searchable_versions s
+  JOIN chunks c ON c.document_version_id = s.version_id
   JOIN document_versions v ON v.id = s.version_id
-  -- Ties broken by age, oldest first, so an identical query twice running
-  -- never shuffles its own results.
-  ORDER BY scored.distance ASC, s.document_created_at ASC, s.document_id ASC
+  CROSS JOIN q
+  WHERE to_tsvector('${TEXT_SEARCH_CONFIG}', c.text) @@ q.query
+  -- Ties broken by age and position, so the same query twice never
+  -- shuffles its own results.
+  ORDER BY ts_rank(to_tsvector('${TEXT_SEARCH_CONFIG}', c.text), q.query) DESC,
+           s.document_created_at ASC, c.chunk_index ASC
   LIMIT $3
 `;
 
 /**
- * Searches one Notebook's Documents by the query's embedding, best match
- * first. Per ADR-0001 there is no ownership check.
+ * Each Chunk's Excerpt, cut from its text with the Markdown markers already
+ * stripped (`plainText`), so the excerpt reads as prose: one stretch of
+ * about two lines around the matches. `ts_headline`'s default mode rather
+ * than `MaxFragments`, which drops the punctuation at a fragment's ends.
+ */
+const EXCERPTS_SQL = `
+  SELECT ts_headline('${TEXT_SEARCH_CONFIG}', ${withoutTags('t')},
+                     websearch_to_tsquery('${TEXT_SEARCH_CONFIG}', $2), $3) AS excerpt
+  FROM unnest($1::text[]) WITH ORDINALITY AS u(t, i)
+  ORDER BY i
+`;
+const EXCERPT_HEADLINE = headlineOptions('MaxWords=30, MinWords=15');
+
+interface ChunkRow {
+  document_id: string;
+  filename: string;
+  version_id: string;
+  chunk_id: string;
+  heading_path: string[];
+  text: string;
+  title: string | null;
+}
+
+/**
+ * Searches one Notebook's Documents by keyword, best match first; a blank
+ * query finds nothing. Per ADR-0001 there is no ownership check.
  */
 export async function searchNotebook(
   pool: Pool,
   notebookId: string,
-  queryEmbedding: number[],
-  limit: number,
-): Promise<SearchResult[]> {
-  const { rows } = await pool.query<
-    DocumentRow & { score: string; match_chunk_id: string; title: string | null }
-  >(SEARCH_NOTEBOOK_SQL, [notebookId, toVectorLiteral(queryEmbedding), limit]);
-  // Each result's best Chunk located in its Version's Converted Markdown, so
-  // the result opens at that Chunk (NBK-96). Read per query: one pass over
-  // the results' Versions (see `docs/search.md`).
+  query: string,
+): Promise<DocumentSearchResult[]> {
+  if (query.trim() === '') return [];
+  const { rows } = await pool.query<ChunkRow>(SEARCH_CHUNKS_SQL, [
+    notebookId,
+    query,
+    DOCUMENT_RESULT_LIMIT,
+  ]);
+  if (rows.length === 0) return [];
+
+  const { rows: excerpts } = await pool.query<{ excerpt: string }>(EXCERPTS_SQL, [
+    rows.map((row) => plainText(row.text)),
+    query,
+    EXCERPT_HEADLINE,
+  ]);
+  // Each Chunk located in its Version's Converted Markdown, so the result
+  // opens at it as a Citation does (NBK-96).
   const ranges = await locateChunkRanges(
     pool,
     rows.map((row) => row.version_id),
   );
-  // `score` arrives as a string: it is a `numeric` expression over pgvector's
-  // double, and node-postgres hands numerics over as text to avoid losing
-  // precision it can't represent.
-  return rows.map((row) => {
-    const range = ranges.get(row.match_chunk_id);
+  return rows.map((row, i) => {
+    const range = ranges.get(row.chunk_id);
     return {
-      ...toDocument(row),
+      documentId: row.document_id,
+      filename: row.filename,
       title: row.title,
+      headingPath: row.heading_path,
       match: {
         versionId: row.version_id,
-        chunkId: row.match_chunk_id,
+        chunkId: row.chunk_id,
         charStart: range?.charStart ?? null,
         charEnd: range?.charEnd ?? null,
       },
-      score: Number(row.score),
+      excerpt: segments(excerpts[i].excerpt),
     };
   });
 }

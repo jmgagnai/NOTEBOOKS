@@ -89,16 +89,15 @@ async function main(): Promise<void> {
     console.warn(
       'OPENROUTER_API_KEY is not set: ingestion stage 2 (metadata + summaries) and stage 3 ' +
         '(chunking + embeddings) will not run, Documents will stop at the "converted" ' +
-        'status instead of reaching "ready", and asking a question in a Chat Thread or ' +
-        'running a search will report 503 — both have to embed their text with the same ' +
-        'model that embedded the chunks.',
+        'status instead of reaching "ready", and asking a question in a Chat Thread will ' +
+        'report 503 — it has to embed the question with the same model that embedded the ' +
+        'chunks. Search is by keyword and works without it.',
     );
   }
 
-  // One embedder, three consumers: ingestion stage 3 embeds a Document
-  // Version's chunks with it (NBK-8), chat embeds a question with it
-  // (NBK-10), and search embeds a query with it (NBK-9). It has to be the
-  // same model on every side — vectors from two different models live in
+  // One embedder, two consumers: ingestion stage 3 embeds a Document
+  // Version's chunks with it (NBK-8), and chat embeds a question with it
+  // (NBK-10). It has to be the same model on both sides — vectors from two different models live in
   // different spaces and similarity between them is meaningless — so they
   // share one instance rather than each building their own.
   const embed = OPENROUTER_API_KEY
@@ -143,7 +142,6 @@ async function main(): Promise<void> {
     jobs,
     appEvents,
     chat,
-    embed,
     administrators: ADMIN_EMAILS,
   });
   await app.listen({ port: PORT, host: '0.0.0.0' });

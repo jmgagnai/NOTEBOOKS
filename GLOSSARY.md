@@ -65,5 +65,9 @@ A 1–2 page human-facing summary of a document's key points. Shown first when a
 _Avoid_: long summary, detailed summary.
 
 **Abstract**:
-A 50–100 word human-facing summary, used in search results, search-result previews, and document cards. Shorter and more surface-level than the Executive Summary; written to be skimmed in a list, not to stand in for the full document.
+A 50–100 word human-facing summary, used in document cards. Shorter and more surface-level than the Executive Summary; written to be skimmed in a list, not to stand in for the full document.
 _Avoid_: blurb, teaser, preview text.
+
+**Excerpt**:
+A short verbatim stretch of a Chunk or a message around the words a search matched, those words marked, as plain text. What a search result shows: a Document result is one Excerpt of a Chunk, a Chat Thread result shows its answer as Excerpts. Never a summary; a different thing from a Chat Snippet.
+_Avoid_: search snippet, result snippet, preview, passage.

@@ -105,7 +105,7 @@
     padding: 0;
   }
 
-  // One flat row per Document, the whole row the link (Copilot's results).
+  // One flat row per result, the whole row the link (Copilot's results).
   &__result {
     display: flex;
     align-items: flex-start;
@@ -148,6 +148,22 @@
     color: var(--mat-sys-on-surface-variant);
   }
 
+  // A Document result's Excerpt (NBK-104): the row's lead, in reading type,
+  // cut to two lines; its matched words bold, which is what the eye scans.
+  &__result-excerpt {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+    font: var(--mat-sys-body-large);
+    color: var(--mat-sys-on-surface);
+  }
+
+  &__result:hover &__result-excerpt {
+    text-decoration: underline;
+  }
+
   // An Exchange's question, whole (NBK-97).
   &__result-question {
     margin-top: 4px;
@@ -156,30 +172,20 @@
     overflow-wrap: anywhere;
   }
 
-  // The Abstract — or an Exchange's answer excerpts — cut to three lines (NBK-96): enough to judge, not to read.
-  &__result-abstract {
+  // An Exchange's answer, as Excerpts: two lines — the question above it
+  // already says what the Exchange was about (NBK-97).
+  &__result-answer {
     margin-top: 4px;
     display: -webkit-box;
     -webkit-box-orient: vertical;
-    -webkit-line-clamp: 3;
-    line-clamp: 3;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
     overflow: hidden;
     font: var(--mat-sys-body-medium);
     color: var(--mat-sys-on-surface-variant);
 
     strong {
       color: var(--mat-sys-on-surface);
-    }
-
-    // An answer's excerpts: two lines, its question beside it already says
-    // what the Exchange was about (NBK-97).
-    &--excerpt {
-      -webkit-line-clamp: 2;
-      line-clamp: 2;
-    }
-
-    &--pending {
-      font-style: italic;
     }
   }
 }

@@ -6,25 +6,25 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
-import { documentKind } from '../documents/document-list';
 import { chunkLinkParams } from '../documents/chunk-link';
 import { OPENED_FROM_SEARCH } from '../documents/opened-from-search';
 import { NotebooksStore } from '../notebooks/notebooks.store';
 import { MarkedText } from './marked-text';
-import { SearchStore } from './search.store';
+import { SearchResult, SearchStore } from './search.store';
 import { showPageTitle } from '../shared/page-title';
 
 /**
- * Searching one Notebook's Documents (NBK-9), in Copilot's look since NBK-96
+ * Searching one Notebook (NBK-9), in Copilot's look since NBK-96
  * (`docs/design/copilot-ui/reference/search-page.png`): a header row with ✕
- * back to the Notebook, a pill box searched on Enter, and flat result rows
- * that open the Document at its best-matching Chunk.
+ * back to the Notebook, a pill box searched on Enter, and flat result rows —
+ * Chunks of its Documents, opening the Document at that Chunk (NBK-104),
+ * then Exchanges of its Chat Threads (NBK-97).
  *
  * The query lives in the URL (`?q=`), so a reload, a shared link and Back
- * from a Document all show the same results. Each query is one paid
- * embedding call, so there is no search-as-you-type, and coming Back reuses
- * the results the shared store already holds for the same Notebook and
- * query instead of paying for them twice.
+ * from a Document all show the same results. A search runs on Enter, as
+ * Copilot's does, not as you type, and coming Back reuses the results the
+ * shared store already holds for the same Notebook and query, so they
+ * reappear as they were left.
  */
 @Component({
   selector: 'app-search-page',
@@ -101,7 +101,7 @@ export class SearchPage implements OnDestroy {
   /**
    * Enter searches — but not the Enter that confirms an input method's
    * composition (Japanese, Chinese, Korean…), which is still typing, and
-   * would otherwise spend a paid query on half a word (NBK-96 review).
+   * would otherwise search for half a word (NBK-96 review).
    */
   protected onEnter(event: KeyboardEvent): void {
     event.preventDefault();
@@ -128,7 +128,12 @@ export class SearchPage implements OnDestroy {
       !this.store.exchangesError(),
   );
 
-  protected readonly kind = documentKind;
+  /** Which Document a Chunk is from, and where: "<title or filename> · <heading › heading>". */
+  protected whereFrom(result: SearchResult): string {
+    return [result.title ?? result.filename, result.headingPath.join(' › ')]
+      .filter((part) => part !== '')
+      .join(' · ');
+  }
 
   /** A result opens the Document at its best-matching Chunk, as a Citation does. */
   protected readonly chunkLink = chunkLinkParams;

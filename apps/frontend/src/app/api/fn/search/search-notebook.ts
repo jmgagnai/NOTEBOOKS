@@ -7,45 +7,32 @@ import { filter, map } from 'rxjs/operators';
 import { StrictHttpResponse } from '../../strict-http-response';
 import { RequestBuilder } from '../../request-builder';
 
-import { DocumentFailure } from '../../models/document-failure';
 
 export interface SearchNotebook$Params {
 
 /**
- * What to search for — keywords or a topic, matched semantically, not literally.
+ * Keywords, matched literally in the Chunks of each latest ready Version, accents and case ignored; web-search syntax ("a phrase", -word, or). Blank returns no results.
  */
-  q: string;
-
-/**
- * How many Documents to return, best match first.
- */
-  limit?: number;
+  q?: string;
   notebookId: string;
 }
 
 export function searchNotebook(http: HttpClient, rootUrl: string, params: SearchNotebook$Params, context?: HttpContext): Observable<StrictHttpResponse<Array<{
-'id': string;
-'notebookId': string;
+'documentId': string;
 'filename': string;
-'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'indexing' | 'ready' | 'failed';
-'failure': DocumentFailure | null;
-'abstract': string | null;
-'createdAt': string;
-'latestVersion': {
-'id': string;
-'versionNumber': number;
-'mimeType': string;
-'sizeBytes': number;
-'createdAt': string;
-};
 
 /**
- * The title Stage 2 extracted from the Document's latest Version, or null when it stated none — what a result is headed by (NBK-96).
+ * The title Stage 2 extracted from the Version, or null when it stated none.
  */
 'title': string | null;
 
 /**
- * Where the Document's best-matching Chunk sits — what opening the result shows.
+ * The Markdown headings the Chunk sits under, outermost first.
+ */
+'headingPath': Array<string>;
+
+/**
+ * Where the matching Chunk sits — what opening the result shows.
  */
 'match': {
 
@@ -55,7 +42,7 @@ export function searchNotebook(http: HttpClient, rootUrl: string, params: Search
 'versionId': string;
 
 /**
- * The Document's best-matching Chunk.
+ * The matching Chunk.
  */
 'chunkId': string;
 
@@ -71,14 +58,16 @@ export function searchNotebook(http: HttpClient, rootUrl: string, params: Search
 };
 
 /**
- * Cosine similarity of this Document's best-matching Chunk to the query, 1 being identical. Results are ordered by it, best first.
+ * An Excerpt (GLOSSARY.md): about two lines of the Chunk around its matches, Markdown markers stripped, the matched words flagged.
  */
-'score': number;
+'excerpt': Array<{
+'text': string;
+'match': boolean;
+}>;
 }>>> {
   const rb = new RequestBuilder(rootUrl, searchNotebook.PATH, 'get');
   if (params) {
     rb.query('q', params.q, {});
-    rb.query('limit', params.limit, {});
     rb.path('notebookId', params.notebookId, {});
   }
 
@@ -88,28 +77,21 @@ export function searchNotebook(http: HttpClient, rootUrl: string, params: Search
     filter((r: any): r is HttpResponse<any> => r instanceof HttpResponse),
     map((r: HttpResponse<any>) => {
       return r as StrictHttpResponse<Array<{
-      'id': string;
-      'notebookId': string;
+      'documentId': string;
       'filename': string;
-      'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'indexing' | 'ready' | 'failed';
-      'failure': DocumentFailure | null;
-      'abstract': string | null;
-      'createdAt': string;
-      'latestVersion': {
-      'id': string;
-      'versionNumber': number;
-      'mimeType': string;
-      'sizeBytes': number;
-      'createdAt': string;
-      };
       
       /**
-       * The title Stage 2 extracted from the Document's latest Version, or null when it stated none — what a result is headed by (NBK-96).
+       * The title Stage 2 extracted from the Version, or null when it stated none.
        */
       'title': string | null;
       
       /**
-       * Where the Document's best-matching Chunk sits — what opening the result shows.
+       * The Markdown headings the Chunk sits under, outermost first.
+       */
+      'headingPath': Array<string>;
+      
+      /**
+       * Where the matching Chunk sits — what opening the result shows.
        */
       'match': {
       
@@ -119,7 +101,7 @@ export function searchNotebook(http: HttpClient, rootUrl: string, params: Search
       'versionId': string;
       
       /**
-       * The Document's best-matching Chunk.
+       * The matching Chunk.
        */
       'chunkId': string;
       
@@ -135,9 +117,12 @@ export function searchNotebook(http: HttpClient, rootUrl: string, params: Search
       };
       
       /**
-       * Cosine similarity of this Document's best-matching Chunk to the query, 1 being identical. Results are ordered by it, best first.
+       * An Excerpt (GLOSSARY.md): about two lines of the Chunk around its matches, Markdown markers stripped, the matched words flagged.
        */
-      'score': number;
+      'excerpt': Array<{
+      'text': string;
+      'match': boolean;
+      }>;
       }>>;
     })
   );

@@ -8,8 +8,8 @@ import { MatTooltipModule } from '@angular/material/tooltip';
  * search-styled box that narrows the rows by filename as the user types,
  * with a clear control once there is something to clear. It only holds the
  * text; the page does the matching against the list it already has, so a
- * keystroke never reaches the API — finding Documents by meaning is "Search
- * this Notebook" and its own page. Its own component so its styles stay out
+ * keystroke never reaches the API — finding the words inside Documents is
+ * "Search this Notebook" and its own page. Its own component so its styles stay out
  * of the page stylesheet, which is close to its size budget.
  */
 @Component({

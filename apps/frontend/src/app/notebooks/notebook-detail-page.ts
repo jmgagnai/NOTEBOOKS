@@ -233,8 +233,8 @@ export class NotebookDetailPage implements OnInit, OnDestroy {
   /**
    * The rows the panel lists (NBK-48): the store's Documents whose filename
    * contains the filter text, ignoring case. Client-side on purpose — the
-   * list is already here, and the API's search is semantic, which is "Search
-   * this Notebook", not this. Surrounding blanks are ignored so a stray
+   * list is already here, and the API's search finds words inside Documents,
+   * which is "Search this Notebook", not this. Surrounding blanks are ignored so a stray
    * space does not empty the list.
    */
   protected readonly filteredDocuments = computed(() => {

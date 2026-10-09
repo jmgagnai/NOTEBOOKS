@@ -12,25 +12,22 @@ import { provideAppIcons } from '../shared/fluent-icons';
 const NOTEBOOK_ID = '11111111-1111-1111-1111-111111111111';
 const SEARCH_URL = `/notebooks/${NOTEBOOK_ID}/search`;
 
-/** A search result as the generated client returns it (NBK-96: with its title and best Chunk). */
+/**
+ * A search result as the generated client returns it (NBK-104): one Chunk,
+ * as an Excerpt, with the Document it belongs to and where it sits.
+ */
 function result(overrides: Partial<Record<string, unknown>> = {}) {
   return {
-    id: 'doc-1',
-    notebookId: NOTEBOOK_ID,
+    documentId: 'doc-1',
     filename: 'mars.pdf',
-    status: 'ready',
-    abstract: 'A survey of the Martian surface, its geology and its atmosphere.',
-    createdAt: '2026-01-01T00:00:00.000Z',
-    latestVersion: {
-      id: 'v-1',
-      versionNumber: 2,
-      mimeType: 'application/pdf',
-      sizeBytes: 1024,
-      createdAt: '2026-01-01T00:00:00.000Z',
-    },
     title: 'The Red Planet',
+    headingPath: ['Geology', 'Olympus Mons'],
     match: { versionId: 'v-1', chunkId: 'chunk-7', charStart: 120, charEnd: 340 },
-    score: 0.82,
+    excerpt: [
+      { text: 'The tallest volcano on ', match: false },
+      { text: 'Mars', match: true },
+      { text: ' rises 22 km above the plains.', match: false },
+    ],
     ...overrides,
   };
 }
@@ -161,32 +158,55 @@ describe('SearchPage', () => {
   });
 
   describe('results', () => {
-    it("shows each Document's type icon, title, filename and Version, and Abstract", async () => {
+    // NBK-104: a result is a Chunk — the Excerpt first, the matched words
+    // bold, then which Document it is from and where in it.
+    it("shows each Chunk as an Excerpt, under it its Document's title and heading", async () => {
       await renderSearch(
-        vi
-          .fn()
-          .mockResolvedValue([
-            result(),
-            result({ id: 'doc-2', filename: 'notes.txt', title: null, abstract: null }),
-          ]),
+        vi.fn().mockResolvedValue([
+          result(),
+          result({
+            documentId: 'doc-2',
+            filename: 'notes.txt',
+            title: null,
+            headingPath: [],
+            match: { versionId: 'v-2', chunkId: 'chunk-1', charStart: 0, charEnd: 10 },
+            excerpt: [{ text: 'Mars', match: true }],
+          }),
+        ]),
       );
       await searchFor('mars');
 
       const first = await screen.findByRole('link', { name: /The Red Planet/ });
-      expect(within(first).getByText('mars.pdf · v2')).toBeTruthy();
-      expect(
-        within(first).getByText('A survey of the Martian surface, its geology and its atmosphere.'),
-      ).toBeTruthy();
-      expect(first.querySelector('mat-icon')?.getAttribute('data-mat-icon-name')).toBe(
-        'document-pdf',
+      expect(first.textContent).toContain(
+        'The tallest volcano on Mars rises 22 km above the plains.',
       );
-      // No extracted title: the filename heads the row, and isn't repeated.
+      expect(within(first).getByText('Mars').tagName).toBe('STRONG');
+      expect(within(first).getByText('The Red Planet · Geology › Olympus Mons')).toBeTruthy();
+      // No extracted title: the filename names the Document; no heading, nothing after it.
       const second = screen.getByRole('link', { name: /notes\.txt/ });
       expect(within(second).getByText('notes.txt')).toBeTruthy();
-      expect(within(second).getByText('Abstract not generated yet.')).toBeTruthy();
+      // What the Document rows used to show is gone.
+      expect(screen.queryByText(/v2|Abstract/)).toBeNull();
+      expect(first.querySelector('mat-icon')).toBeNull();
     });
 
-    it('links each result to its best-matching Chunk, the way a Citation does', async () => {
+    it('lists the same Document once per matching Chunk', async () => {
+      await renderSearch(
+        vi.fn().mockResolvedValue([
+          result(),
+          result({
+            match: { versionId: 'v-1', chunkId: 'chunk-9', charStart: 500, charEnd: 600 },
+            excerpt: [{ text: 'Mars again', match: false }],
+          }),
+        ]),
+      );
+      await searchFor('mars');
+
+      await screen.findAllByRole('link', { name: /The Red Planet/ });
+      expect(screen.getAllByRole('link', { name: /The Red Planet/ })).toHaveLength(2);
+    });
+
+    it('links each result to its Chunk, the way a Citation does', async () => {
       await renderSearch(vi.fn().mockResolvedValue([result()]));
       await searchFor('mars');
 
@@ -220,7 +240,7 @@ describe('SearchPage', () => {
   describe('states', () => {
     it('distinguishes "no matches" from "nothing searched yet"', async () => {
       await renderSearch(vi.fn().mockResolvedValue([]));
-      expect(await screen.findByText(/Search finds Documents by meaning/)).toBeTruthy();
+      expect(await screen.findByText(/Search finds the words you type/)).toBeTruthy();
 
       await searchFor('nothing like this');
 
@@ -249,7 +269,7 @@ describe('SearchPage', () => {
       const searchNotebook = vi
         .fn()
         .mockImplementationOnce(() => new Promise((resolve) => (answerFirst = resolve)))
-        .mockResolvedValue([result({ id: 'doc-2', title: 'Phobos and Deimos' })]);
+        .mockResolvedValue([result({ documentId: 'doc-2', title: 'Phobos and Deimos' })]);
       await renderSearch(searchNotebook);
 
       await searchFor('mars');

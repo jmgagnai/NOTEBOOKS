@@ -9,7 +9,6 @@ import { BaseService } from '../base-service';
 import { ApiConfiguration } from '../api-configuration';
 import { StrictHttpResponse } from '../strict-http-response';
 
-import { DocumentFailure } from '../models/document-failure';
 import { searchChatThreads } from '../fn/search/search-chat-threads';
 import { SearchChatThreads$Params } from '../fn/search/search-chat-threads';
 import { searchNotebook } from '../fn/search/search-notebook';
@@ -25,9 +24,9 @@ export class SearchService extends BaseService {
   static readonly SearchNotebookPath = '/notebooks/{notebookId}/search';
 
   /**
-   * Search a Notebook's Documents semantically. Matches Chunks by vector similarity, rolls them up to their parent Document, and returns each matched Document with its Abstract.
+   * Search a Notebook's Documents by keyword. Returns each matching Chunk as an Excerpt with its matches marked; up to 20, best first.
    *
-   *
+   * Full-text search over the Chunks of each Document's latest ready Version, accents and case ignored (no embedding, so it needs no OpenRouter key). A Document appears once per matching Chunk. Per ADR-0001 there is no ownership check.
    *
    * This method provides access to the full `HttpResponse`, allowing access to response headers.
    * To access only the response body, use `searchNotebook()` instead.
@@ -35,28 +34,21 @@ export class SearchService extends BaseService {
    * This method doesn't expect any request body.
    */
   searchNotebook$Response(params: SearchNotebook$Params, context?: HttpContext): Promise<StrictHttpResponse<Array<{
-'id': string;
-'notebookId': string;
+'documentId': string;
 'filename': string;
-'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'indexing' | 'ready' | 'failed';
-'failure': DocumentFailure | null;
-'abstract': string | null;
-'createdAt': string;
-'latestVersion': {
-'id': string;
-'versionNumber': number;
-'mimeType': string;
-'sizeBytes': number;
-'createdAt': string;
-};
 
 /**
- * The title Stage 2 extracted from the Document's latest Version, or null when it stated none — what a result is headed by (NBK-96).
+ * The title Stage 2 extracted from the Version, or null when it stated none.
  */
 'title': string | null;
 
 /**
- * Where the Document's best-matching Chunk sits — what opening the result shows.
+ * The Markdown headings the Chunk sits under, outermost first.
+ */
+'headingPath': Array<string>;
+
+/**
+ * Where the matching Chunk sits — what opening the result shows.
  */
 'match': {
 
@@ -66,7 +58,7 @@ export class SearchService extends BaseService {
 'versionId': string;
 
 /**
- * The Document's best-matching Chunk.
+ * The matching Chunk.
  */
 'chunkId': string;
 
@@ -82,18 +74,21 @@ export class SearchService extends BaseService {
 };
 
 /**
- * Cosine similarity of this Document's best-matching Chunk to the query, 1 being identical. Results are ordered by it, best first.
+ * An Excerpt (GLOSSARY.md): about two lines of the Chunk around its matches, Markdown markers stripped, the matched words flagged.
  */
-'score': number;
+'excerpt': Array<{
+'text': string;
+'match': boolean;
+}>;
 }>>> {
     const obs = searchNotebook(this.http, this.rootUrl, params, context);
     return firstValueFrom(obs);
   }
 
   /**
-   * Search a Notebook's Documents semantically. Matches Chunks by vector similarity, rolls them up to their parent Document, and returns each matched Document with its Abstract.
+   * Search a Notebook's Documents by keyword. Returns each matching Chunk as an Excerpt with its matches marked; up to 20, best first.
    *
-   *
+   * Full-text search over the Chunks of each Document's latest ready Version, accents and case ignored (no embedding, so it needs no OpenRouter key). A Document appears once per matching Chunk. Per ADR-0001 there is no ownership check.
    *
    * This method provides access only to the response body.
    * To access the full response (for headers, for example), `searchNotebook$Response()` instead.
@@ -101,28 +96,21 @@ export class SearchService extends BaseService {
    * This method doesn't expect any request body.
    */
   searchNotebook(params: SearchNotebook$Params, context?: HttpContext): Promise<Array<{
-'id': string;
-'notebookId': string;
+'documentId': string;
 'filename': string;
-'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'indexing' | 'ready' | 'failed';
-'failure': DocumentFailure | null;
-'abstract': string | null;
-'createdAt': string;
-'latestVersion': {
-'id': string;
-'versionNumber': number;
-'mimeType': string;
-'sizeBytes': number;
-'createdAt': string;
-};
 
 /**
- * The title Stage 2 extracted from the Document's latest Version, or null when it stated none — what a result is headed by (NBK-96).
+ * The title Stage 2 extracted from the Version, or null when it stated none.
  */
 'title': string | null;
 
 /**
- * Where the Document's best-matching Chunk sits — what opening the result shows.
+ * The Markdown headings the Chunk sits under, outermost first.
+ */
+'headingPath': Array<string>;
+
+/**
+ * Where the matching Chunk sits — what opening the result shows.
  */
 'match': {
 
@@ -132,7 +120,7 @@ export class SearchService extends BaseService {
 'versionId': string;
 
 /**
- * The Document's best-matching Chunk.
+ * The matching Chunk.
  */
 'chunkId': string;
 
@@ -148,34 +136,30 @@ export class SearchService extends BaseService {
 };
 
 /**
- * Cosine similarity of this Document's best-matching Chunk to the query, 1 being identical. Results are ordered by it, best first.
+ * An Excerpt (GLOSSARY.md): about two lines of the Chunk around its matches, Markdown markers stripped, the matched words flagged.
  */
-'score': number;
+'excerpt': Array<{
+'text': string;
+'match': boolean;
+}>;
 }>> {
     const resp = this.searchNotebook$Response(params, context);
     return resp.then((r: StrictHttpResponse<Array<{
-'id': string;
-'notebookId': string;
+'documentId': string;
 'filename': string;
-'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'indexing' | 'ready' | 'failed';
-'failure': DocumentFailure | null;
-'abstract': string | null;
-'createdAt': string;
-'latestVersion': {
-'id': string;
-'versionNumber': number;
-'mimeType': string;
-'sizeBytes': number;
-'createdAt': string;
-};
 
 /**
- * The title Stage 2 extracted from the Document's latest Version, or null when it stated none — what a result is headed by (NBK-96).
+ * The title Stage 2 extracted from the Version, or null when it stated none.
  */
 'title': string | null;
 
 /**
- * Where the Document's best-matching Chunk sits — what opening the result shows.
+ * The Markdown headings the Chunk sits under, outermost first.
+ */
+'headingPath': Array<string>;
+
+/**
+ * Where the matching Chunk sits — what opening the result shows.
  */
 'match': {
 
@@ -185,7 +169,7 @@ export class SearchService extends BaseService {
 'versionId': string;
 
 /**
- * The Document's best-matching Chunk.
+ * The matching Chunk.
  */
 'chunkId': string;
 
@@ -201,32 +185,28 @@ export class SearchService extends BaseService {
 };
 
 /**
- * Cosine similarity of this Document's best-matching Chunk to the query, 1 being identical. Results are ordered by it, best first.
+ * An Excerpt (GLOSSARY.md): about two lines of the Chunk around its matches, Markdown markers stripped, the matched words flagged.
  */
-'score': number;
+'excerpt': Array<{
+'text': string;
+'match': boolean;
+}>;
 }>>): Array<{
-'id': string;
-'notebookId': string;
+'documentId': string;
 'filename': string;
-'status': 'queued' | 'converting' | 'converted' | 'summarizing' | 'summarized' | 'indexing' | 'ready' | 'failed';
-'failure': DocumentFailure | null;
-'abstract': string | null;
-'createdAt': string;
-'latestVersion': {
-'id': string;
-'versionNumber': number;
-'mimeType': string;
-'sizeBytes': number;
-'createdAt': string;
-};
 
 /**
- * The title Stage 2 extracted from the Document's latest Version, or null when it stated none — what a result is headed by (NBK-96).
+ * The title Stage 2 extracted from the Version, or null when it stated none.
  */
 'title': string | null;
 
 /**
- * Where the Document's best-matching Chunk sits — what opening the result shows.
+ * The Markdown headings the Chunk sits under, outermost first.
+ */
+'headingPath': Array<string>;
+
+/**
+ * Where the matching Chunk sits — what opening the result shows.
  */
 'match': {
 
@@ -236,7 +216,7 @@ export class SearchService extends BaseService {
 'versionId': string;
 
 /**
- * The Document's best-matching Chunk.
+ * The matching Chunk.
  */
 'chunkId': string;
 
@@ -252,9 +232,12 @@ export class SearchService extends BaseService {
 };
 
 /**
- * Cosine similarity of this Document's best-matching Chunk to the query, 1 being identical. Results are ordered by it, best first.
+ * An Excerpt (GLOSSARY.md): about two lines of the Chunk around its matches, Markdown markers stripped, the matched words flagged.
  */
-'score': number;
+'excerpt': Array<{
+'text': string;
+'match': boolean;
+}>;
 }> => r.body);
   }
 
@@ -264,7 +247,7 @@ export class SearchService extends BaseService {
   /**
    * Search a Notebook's Chat Threads by keyword. Returns each matching Exchange — a question and the answer it produced — with its matches marked; up to 20, best first.
    *
-   * Full-text search over questions and answers (no embedding, so it needs no OpenRouter key). Deleted Chat Threads are left out. Per ADR-0001 there is no ownership check.
+   * Full-text search over questions and answers, accents and case ignored (no embedding, so it needs no OpenRouter key). Deleted Chat Threads are left out. Per ADR-0001 there is no ownership check.
    *
    * This method provides access to the full `HttpResponse`, allowing access to response headers.
    * To access only the response body, use `searchChatThreads()` instead.
@@ -313,7 +296,7 @@ export class SearchService extends BaseService {
   /**
    * Search a Notebook's Chat Threads by keyword. Returns each matching Exchange — a question and the answer it produced — with its matches marked; up to 20, best first.
    *
-   * Full-text search over questions and answers (no embedding, so it needs no OpenRouter key). Deleted Chat Threads are left out. Per ADR-0001 there is no ownership check.
+   * Full-text search over questions and answers, accents and case ignored (no embedding, so it needs no OpenRouter key). Deleted Chat Threads are left out. Per ADR-0001 there is no ownership check.
    *
    * This method provides access only to the response body.
    * To access the full response (for headers, for example), `searchChatThreads$Response()` instead.
