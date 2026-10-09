@@ -41,11 +41,11 @@ The background pipeline that turns an uploaded Document Version into something c
 _Avoid_: processing, import. "Indexing" is reserved for the embedding/retrieval Stage specifically, which is why it is that Stage's status name. Say "failure reason", not "error message", for why a Version failed.
 
 **Converted Markdown**:
-The Markdown rendering of a Document Version's original file, produced by stage 1 of Ingestion and stored on that Version. The single input every later Stage and every Generated document artifact reads from — nothing downstream re-reads the original upload.
+The Markdown rendering of a Document Version's original file, produced by stage 1 of Ingestion and stored on that Version, its pictures embedded in it so the Document page shows them. The single input every later Stage and every Generated document artifact reads from — nothing downstream re-reads the original upload.
 _Avoid_: extracted text, plain text, content.
 
 **Chunk**:
-One embeddable slice of a Document Version's Converted Markdown, produced by stage 3 of Ingestion together with its embedding vector and the heading path it sits under. Chunks are what retrieval searches and what a Citation points at, so a Chunk's text is a verbatim, contiguous slice of the Converted Markdown — never a rewritten or summarized form of it. A Chunk belongs to exactly one Document Version, and re-running stage 3 replaces that Version's Chunks rather than adding to them.
+One embeddable slice of a Document Version's Converted Markdown, produced by stage 3 of Ingestion together with its embedding vector and the heading path it sits under. Chunks are what retrieval searches and what a Citation points at, so a Chunk's text is a verbatim, contiguous slice of the Converted Markdown — never a rewritten or summarized form of it — and holds only text: a picture is a boundary between Chunks, never part of one. A Chunk belongs to exactly one Document Version, and re-running stage 3 replaces that Version's Chunks rather than adding to them.
 _Avoid_: passage, segment, fragment, span.
 
 **App Event**:

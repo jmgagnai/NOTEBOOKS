@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { access, readFile, rename } from 'node:fs/promises';
 import { basename, dirname, extname, join, parse } from 'node:path';
+import { withoutEmbeddedPictures } from './embedded-pictures.js';
 import { IngestionFailure } from './stage.js';
 
 async function fileExists(path: string): Promise<boolean> {
@@ -134,16 +135,20 @@ export function resolveDoclingTimeoutMs(override?: number): number {
  * PDF — pages that are pictures of text rather than text.
  *
  * OCR is never run (see `createDoclingConverter`), so a scanned PDF has to
- * be refused rather than let through: Docling's layout model still emits an
- * `<!-- image -->` placeholder per picture it finds, and on a scanned page
- * that is all it emits, so the Document would otherwise reach stage 2 as an
- * empty text that gets summarised and indexed as if it meant something.
- * "Scanned" here means: once the placeholders and Markdown punctuation are
- * gone, essentially no letters or digits remain. The threshold is low on
+ * be refused rather than let through: Docling's layout model still finds the
+ * pictures — embedded as base64 by the CLI's default image export mode
+ * (NBK-108) — and on a scanned page they are all it finds, so the Document
+ * would otherwise reach stage 2 as pictures summarised and indexed as if
+ * they were text. "Scanned" here means: once the pictures, any
+ * `<!-- image -->` placeholders and Markdown punctuation are gone,
+ * essentially no letters or digits remain — base64 being nothing but letters
+ * and digits, the pictures have to go first. The threshold is low on
  * purpose, so a sparse but genuine text PDF is not refused.
  */
 export function looksScanned(markdown: string): boolean {
-  const textual = markdown.replace(/<!--[\s\S]*?-->/g, '').replace(/[^\p{L}\p{N}]/gu, '');
+  const textual = withoutEmbeddedPictures(markdown)
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/[^\p{L}\p{N}]/gu, '');
   return textual.length < MIN_TEXT_CHARS_FOR_TEXT_PDF;
 }
 

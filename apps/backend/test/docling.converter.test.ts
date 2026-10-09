@@ -271,6 +271,16 @@ describe('looksScanned', () => {
       false,
     );
   });
+
+  // NBK-108: the pinned CLI embeds pictures as base64 by default, which is
+  // all letters and digits — a scan must still be judged one.
+  it('is true for Markdown that is only embedded pictures, false once text sits beside them', () => {
+    const page = `![Image](data:image/png;base64,${'iVBORw0KGgoAAAANSUhEUg'.repeat(40)})`;
+    expect(looksScanned(`${page}\n\n${page}\n`)).toBe(true);
+    expect(looksScanned(`${page}\n\nThe harvest was gathered before the first frost.\n`)).toBe(
+      false,
+    );
+  });
 });
 
 /**

@@ -5,6 +5,7 @@ import { publishAppEvent } from '../events/bus.js';
 import type { DocumentStatus } from '../documents/schema.js';
 import { resolveTaskModels, type TaskModels } from '../llm/models.js';
 import type { ChatCompleter } from '../llm/openrouter.js';
+import { withoutEmbeddedPictures } from './embedded-pictures.js';
 import {
   generateArtifacts,
   type ArtifactWarning,
@@ -286,6 +287,12 @@ export async function runSummarizeDocumentJob(
 
   await transitionTo(pool, version, 'summarizing');
 
+  // The model reads the Document's text: Docling's embedded pictures stay in
+  // the stored Markdown for the Document page, not in the prompts (NBK-108).
+  // The section-summary cache is fingerprinted on this same text (ADR-0006),
+  // since its section indexes are counted in it.
+  const markdownWithoutPictures = withoutEmbeddedPictures(row.markdown);
+
   try {
     const result = await generateArtifacts(
       {
@@ -297,11 +304,11 @@ export async function runSummarizeDocumentJob(
         sectionSummaries: sectionSummaryStore(
           pool,
           version.versionId,
-          row.markdown,
+          markdownWithoutPictures,
           row.section_summaries,
         ),
       },
-      { filename: row.filename, markdown: row.markdown },
+      { filename: row.filename, markdown: markdownWithoutPictures },
     );
     await transitionTo(pool, version, 'summarized', {
       metadata: result.metadata,

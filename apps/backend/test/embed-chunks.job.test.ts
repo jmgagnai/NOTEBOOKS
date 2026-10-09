@@ -433,6 +433,51 @@ describe('embed-chunks job', () => {
     }
   });
 
+  /**
+   * NBK-108. Docling embeds each picture in Converted Markdown as base64,
+   * kept so the Document page shows it; on the dev database 63% of Chunks
+   * were slices of such pictures, embedded and searched as if they were
+   * text. A picture is a boundary between Chunks, never part of one.
+   */
+  it('keeps embedded pictures out of every Chunk, chunking the text on each side apart', async () => {
+    const picture = `![Image](data:image/png;base64,${'iVBORw0KGgo'.repeat(300)})`;
+    const before = 'The orchard lies north of the river.';
+    const after = 'Its pears ripen in late September.';
+    const markdown = `# Orchard\n\n${before}\n\n${picture}\n\n${after}\n\n# Plates\n\n${picture}\n`;
+    const seeded = await seedSummarizedVersion('orchard.md', markdown);
+
+    const { calls, fetchStub } = stubEmbeddings();
+    await runEmbedChunksJob(depsWith(fetchStub), {
+      payload: { documentId: seeded.documentId, versionId: seeded.versionId },
+      willRetry: false,
+    });
+
+    expect((await readVersion(seeded.versionId)).ingestion_status).toBe('ready');
+    const chunks = await readChunks(seeded.versionId);
+    // The text either side of the picture, each in a Chunk of its own; a
+    // section holding only a picture gives none.
+    expect(chunks.map((c) => c.text)).toEqual([before, after]);
+    expect(chunks.map((c) => c.headingPath)).toEqual([['Orchard'], ['Orchard']]);
+    // Nothing of a picture is embedded.
+    expect(calls.flatMap((call) => call.input).join('')).not.toContain('data:');
+  });
+
+  // Docling puts pictures in list items and table cells too; what is left of
+  // the item or row around the picture — a bullet, a pipe — is no text.
+  it('makes no Chunk of the bullet or table pipes left around an embedded picture', async () => {
+    const picture = `![Image](data:image/png;base64,${'iVBORw0KGgo'.repeat(300)})`;
+    const markdown = `# Figures\n\n- ${picture}\n\n| ${picture} |\n|---|\n`;
+    const seeded = await seedSummarizedVersion('figures.md', markdown);
+
+    const { fetchStub } = stubEmbeddings();
+    await runEmbedChunksJob(depsWith(fetchStub), {
+      payload: { documentId: seeded.documentId, versionId: seeded.versionId },
+      willRetry: false,
+    });
+
+    expect(await readChunks(seeded.versionId)).toEqual([]);
+  });
+
   it('gives every chunk the heading path of the section it came from', async () => {
     const markdown = [
       '# Annual Report 2025',
