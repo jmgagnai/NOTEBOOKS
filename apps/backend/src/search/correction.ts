@@ -19,10 +19,16 @@ const WORD = /[\p{L}\p{N}]+/gu;
  * Notebook holds it, and else the Notebook's most similar word. The `%`
  * operator lets the trigram index (migration 0016) find the candidates at
  * `pg_trgm`'s own threshold; `MIN_SIMILARITY` then keeps only close ones.
+ *
+ * A word the list never holds — what `is_notebook_word` takes for picture
+ * data, a few real words among it ("md5sum", migration 0019) — counts as
+ * known: searched as typed, never swapped for its nearest listed word.
  */
 const CORRECTIONS_SQL = `
   SELECT t.i, l.lexeme,
-    EXISTS (SELECT 1 FROM notebook_words w WHERE w.notebook_id = $1 AND w.word = l.lexeme) AS known,
+    NOT is_notebook_word(l.lexeme)
+      OR EXISTS (SELECT 1 FROM notebook_words w WHERE w.notebook_id = $1 AND w.word = l.lexeme)
+      AS known,
     (SELECT w.word FROM notebook_words w
      WHERE w.notebook_id = $1 AND w.word % l.lexeme AND similarity(w.word, l.lexeme) >= $3
      ORDER BY similarity(w.word, l.lexeme) DESC, w.word

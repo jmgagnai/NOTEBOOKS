@@ -60,12 +60,37 @@ corrected to the closest word it does: "rosigny" becomes "rossigny", and
 "hortnse" becomes "hortense" (`src/search/correction.ts`).
 
 - **The word list.** `notebook_words` (migration 0016) holds every distinct
-  `simple_unaccent` lexeme of a Notebook's Chunks and chat messages. Triggers
-  on `chunks` and `chat_messages` keep it up to date, so neither ingestion
-  nor chat has to remember to. The migration backfills it in one pass before
-  building its indexes; on a 138,000-Chunk development database that is
-  about 1.3M words and a few minutes at startup. Words are never removed: a
-  stale one only ever corrects towards something that is no longer found.
+  `simple_unaccent` lexeme of a Notebook's Chunks and chat messages that is a
+  word (see below). Triggers on `chunks` and `chat_messages` keep it up to
+  date, so neither ingestion nor chat has to remember to. Deleting a Document
+  or a Chat Thread removes no word: a stale one only ever corrects towards
+  something that is no longer found.
+- **Only words go in (NBK-109).** Before it, the base64 of pictures embedded
+  in Converted Markdown (NBK-108) made up 83% of the list, and it no longer
+  stayed cached. `is_notebook_word` (migration 0019, whose comment gives the
+  rule) keeps such lexemes out, and the migration rebuilt the list with it:
+
+  | dev database, 2026-10-09 | words | table | trigram index | total |
+  | ------------------------ | --------- | ------ | ------------- | ------ |
+  | before | 1,446,960 | 144 MB | 400 MB | 693 MB |
+  | after | 245,626 | 14 MB | 10 MB | 34 MB |
+
+  It took 7 s on a copy of that list and 25 s against the dev database.
+  - **What it misses, and what it catches by mistake.** Base64 runs of up
+    to 25 letters alone, and short mixed ones (`xapxny10`), stay: sampled at
+    that margin, they are nearly all base64, but nothing measured told them
+    from real words. A few real words are left out with the base64
+    (`md5sum`, `iphone15pro`, words of 26 letters or more). Spelling
+    correction searches such a word as typed, never as its nearest listed
+    word, so the only loss is correcting a misspelling *towards* one.
+  - **Timings** (Harry Potter Notebook, 44,436 Chunks). The correction
+    lookup on a first search went from 39–734 ms to 6–85 ms, and 4–14 ms
+    repeated. A whole Documents search takes 25–52 ms repeated (target:
+    under 0.2 s, met) and 0.03–0.21 s through the API. On a first run it
+    takes 36–569 ms, and 858 ms for "harry" (7,755 matches), so the target of
+    under 0.5 s is not met for the broadest queries. That time is now spent
+    in the keyword query itself, reading the Chunks' search vectors from
+    disk, not in the word list.
 - **No unique key, on purpose.** A writer adds a word only if it is not
   there yet. A unique key would make each writer wait on the others'
   uncommitted words, so two Documents of one Notebook ingesting at once
@@ -74,7 +99,7 @@ corrected to the closest word it does: "rosigny" becomes "rossigny", and
   readers tolerate.
 - **Finding the closest word.** One GIN index on `(notebook_id, word
   gin_trgm_ops)`, via `btree_gin`, serves both conditions at once.
-  Measured: under 1 ms among 1.6M words in 31 Notebooks, where the
+  Measured before NBK-109: under 1 ms among 1.6M words in 31 Notebooks, where the
   exact-word check (a b-tree) takes 2 ms.
 - **Choosing a correction.** A word is kept as typed if the list holds it,
   is shorter than 4 letters, or is excluded with `-`. A `-` excludes only
