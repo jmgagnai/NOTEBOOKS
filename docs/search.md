@@ -47,7 +47,9 @@ recomputed `to_tsvector` per match, which made a common word slow:
 
 Measured on a copy of a 160,297-Chunk development database. Adding the
 column there took about 2 min 40 s once (the table rewrite, then the
-index). The configuration's name lives
+index).
+
+The configuration's name lives
 once in TypeScript, `TEXT_SEARCH_CONFIG` in `src/search/keywords.ts`, along
 with the Excerpt helpers both routes share.
 
@@ -200,8 +202,9 @@ and drop it from the Excerpt.
 GET /notebooks/:notebookId/search/threads?q=<keywords>
 ```
 
-Every question and answer is matched as above, on `simple_unaccent`.
-Migration 0014 first indexed it on plain `simple`; 0015 moved the index.
+Every question and answer is matched as above, on `simple_unaccent`, from
+each message's stored `search_vector` (migration 0017; 0014 and 0015 had
+indexed the expression on `simple`, then on `simple_unaccent`).
 
 A result is an **Exchange** (GLOSSARY.md): a hit on a question pairs with the
 answer after it, and a hit on an answer pairs with the question before it.
