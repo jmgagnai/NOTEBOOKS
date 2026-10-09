@@ -1,10 +1,15 @@
 <div class="search-page">
   <!--
     The header row (NBK-96), as the Document page's: the Notebook searched,
-    its title alone, and ✕ back to it in place of the old text link.
+    its title alone and a link to it, and ✕ back to it in place of the old
+    text link.
   -->
   <div class="search-page__header" data-testid="search-page-header">
-    <span class="search-page__header-title">{{ notebook()?.title }}</span>
+    <span class="search-page__header-title">
+      <a class="search-page__notebook-link" [routerLink]="['/notebooks', notebookId]">{{
+        notebook()?.title
+      }}</a>
+    </span>
     <a
       mat-icon-button
       [routerLink]="['/notebooks', notebookId]"

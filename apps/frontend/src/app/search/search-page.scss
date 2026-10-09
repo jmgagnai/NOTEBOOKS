@@ -26,6 +26,17 @@
     color: var(--mat-sys-on-surface);
   }
 
+  // The title opens the Notebook: plain text until pointed at.
+  &__notebook-link {
+    color: inherit;
+    text-decoration: none;
+
+    &:hover,
+    &:focus-visible {
+      text-decoration: underline;
+    }
+  }
+
   // The picture before a search, centred under the hint.
   &__welcome {
     display: block;

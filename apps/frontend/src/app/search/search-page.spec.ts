@@ -108,13 +108,14 @@ async function searchFor(query: string): Promise<void> {
 // client (SearchService) mocked.
 describe('SearchPage', () => {
   describe('the frame (NBK-96)', () => {
-    it('is headed by the Notebook title alone, with ✕ back to the Notebook', async () => {
+    it('is headed by the Notebook title alone, a link to the Notebook, with ✕ back to it too', async () => {
       await renderSearch(vi.fn(), {
         notebooks: [{ id: NOTEBOOK_ID, title: 'Research', createdAt: '2026-01-01T00:00:00.000Z' }],
       });
 
       const header = await screen.findByTestId('search-page-header');
-      expect(await within(header).findByText('Research')).toBeTruthy();
+      const title = await within(header).findByRole('link', { name: 'Research' });
+      expect(title.getAttribute('href')).toBe(`/notebooks/${NOTEBOOK_ID}`);
       expect(within(header).queryByText(/Search/)).toBeNull();
       const close = within(header).getByRole('link', { name: 'Back to the Notebook' });
       expect(close.getAttribute('href')).toBe(`/notebooks/${NOTEBOOK_ID}`);
