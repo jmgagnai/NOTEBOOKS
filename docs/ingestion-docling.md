@@ -86,6 +86,26 @@ description; without it the help wraps at 80 columns. NBK-72 began from a
 "disable table detection" flag that this CLI does not have (it offers only
 `--table-mode`).
 
+### Pictures are embedded in Converted Markdown, and read around
+
+The converter does not pass `--image-export-mode`, so the pinned CLI uses
+its default, `embedded`: each picture lands in Converted Markdown as
+`![Image](data:image/png;base64,…)`, often tens of kilobytes. That is kept on
+purpose — the Document page renders the Markdown, and shows the pictures.
+Everything that reads the Markdown as text reads around them, through the one
+definition in `ingestion/embedded-pictures.ts` (NBK-108):
+
+- **Stage 3**: a picture is a boundary between Chunks, never part of one, so
+  every Chunk stays a verbatim slice of the Markdown and no picture is embedded
+  or searched.
+- **Stage 2**: the metadata and the three summaries are generated from the
+  Markdown with its pictures removed.
+- **The scanned-PDF check** below discounts them, base64 being all letters and
+  digits.
+
+Versions converted before NBK-108 (2026-10-09) still have Chunks made of
+picture data; a new Version of the Document replaces them.
+
 ### OCR is off, and scanned PDFs are refused
 
 Docling's PDF pipeline turns OCR on by default and initialises EasyOCR
@@ -96,8 +116,8 @@ minutes (`oom` in `docker events`). The converter therefore runs every
 document with `--no-ocr`, always.
 
 A scanned PDF — pages that are pictures of text — then converts to nothing
-but `<!-- image -->` placeholders. Rather than let that through as an empty
-Document that stage 2 summarises and stage 3 indexes, the converter refuses
+but pictures. Rather than let that through as a Document of pictures that
+stage 2 summarises and stage 3 indexes, the converter refuses
 it (`looksScanned` in `docling.ts`): the Version fails with the failure
 reason `no-text-layer`, which is what the user is told, and
 `<file> has no text layer (a scanned PDF), and OCR is disabled` in

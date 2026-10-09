@@ -1,3 +1,4 @@
+import { textBetweenPictures } from './embedded-pictures.js';
 import { splitMarkdownSections } from './markdown-sections.js';
 
 /**
@@ -187,6 +188,10 @@ function mergePieces(pieces: string[], chunkSize: number, chunkOverlap: number):
  * A heading with no body of its own contributes no chunk — there is nothing
  * to embed — but still appears in its children's paths.
  *
+ * An embedded picture (see `embedded-pictures.ts`) cuts its section in two,
+ * and no chunk holds any part of it, overlap included: it is a picture, not
+ * text to embed (NBK-108).
+ *
  * Chunk text is a verbatim, contiguous slice of the Converted Markdown; the
  * heading path travels beside it rather than being prepended to it, so a
  * Citation can find the Chunk in the document the reader is shown.
@@ -198,17 +203,23 @@ export function chunkMarkdown(markdown: string, options: ChunkingOptions = {}): 
 
   const chunks: DocumentChunk[] = [];
   for (const section of splitMarkdownSections(markdown)) {
-    const content = section.content.trim();
-    if (content === '') continue;
+    const stretches = textBetweenPictures(section.content);
+    for (const stretch of stretches) {
+      const content = stretch.trim();
+      if (content === '') continue;
+      // A picture in a list item or a table cell leaves its bullet or pipes
+      // behind: Markdown around a picture, not text to embed.
+      if (stretches.length > 1 && !/[\p{L}\p{N}]/u.test(content)) continue;
 
-    for (const text of mergePieces(
-      splitIntoPieces(content, chunkSize, SEPARATORS),
-      chunkSize,
-      chunkOverlap,
-    )) {
-      const trimmed = text.trim();
-      if (trimmed === '') continue;
-      chunks.push({ index: chunks.length, headingPath: section.headingPath, text: trimmed });
+      for (const text of mergePieces(
+        splitIntoPieces(content, chunkSize, SEPARATORS),
+        chunkSize,
+        chunkOverlap,
+      )) {
+        const trimmed = text.trim();
+        if (trimmed === '') continue;
+        chunks.push({ index: chunks.length, headingPath: section.headingPath, text: trimmed });
+      }
     }
   }
 

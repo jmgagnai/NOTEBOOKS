@@ -363,6 +363,46 @@ describe('summarize-document job', () => {
     '',
   ].join('\n');
 
+  // NBK-108: Converted Markdown keeps Docling's embedded pictures for the
+  // Document page; the model is given the text, not kilobytes of base64.
+  it('gives the model the Converted Markdown without its embedded pictures, and stores it with them', async () => {
+    const picture = `![Image](data:image/png;base64,${'iVBORw0KGgo'.repeat(300)})`;
+    const seeded = await seedConvertedVersion(
+      'orchard.md',
+      `# Orchard Notes\n\n${body('pear grafting')}\n\n${picture}\n\n# Plates\n\n${picture}\n`,
+    );
+
+    const { calls, fetchStub } = stubOpenRouter((call) => {
+      switch (call.task) {
+        case 'metadata':
+          return '{"title":"Orchard Notes","authors":[],"documentType":"notes","language":"en","publishedOn":null,"keywords":["pears"]}';
+        case 'sectionSummary':
+          return 'Section summary of pear grafting.';
+        case 'chatSnippet':
+          return words(200);
+        case 'executiveSummary':
+          return words(700);
+        case 'abstract':
+          return words(70);
+        default:
+          throw new Error(`Unexpected task ${call.task}`);
+      }
+    });
+
+    await runSummarizeDocumentJob(depsWith(fetchStub), {
+      payload: { documentId: seeded.documentId, versionId: seeded.versionId },
+      willRetry: false,
+    });
+
+    const version = await readVersion(seeded.versionId);
+    expect(version.ingestion_status).toBe('summarized');
+    expect(version.markdown).toContain(picture);
+    expect(calls.length).toBeGreaterThan(0);
+    for (const call of calls) expect(call.user).not.toContain('data:');
+    // The text around the picture still reached the model.
+    expect(calls.some((call) => call.user.includes('pear grafting'))).toBe(true);
+  });
+
   it('summarizes each header-delimited section independently, then reduces those summaries', async () => {
     const seeded = await seedConvertedVersion('annual-report.md', MULTI_SECTION_MARKDOWN);
 
