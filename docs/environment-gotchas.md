@@ -155,6 +155,32 @@ says where it tried. Fix either by stopping the local service for the session
 (`brew services stop postgresql@14`) or by moving the compose port to 5433 and
 setting `DATABASE_URL` in `.env` to match.
 
+## MinIO's data lives in /bitnami/minio/data, not /data
+
+`docker-compose.yml` runs `bitnamilegacy/minio` (see the first section), and
+that image keeps its data in `/bitnami/minio/data`, not the official image's
+`/data`. Until 2026-10-09 the named volume `minio-data` was mounted at
+`/data`: it stayed empty, and Docker backed the real data directory with an
+anonymous volume, a new and empty one every time the container was recreated.
+Each `docker compose up` that recreated MinIO made every stored original
+vanish. Downloads then fail with HTTP 500, and ingestion fails with "The
+specified key does not exist." The files were not deleted: they sat in the old
+anonymous volumes.
+
+To find and recover files after a mount like that, look for the old volumes:
+
+```bash
+docker volume ls -q | while read v; do
+  docker run --rm -v "$v":/v:ro alpine sh -c \
+    'test -d /v/rag-notebook-documents && echo "'"$v"' $(find /v/rag-notebook-documents -name xl.meta | wc -l) objects"'
+done
+```
+
+With MinIO stopped (`docker compose stop minio`), copy each one's
+`rag-notebook-documents/` into `notebooks_minio-data`, mounted read-only on
+the source side, and `docker compose up -d minio`. On 2026-10-09 three old
+volumes held all 88 originals between them.
+
 ## A branch's migration reaches the dev database the moment it is saved
 
 The backend runs as `tsx watch src/server.ts`, and `server.ts` runs every
