@@ -10,6 +10,7 @@ import { OPENED_FROM_SEARCH } from '../documents/opened-from-search';
 import { NotebooksStore } from '../notebooks/notebooks.store';
 import { MarkedText } from './marked-text';
 import { ChunkResult, SearchStore } from './search.store';
+import { COPYCAT_SEARCH_SRC } from '../shared/brand';
 import { showPageTitle } from '../shared/page-title';
 import { ShortDatePipe } from '../shared/short-date.pipe';
 
@@ -47,6 +48,7 @@ export class SearchPage implements OnDestroy {
 
   protected readonly notebooksStore = inject(NotebooksStore);
   protected readonly store = inject(SearchStore);
+  protected readonly searchPicture = COPYCAT_SEARCH_SRC;
 
   protected readonly notebookId = this.route.snapshot.paramMap.get('notebookId')!;
   protected readonly notebook = computed(
