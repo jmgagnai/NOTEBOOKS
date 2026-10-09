@@ -4,7 +4,7 @@ import { buildApp } from './app.js';
 import { runMigrations } from './db/migrate.js';
 import { createPool } from './db/pool.js';
 import { createAppEventSubscriber } from './events/bus.js';
-import { createDoclingConverter } from './ingestion/docling.js';
+import { createDoclingConverter, removeDoclingContainers } from './ingestion/docling.js';
 import { startJobQueue } from './jobs/queue.js';
 import { resolveEmbeddingModel, resolveTaskModels } from './llm/models.js';
 import { createOpenRouterEmbedder } from './llm/embeddings.js';
@@ -121,6 +121,7 @@ async function main(): Promise<void> {
 
   const jobs = await startJobQueue({
     connectionString: DATABASE_URL,
+    clearAbandonedConversions: removeDoclingContainers,
     worker: {
       pool,
       s3,

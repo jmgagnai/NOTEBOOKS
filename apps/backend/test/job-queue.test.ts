@@ -68,6 +68,7 @@ describe('job queue', () => {
     embed?: Embedder;
     retryLimit?: number;
     reclaimActiveJobs?: boolean;
+    clearAbandonedConversions?: () => Promise<void>;
     log?: (message: string) => void;
   }): Promise<JobQueue> {
     const queue = await startJobQueue({
@@ -82,6 +83,9 @@ describe('job queue', () => {
         ? {}
         : { reclaimActiveJobs: options.reclaimActiveJobs }),
       ...(options.log ? { log: options.log } : {}),
+      ...(options.clearAbandonedConversions
+        ? { clearAbandonedConversions: options.clearAbandonedConversions }
+        : {}),
       worker: options.convertToMarkdown
         ? {
             pool,
@@ -334,6 +338,67 @@ describe('job queue', () => {
     expect(logged).toHaveLength(1);
     expect(logged[0]).toContain(CONVERT_TO_MARKDOWN_QUEUE);
     expect(logged[0]).toContain(seeded.versionId);
+  });
+
+  // NBK-111: the dead process's conversion may still be running in its own
+  // container; re-running the job beside it doubled the memory a large
+  // Document needs. Cleared first, then reclaimed.
+  it('clears abandoned conversions before reclaiming, and only when reclaiming', async () => {
+    const seeded = await seedUploadedVersion('abandoned.txt', 'its container still running');
+    const producerOnly = await start({ schema: 'pgboss_clear' });
+    await producerOnly.enqueueConvertToMarkdown({
+      documentId: seeded.documentId,
+      versionId: seeded.versionId,
+    });
+    await leaveJobOrphaned('pgboss_clear', seeded.versionId);
+    await producerOnly.stop();
+
+    const happened: string[] = [];
+    await start({
+      schema: 'pgboss_clear',
+      convertToMarkdown: passthrough,
+      clearAbandonedConversions: async () => {
+        happened.push('cleared');
+      },
+      log: () => happened.push('reclaimed'),
+    });
+    await waitForStatus(seeded.versionId, ['converted']);
+    expect(happened).toEqual(['cleared', 'reclaimed']);
+
+    const notReclaiming: string[] = [];
+    await start({
+      schema: 'pgboss_clear_off',
+      convertToMarkdown: passthrough,
+      reclaimActiveJobs: false,
+      clearAbandonedConversions: async () => {
+        notReclaiming.push('cleared');
+      },
+    });
+    expect(notReclaiming).toEqual([]);
+  });
+
+  it('still starts, and reclaims, when clearing abandoned conversions fails', async () => {
+    const seeded = await seedUploadedVersion('unclearable.txt', 'docker unreachable');
+    const producerOnly = await start({ schema: 'pgboss_clear_fails' });
+    await producerOnly.enqueueConvertToMarkdown({
+      documentId: seeded.documentId,
+      versionId: seeded.versionId,
+    });
+    await leaveJobOrphaned('pgboss_clear_fails', seeded.versionId);
+    await producerOnly.stop();
+
+    const logged: string[] = [];
+    await start({
+      schema: 'pgboss_clear_fails',
+      convertToMarkdown: passthrough,
+      clearAbandonedConversions: async () => {
+        throw new Error('Cannot connect to the Docker daemon');
+      },
+      log: (message) => logged.push(message),
+    });
+
+    await waitForStatus(seeded.versionId, ['converted']);
+    expect(logged[0]).toContain('Cannot connect to the Docker daemon');
   });
 
   it('leaves active jobs alone when reclaiming is switched off', async () => {
