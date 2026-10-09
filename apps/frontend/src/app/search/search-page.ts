@@ -135,7 +135,7 @@ export class SearchPage implements OnDestroy {
       .join(' · ');
   }
 
-  /** A result opens the Document at its best-matching Chunk, as a Citation does. */
+  /** A Document result opens the Document at its Chunk, as a Citation does. */
   protected readonly chunkLink = chunkLinkParams;
 
   /** And says it came from here, so the Document's back arrow returns here (NBK-103). */

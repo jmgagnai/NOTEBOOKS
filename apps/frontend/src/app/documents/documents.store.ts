@@ -51,8 +51,8 @@ export type DocumentStatus =
 // pipeline (NBK-6, NBK-7) advances — so it changes under the UI's feet, which
 // is what `watchNotebook` below is for.
 //
-// `abstract` is the 50-100 word artifact GLOSSARY.md assigns to "search
-// results, search-result previews, and document cards" — the only one of the
+// `abstract` is the 50-100 word artifact GLOSSARY.md assigns to document
+// cards — the only one of the
 // three summaries the list payload carries, because the Executive Summary
 // (1-2 pages) and the Converted Markdown (up to 200+ pages) would make
 // browsing a Notebook download every document in it. Null until ingestion

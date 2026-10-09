@@ -97,9 +97,10 @@ async function main(): Promise<void> {
 
   // One embedder, two consumers: ingestion stage 3 embeds a Document
   // Version's chunks with it (NBK-8), and chat embeds a question with it
-  // (NBK-10). It has to be the same model on both sides — vectors from two different models live in
-  // different spaces and similarity between them is meaningless — so they
-  // share one instance rather than each building their own.
+  // (NBK-10). It has to be the same model on both sides — vectors from two
+  // different models live in different spaces and similarity between them
+  // is meaningless — so they share one instance rather than each building
+  // their own.
   const embed = OPENROUTER_API_KEY
     ? createOpenRouterEmbedder({ apiKey: OPENROUTER_API_KEY, model: resolveEmbeddingModel() })
     : undefined;

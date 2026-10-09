@@ -1,6 +1,12 @@
 import type { Pool } from 'pg';
 import { notebookIsActive } from '../notebooks/active-notebooks.js';
-import { headlineOptions, segments, TEXT_SEARCH_CONFIG, withoutTags } from './keywords.js';
+import {
+  headlineOptions,
+  namesAWord,
+  segments,
+  TEXT_SEARCH_CONFIG,
+  withoutTags,
+} from './keywords.js';
 import type { ExchangeSearchResult } from './schema.js';
 
 /** The most Exchanges one Chat Thread search returns (NBK-97). */
@@ -12,7 +18,8 @@ export const EXCHANGE_RESULT_LIMIT = 20;
  * answer after it, a hit on an answer with the question before it, and an
  * Exchange both halves of which match is one result, ranked by the two
  * together. Full-text on `simple_unaccent` (accents and case ignored), on
- * the expression migration 0015 indexes. Deleted Chat Threads and Notebooks are left out.
+ * the expression migration 0015 indexes. Deleted Chat Threads and Notebooks
+ * are left out.
  */
 const SEARCH_EXCHANGES_SQL = `
   WITH q AS (SELECT websearch_to_tsquery('${TEXT_SEARCH_CONFIG}', $2) AS query),
@@ -86,7 +93,7 @@ export async function searchExchanges(
   notebookId: string,
   query: string,
 ): Promise<ExchangeSearchResult[]> {
-  if (query.trim() === '') return [];
+  if (!(await namesAWord(pool, query))) return [];
   const { rows } = await pool.query<ExchangeRow>(SEARCH_EXCHANGES_SQL, [
     notebookId,
     query,

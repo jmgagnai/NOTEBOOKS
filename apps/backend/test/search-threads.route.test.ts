@@ -223,6 +223,28 @@ describe('Chat Thread search', () => {
     expect(accented).toHaveLength(1);
   });
 
+  it('finds nothing for a query that only excludes', async () => {
+    const session = await signIn('ada@example.com');
+    const notebookId = await notebookOf(session);
+    await threadWith(session, notebookId, 'Any', [['Anything?', 'Something.']]);
+
+    const response = await search(session, notebookId, '-lupin');
+
+    expect(response.json()).toEqual([]);
+  });
+
+  it("keeps angle brackets in an answer's Excerpt as text", async () => {
+    const session = await signIn('ada@example.com');
+    const notebookId = await notebookOf(session);
+    await threadWith(session, notebookId, 'Code', [
+      ['What type?', 'Use List<String> for the Lupin names.'],
+    ]);
+
+    const [hit] = (await search(session, notebookId, 'lupin')).json() as ExchangeResult[];
+
+    expect(plain(hit.answer)).toContain('List<String>');
+  });
+
   it('returns no results for a blank query', async () => {
     const session = await signIn();
     const notebookId = await notebookOf(session);

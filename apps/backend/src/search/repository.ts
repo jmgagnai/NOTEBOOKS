@@ -1,7 +1,13 @@
 import type { Pool } from 'pg';
 import { locateChunkRanges } from '../documents/chunk-ranges.js';
 import { SEARCHABLE_VERSIONS_CTE } from '../documents/searchable-versions.js';
-import { headlineOptions, segments, TEXT_SEARCH_CONFIG, withoutTags } from './keywords.js';
+import {
+  excerpt,
+  headlineOptions,
+  namesAWord,
+  TEXT_SEARCH_CONFIG,
+  withoutTags,
+} from './keywords.js';
 import { plainText } from './plain-text.js';
 import type { DocumentSearchResult } from './schema.js';
 
@@ -44,9 +50,12 @@ const SEARCH_CHUNKS_SQL = `
 
 /**
  * Each Chunk's Excerpt, cut from its text with the Markdown markers already
- * stripped (`plainText`), so the excerpt reads as prose: one stretch of
- * about two lines around the matches. `ts_headline`'s default mode rather
- * than `MaxFragments`, which drops the punctuation at a fragment's ends.
+ * stripped (`plainText`), so the excerpt reads as prose: one fragment of
+ * about two lines around the matches — `MaxFragments`, since the default
+ * mode starts at the first match with nothing before it. `ShortWord=0`, or
+ * a fragment never starts or ends on a word of three letters or fewer ("A
+ * year…", "…in the sea"). `excerpt` frames the fragment and puts back the
+ * punctuation it drops at its ends.
  */
 const EXCERPTS_SQL = `
   SELECT ts_headline('${TEXT_SEARCH_CONFIG}', ${withoutTags('t')},
@@ -54,7 +63,7 @@ const EXCERPTS_SQL = `
   FROM unnest($1::text[]) WITH ORDINALITY AS u(t, i)
   ORDER BY i
 `;
-const EXCERPT_HEADLINE = headlineOptions('MaxWords=30, MinWords=15');
+const EXCERPT_HEADLINE = headlineOptions('MaxFragments=1, MaxWords=30, MinWords=15, ShortWord=0');
 
 interface ChunkRow {
   document_id: string;
@@ -70,12 +79,12 @@ interface ChunkRow {
  * Searches one Notebook's Documents by keyword, best match first; a blank
  * query finds nothing. Per ADR-0001 there is no ownership check.
  */
-export async function searchNotebook(
+export async function searchChunks(
   pool: Pool,
   notebookId: string,
   query: string,
 ): Promise<DocumentSearchResult[]> {
-  if (query.trim() === '') return [];
+  if (!(await namesAWord(pool, query))) return [];
   const { rows } = await pool.query<ChunkRow>(SEARCH_CHUNKS_SQL, [
     notebookId,
     query,
@@ -83,8 +92,9 @@ export async function searchNotebook(
   ]);
   if (rows.length === 0) return [];
 
+  const texts = rows.map((row) => plainText(row.text));
   const { rows: excerpts } = await pool.query<{ excerpt: string }>(EXCERPTS_SQL, [
-    rows.map((row) => plainText(row.text)),
+    texts,
     query,
     EXCERPT_HEADLINE,
   ]);
@@ -107,7 +117,7 @@ export async function searchNotebook(
         charStart: range?.charStart ?? null,
         charEnd: range?.charEnd ?? null,
       },
-      excerpt: segments(excerpts[i].excerpt),
+      excerpt: excerpt(excerpts[i].excerpt, texts[i]),
     };
   });
 }

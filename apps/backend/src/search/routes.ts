@@ -5,7 +5,7 @@ import { createAuthGuard } from '../auth/guard.js';
 import { errorResponseSchema } from '../auth/schema.js';
 import { notebookExists } from '../notebooks/repository.js';
 import { EXCHANGE_RESULT_LIMIT, searchExchanges } from './exchanges.js';
-import { DOCUMENT_RESULT_LIMIT, searchNotebook } from './repository.js';
+import { DOCUMENT_RESULT_LIMIT, searchChunks } from './repository.js';
 import {
   searchNotebookParamsSchema,
   searchNotebookQuerySchema,
@@ -58,7 +58,7 @@ export function registerSearchRoutes(
       }
       await reply
         .status(200)
-        .send(await searchNotebook(pool, request.params.notebookId, request.query.q));
+        .send(await searchChunks(pool, request.params.notebookId, request.query.q));
     },
   );
 

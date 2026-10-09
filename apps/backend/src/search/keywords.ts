@@ -1,3 +1,4 @@
+import type { Pool } from 'pg';
 import type { TextSegment } from './schema.js';
 
 /**
@@ -32,8 +33,8 @@ export function withoutTags(sqlText: string): string {
  * `ts_headline` options marking matches with the delimiters `segments`
  * splits on, plus whatever else the caller wants (length, fragments).
  */
-export function headlineOptions(extra = ''): string {
-  return `StartSel=${START}, StopSel=${STOP}${extra ? `, ${extra}` : ''}`;
+export function headlineOptions(extra: string): string {
+  return `StartSel=${START}, StopSel=${STOP}, ${extra}`;
 }
 
 /**
@@ -53,4 +54,49 @@ export function segments(headline: string): TextSegment[] {
     if (rest) out.push({ text: rest, match: false });
   }
   return out;
+}
+
+/**
+ * Whether a query names a word to look for. One that only excludes
+ * (`-lupin`) or has no words at all (`?!`) would match almost every row —
+ * no index serves "not this word" — so it finds nothing instead of
+ * scanning the Notebook. `querytree` reduces a query to what an index can
+ * search for, and to `T` when that is nothing.
+ */
+export async function namesAWord(pool: Pool, query: string): Promise<boolean> {
+  if (query.trim() === '') return false;
+  const { rows } = await pool.query<{ tree: string }>(
+    `SELECT querytree(websearch_to_tsquery('${TEXT_SEARCH_CONFIG}', $1)) AS tree`,
+    [query],
+  );
+  const tree = rows[0].tree;
+  return tree !== '' && tree !== 'T';
+}
+
+// Up to this much left out at either end of a fragment is shown rather
+// than replaced by "…": an ellipsis standing for "2024. " hides more than it
+// saves, and `ts_headline` never starts or ends a fragment on a number.
+const SHOWN_IF_SHORTER = 16;
+
+/**
+ * An Excerpt: a `ts_headline` fragment of `source` as segments, framed so
+ * the reader can tell it was cut — "… " where text before it was left out,
+ * " …" where text after it was — or with that text itself when it is only a
+ * few characters, as the punctuation ending a sentence, which a fragment
+ * drops, always is.
+ */
+export function excerpt(headline: string, source: string): TextSegment[] {
+  const parts = segments(headline);
+  const shown = parts.map((part) => part.text).join('');
+  const at = source.indexOf(shown);
+  if (shown === '' || at < 0) return parts;
+  const before = source.slice(0, at);
+  const after = source.slice(at + shown.length);
+  const lead = before.length <= SHOWN_IF_SHORTER ? before : '… ';
+  const tail = after.length <= SHOWN_IF_SHORTER ? after : ' …';
+  return [
+    ...(lead ? [{ text: lead, match: false }] : []),
+    ...parts,
+    ...(tail ? [{ text: tail, match: false }] : []),
+  ];
 }

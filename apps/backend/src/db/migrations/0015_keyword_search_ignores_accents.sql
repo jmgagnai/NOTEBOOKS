@@ -13,7 +13,8 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_ts_config WHERE cfgname = 'simple_unaccent') THEN
     CREATE TEXT SEARCH CONFIGURATION simple_unaccent (COPY = simple);
     ALTER TEXT SEARCH CONFIGURATION simple_unaccent
-      ALTER MAPPING FOR asciiword, asciihword, hword_asciipart, word, hword, hword_part
+      ALTER MAPPING FOR asciiword, asciihword, hword_asciipart, word, hword, hword_part,
+                        numword, numhword, hword_numpart
       WITH unaccent, simple;
   END IF;
 END

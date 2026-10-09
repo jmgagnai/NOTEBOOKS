@@ -263,6 +263,66 @@ describe('Search routes — Documents, by keyword (NBK-104)', () => {
     }
   });
 
+  it('strips what Docling and Markdown write around words, and keeps the words', async () => {
+    const session = await signIn();
+    const notebookId = await notebookOf(session);
+    await seedDocument(notebookId, 'docling.md', [
+      {
+        chunks: [
+          {
+            text: [
+              '2024. A year of growth for file\\_name and Tom &amp; Jerry, see',
+              '[the wiki](https://en.wikipedia.org/wiki/Growth_(economics)).',
+              '',
+              '|a|b|',
+              '|:-|-:|',
+              '|1|2|',
+            ].join('\n'),
+          },
+        ],
+      },
+    ]);
+
+    const [hit] = await results(session, notebookId, 'growth');
+
+    expect(shown(hit.excerpt)).toBe(
+      '2024. A year of [growth] for file_name and Tom & Jerry, see the wiki. a b 1 2',
+    );
+  });
+
+  it('cuts a long Chunk around its match, marking what was left out', async () => {
+    const session = await signIn();
+    const notebookId = await notebookOf(session);
+    const filler = (word: string) => Array.from({ length: 60 }, () => word).join(' ');
+    await seedDocument(notebookId, 'long.md', [
+      { chunks: [{ text: `${filler('before')} the cliffs of Étretat rise. ${filler('after')}` }] },
+    ]);
+
+    const [hit] = await results(session, notebookId, 'etretat');
+
+    const text = shown(hit.excerpt);
+    expect(text).toMatch(/^… (before )+the cliffs of \[Étretat\] rise\. (after )+…$/);
+  });
+
+  // A query of nothing but exclusions matches almost every Chunk and no
+  // index can serve it; it finds nothing rather than scanning the Notebook.
+  it('finds nothing for a query that only excludes', async () => {
+    const session = await signIn();
+    const notebookId = await notebookOf(session);
+    await seedDocument(notebookId, 'any.md', [{ chunks: [{ text: 'Ganimard rests.' }] }]);
+
+    expect(await results(session, notebookId, '-lupin')).toEqual([]);
+    expect(await results(session, notebookId, '?!')).toEqual([]);
+  });
+
+  it('ignores accents in words that mix letters and digits', async () => {
+    const session = await signIn();
+    const notebookId = await notebookOf(session);
+    await seedDocument(notebookId, 'menu.md', [{ chunks: [{ text: 'Order the café2 blend.' }] }]);
+
+    expect(await results(session, notebookId, 'cafe2')).toHaveLength(1);
+  });
+
   it('ranks the Chunk the words occur in most first, and returns at most 20', async () => {
     const session = await signIn();
     const notebookId = await notebookOf(session);

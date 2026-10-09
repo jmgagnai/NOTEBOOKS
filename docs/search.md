@@ -5,7 +5,7 @@ remember and gets back the places in a Notebook where those words occur, in
 its Documents and its Chat Threads. Both are searched **by keyword** since
 NBK-104 (spec 09). Semantic search by embedding was NBK-9's first answer for
 Documents, but a reader at a search box wants to see the word they typed,
-not passages "about" it. Embeddings remain chat's retrieval tool
+not text "about" it. Embeddings remain chat's retrieval tool
 (`src/chat/retrieval.ts`).
 
 ```
@@ -30,7 +30,10 @@ word run through `unaccent` first.
   "Étretat".
 
 The query is in web-search syntax (`websearch_to_tsquery`): `"a phrase"`,
-`-word` and `or` work.
+`-word` and `or` work. A query that names no word to look for, only
+exclusions (`-lupin`) or only punctuation, finds nothing (`namesAWord`).
+No index can serve "not this word": on a 45,000-Chunk Notebook such a
+query took 24 s to return 20 arbitrary Chunks.
 
 Migration 0015 indexes exactly `to_tsvector('simple_unaccent', …)` on
 `chunks.text` and `chat_messages.content`, and the queries match on that
@@ -84,8 +87,21 @@ from the Chunk's text with its Markdown markers stripped first
 - link and image syntax.
 
 An Excerpt is for recognising a match, not for reading layout, so a table
-becomes its cells in a row. `ts_headline` runs in its default mode, because
-`MaxFragments` drops the punctuation at a fragment's ends.
+becomes its cells in a row. Backslash escapes (Docling's `file\_name`) and
+HTML entities (`&amp;`) come back as the characters they stand for.
+Numbered items keep their number, because "2024." may open a sentence.
+
+`ts_headline` cuts one fragment around the matches (`MaxFragments=1`); the
+default mode would start at the first match with nothing before it.
+`excerpt` in `src/search/keywords.ts` frames the fragment:
+- "… " before it and " …" after it, where text was left out;
+- the left-out text itself when it is only a few characters, such as the
+  sentence's closing punctuation (which a fragment drops) or a number (which
+  a fragment never starts or ends on).
+
+One gap is left as is. Matching runs on the Chunk's Markdown, but the
+Excerpt is cut from its prose, so a word that occurs only in a link's
+address finds the Chunk and shows an Excerpt with nothing bold.
 
 Excerpts travel as **segments** (`{ text, match }`), never markup. The
 matches are delimited with private-use characters that stored text never
@@ -124,9 +140,18 @@ back to the newest.
 
 ## The vector index decision (chat retrieval)
 
-Documents search no longer reads `chunks.embedding` (NBK-104), but chat
-retrieval ranks Chunks by the same vectors, so this measurement, made for
-NBK-9's semantic search, still governs it.
+Measured for NBK-9's semantic Document search, which NBK-104 replaced.
+Chat retrieval (`src/chat/retrieval.ts`) still ranks Chunks by these
+vectors, and some of the measurement carries over to it, but not all:
+- **Carries over:** pgvector cannot index a 2560-dimension column, and the
+  exact scan's cost per Chunk is the same for chat's query.
+- **Does not carry over:** the argument that an ANN index "cannot serve
+  this query's shape". It was about search's `MIN()` roll-up per Document.
+  Chat's query is a plain `ORDER BY embedding <=> $q LIMIT k`, the shape
+  HNSW serves, so a `halfvec` + HNSW index is a real option for chat, at the
+  recall cost measured below.
+
+What follows is the original measurement.
 
 Migration `0007` left this open on purpose: "a decision for the retrieval
 ticket, with real data to measure, not a guess made here". **The decision is

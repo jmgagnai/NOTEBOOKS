@@ -8,7 +8,8 @@ import { errorMessage } from '../shared/error-message';
  * One Documents search hit (NBK-104): a Chunk, not a Document — a reader
  * looks for the places a word occurs, so a Document appears once per Chunk
  * that holds it. Shown as its Excerpt, with the Document and the heading it
- * sits under.
+ * sits under. The generated client's shape, from `documentSearchResultSchema`
+ * in apps/backend/src/search/schema.ts, which is the source of truth.
  */
 export interface SearchResult {
   documentId: string;
