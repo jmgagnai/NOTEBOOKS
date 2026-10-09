@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
  * The explicit set spec 01 "Icons" registers, plus spec 02's three, the title
  * bar's sign-out, spec 04's history (the Chat Threads navigator's title) and
  * the Document rows' type icons (NBK-42, spec 03 "Row anatomy": PDF, Word,
- * text, spreadsheet).
+ * text, spreadsheet), and the Search page's Chat Thread rows (NBK-97).
  */
 const NAMES = [
   'add',
@@ -43,6 +43,7 @@ const NAMES = [
   'panel-left-expand',
   'folder',
   'arrow-up',
+  'chat',
 ];
 
 const require = createRequire(import.meta.url);

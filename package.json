@@ -21,10 +21,11 @@
     "check:format:fix": "prettier --write \"apps/*/src/**/*.{ts,html,scss}\" \"apps/*/test/**/*.ts\"",
     "check:glossary": "node scripts/check-glossary.mjs",
     "check:theme": "node scripts/check-theme.mjs",
+    "check:icons": "node scripts/check-icons.mjs",
     "check:migrations": "node scripts/check-migrations.mjs",
     "check:scripts": "node --test \"scripts/**/*.test.mjs\"",
     "check:types": "pnpm run backend:build && pnpm run frontend:typecheck",
-    "check": "pnpm run check:migrations && pnpm run check:scripts && pnpm run check:format && pnpm run check:theme && pnpm run check:types && pnpm run backend:openapi:generate && pnpm run check:glossary",
+    "check": "pnpm run check:migrations && pnpm run check:scripts && pnpm run check:format && pnpm run check:theme && pnpm run check:icons && pnpm run check:types && pnpm run backend:openapi:generate && pnpm run check:glossary",
     "verify": "pnpm run check && pnpm run test",
     "prepare": "husky"
   },
