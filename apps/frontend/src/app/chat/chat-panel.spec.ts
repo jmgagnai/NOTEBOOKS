@@ -9,10 +9,12 @@ import {
   tooltipOf,
   resetAppEvents,
   renderPanel,
+  pinToday,
 } from './chat-panel.spec-helpers';
 
 describe('Chat panel (ThreadNavigator + ThreadView) — Chat Threads', () => {
   beforeEach(resetAppEvents);
+  afterEach(() => vi.useRealTimers());
 
   it('shows an empty state when the Notebook has no Chat Threads', async () => {
     await renderPanel({ listChatThreads: vi.fn().mockResolvedValue([]) as never });
@@ -25,6 +27,7 @@ describe('Chat panel (ThreadNavigator + ThreadView) — Chat Threads', () => {
   // Notebook" — so the list must show other people's Threads, and say whose
   // they are.
   it('lists every Thread with its author and start date, whoever started it', async () => {
+    pinToday('2026-06-01T12:00:00.000Z');
     const listChatThreads = vi.fn().mockResolvedValue([
       thread({
         id: 'thread-1',
@@ -55,6 +58,26 @@ describe('Chat panel (ThreadNavigator + ThreadView) — Chat Threads', () => {
     expect(within(alice).getByText('alice@example.com · Mar 15')).toBeTruthy();
     expect(within(bob).getByText('bob@example.com · Feb 3')).toBeTruthy();
     expect(listChatThreads).toHaveBeenCalledWith({ notebookId: NOTEBOOK_ID });
+  });
+
+  // NBK-98: Chat Threads build up over time, so a start date in an earlier
+  // year says which one.
+  it("adds the year to a Thread's start date when it isn't this year", async () => {
+    pinToday('2026-06-01T12:00:00.000Z');
+    await renderPanel({
+      listChatThreads: vi.fn().mockResolvedValue([
+        thread({
+          id: 'thread-1',
+          title: 'Last year',
+          author: participant('alice@example.com'),
+          createdAt: '2025-03-15T12:00:00.000Z',
+        }),
+      ]) as never,
+      listChatMessages: vi.fn().mockResolvedValue([]) as never,
+    });
+
+    const row = await screen.findByRole('button', { name: 'Open Last year' });
+    expect(within(row).getByText('alice@example.com · Mar 15, 2025')).toBeTruthy();
   });
 
   // NBK-43: starting a Thread is one click on the navigator's "New Chat

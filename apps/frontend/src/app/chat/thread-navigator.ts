@@ -1,4 +1,3 @@
-import { DatePipe } from '@angular/common';
 import { Component, inject, input } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatDialog } from '@angular/material/dialog';
@@ -10,6 +9,7 @@ import { firstValueFrom } from 'rxjs';
 import { AuthStore } from '../auth/auth.store';
 import { ChatStore, ChatThread, NEW_THREAD_TITLE } from './chat.store';
 import { DeleteThreadDialog, type DeleteThreadDialogData } from './delete-thread-dialog';
+import { ShortDatePipe } from '../shared/short-date.pipe';
 
 /**
  * The Chat Threads navigator of a Notebook (NBK-10, split out in NBK-34,
@@ -33,7 +33,7 @@ import { DeleteThreadDialog, type DeleteThreadDialogData } from './delete-thread
   selector: 'app-thread-navigator',
   standalone: true,
   imports: [
-    DatePipe,
+    ShortDatePipe,
     MatButtonModule,
     MatIconModule,
     MatMenuModule,

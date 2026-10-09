@@ -6,6 +6,7 @@ import { SearchPage } from './search-page';
 import { NotebooksService } from '../api/services/notebooks.service';
 import { SearchService } from '../api/services/search.service';
 import { Elsewhere, RouterShell } from '../notebooks/notebook-detail-page.spec-helpers';
+import { pinToday } from '../chat/chat-panel.spec-helpers';
 import { APP_NAME } from '../shared/brand';
 import { provideAppIcons } from '../shared/fluent-icons';
 
@@ -349,6 +350,8 @@ describe('SearchPage', () => {
   // NBK-97: the Notebook's Chat Threads are searched too, by keyword; each
   // matching Exchange is a result, after the Documents.
   describe('Chat Threads', () => {
+    afterEach(() => vi.useRealTimers());
+
     /** One Exchange result as the generated client returns it. */
     function exchange(overrides: Partial<Record<string, unknown>> = {}) {
       return {
@@ -395,6 +398,7 @@ describe('SearchPage', () => {
     });
 
     it("shows an Exchange: the Chat Thread's title, who asked and when, the question and the answer", async () => {
+      pinToday('2026-10-09T12:00:00.000Z');
       await renderSearch(vi.fn().mockResolvedValue(found([])), {
         searchChatThreads: vi.fn().mockResolvedValue(found([exchange()])),
       });
@@ -406,6 +410,20 @@ describe('SearchPage', () => {
       // The matched word in bold, the rest as text.
       expect(within(row).getByText('Rossigny').tagName).toBe('STRONG');
       expect(row.textContent).toContain('Prince Rénine helps her escape Rossigny, her suitor.');
+    });
+
+    // NBK-98: an Exchange from an earlier year says which.
+    it("adds the year to an Exchange's date when it isn't this year", async () => {
+      pinToday('2026-10-09T12:00:00.000Z');
+      await renderSearch(vi.fn().mockResolvedValue(found([])), {
+        searchChatThreads: vi
+          .fn()
+          .mockResolvedValue(found([exchange({ askedAt: '2025-10-08T10:00:00.000Z' })])),
+      });
+      await searchFor('rossigny');
+
+      const row = await screen.findByRole('link', { name: /Who is who/ });
+      expect(within(row).getByText(/ada@example\.com · Oct 8, 2025/)).toBeTruthy();
     });
 
     it('opens the Chat Thread at that Exchange', async () => {

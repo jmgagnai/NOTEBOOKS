@@ -53,7 +53,7 @@
             >
               <span class="thread-navigator__thread-title">{{ thread.title }}</span>
               <span class="thread-navigator__thread-meta"
-                >{{ thread.author.email }} · {{ thread.createdAt | date: 'MMM d' }}</span
+                >{{ thread.author.email }} · {{ thread.createdAt | shortDate }}</span
               >
             </button>
             @if (isMine(thread)) {
