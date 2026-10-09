@@ -12,6 +12,13 @@ import {
   pinToday,
 } from './chat-panel.spec-helpers';
 
+/** What a browser sends for a double-click: two clicks, then the dblclick. */
+function doubleClick(element: HTMLElement): void {
+  fireEvent.click(element, { detail: 1 });
+  fireEvent.click(element, { detail: 2 });
+  fireEvent.dblClick(element, { detail: 2 });
+}
+
 describe('Chat panel (ThreadNavigator + ThreadView) — Chat Threads', () => {
   beforeEach(resetAppEvents);
   afterEach(() => vi.useRealTimers());
@@ -211,8 +218,8 @@ describe('Chat panel (ThreadNavigator + ThreadView) — Chat Threads', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Open Untitled' }));
 
-    // NBK-51: the title in the header is the rename control.
-    fireEvent.click(
+    // NBK-51: the title in the header is the rename control, by double-click.
+    doubleClick(
       within(await screen.findByRole('heading', { name: 'Untitled' })).getByRole('button'),
     );
     const renameInput = screen.getByLabelText('Rename Chat Thread');
@@ -347,12 +354,69 @@ describe('Chat panel (ThreadNavigator + ThreadView) — Chat Threads', () => {
   });
 
   describe('NBK-51: Thread title', () => {
-    /** Activates the open Thread's title in the header, opening the rename box. */
+    /** Double-clicks the open Thread's title in the header, opening the rename box. */
     async function startRenaming(title: string) {
       const heading = await screen.findByRole('heading', { name: title });
-      fireEvent.click(within(heading).getByRole('button', { name: title }));
+      doubleClick(within(heading).getByRole('button', { name: title }));
       return screen.getByLabelText('Rename Chat Thread') as HTMLInputElement;
     }
+
+    const titleButton = async (title: string) =>
+      within(await screen.findByRole('heading', { name: title })).getByRole('button', {
+        name: title,
+      });
+
+    // A double-click is two clicks first; only a click no second one
+    // follows goes back, so a rename never leaves the Thread on the way.
+    it('goes back to the Notebook on a single click of the title, as the back arrow does', async () => {
+      await renderPanel({
+        listChatThreads: vi.fn().mockResolvedValue([thread()]) as never,
+        listChatMessages: vi.fn().mockResolvedValue([]) as never,
+      });
+
+      fireEvent.click(await titleButton('Revenue questions'), { detail: 1 });
+
+      expect(await screen.findByRole('heading', { name: 'Notebook' })).toBeTruthy();
+      expect(screen.queryByRole('heading', { name: 'Revenue questions' })).toBeNull();
+      expect(screen.queryByLabelText('Rename Chat Thread')).toBeNull();
+    });
+
+    it('opens the rename box on a double-click, staying in the Thread', async () => {
+      await renderPanel({
+        listChatThreads: vi.fn().mockResolvedValue([thread()]) as never,
+        listChatMessages: vi.fn().mockResolvedValue([]) as never,
+      });
+
+      const box = await startRenaming('Revenue questions');
+
+      expect(box.value).toBe('Revenue questions');
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      expect(screen.getByLabelText('Rename Chat Thread')).toBeTruthy();
+      expect(screen.queryByRole('heading', { name: 'Notebook' })).toBeNull();
+    });
+
+    it('opens the rename box from the keyboard with F2', async () => {
+      await renderPanel({
+        listChatThreads: vi.fn().mockResolvedValue([thread()]) as never,
+        listChatMessages: vi.fn().mockResolvedValue([]) as never,
+      });
+
+      fireEvent.keyDown(await titleButton('Revenue questions'), { key: 'F2' });
+
+      expect(screen.getByLabelText('Rename Chat Thread')).toBeTruthy();
+    });
+
+    it('says a double-click renames, straight away on hover', async () => {
+      await renderPanel({
+        listChatThreads: vi.fn().mockResolvedValue([thread()]) as never,
+        listChatMessages: vi.fn().mockResolvedValue([]) as never,
+      });
+
+      const title = await titleButton('Revenue questions');
+      fireEvent.mouseEnter(title);
+
+      expect(await tooltipOf(title)).toBe('Double-click to Rename');
+    });
 
     it('heads the open Thread with its title and who started it, with no rename form', async () => {
       await renderPanel({

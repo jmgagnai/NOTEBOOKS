@@ -18,7 +18,8 @@
       <div class="thread-view__heading">
         <!--
           Spec 04 "Thread view header" (NBK-51): the title is the rename
-          control, as the Notebook title is. Renaming is open to anyone
+          control, as the Notebook title is — by double-click (or F2), since a
+          single click goes back to the Notebook, as the back arrow does. Renaming is open to anyone
           (ADR-0001), so it is not gated on being the author — "Started by"
           stays as the record of who started it. The heading keeps the Thread
           findable by its title for assistive technology.
@@ -28,8 +29,10 @@
             size="medium"
             [title]="thread.title"
             editLabel="Rename Chat Thread"
-            tooltip="Rename Chat Thread"
+            tooltip="Double-click to Rename"
+            renameOn="doubleClick"
             (titleChange)="rename(thread.id, $event)"
+            (pressed)="store.closeThread()"
           />
         </h3>
         <span class="thread-view__started-by">Started by {{ thread.author.email }}</span>
