@@ -4,8 +4,9 @@ import type { TextSegment } from './schema.js';
 /**
  * The text search configuration keyword search runs on, Documents and Chat
  * Threads alike (NBK-104): `simple` with accents removed, created by
- * migration 0015. Indexes are on `to_tsvector('simple_unaccent', …)`, so
- * every query has to spell the expression exactly this way to use them.
+ * migration 0015. Chunks and chat messages store their text as it reads it
+ * (`search_vector`, migration 0017, whose generated columns must name the
+ * same configuration); the queries are built with it.
  */
 export const TEXT_SEARCH_CONFIG = 'simple_unaccent';
 

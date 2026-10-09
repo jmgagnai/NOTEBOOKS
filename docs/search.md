@@ -35,9 +35,21 @@ exclusions (`-lupin`) or only punctuation, finds nothing (`namesAWord`).
 No index can serve "not this word": on a 45,000-Chunk Notebook such a
 query took 24 s to return 20 arbitrary Chunks.
 
-Migration 0015 indexes exactly `to_tsvector('simple_unaccent', …)` on
-`chunks.text` and `chat_messages.content`, and the queries match on that
-same expression, so they use the GIN indexes. The configuration's name lives
+Each Chunk and chat message stores its text as `simple_unaccent` reads it,
+in a generated `search_vector` column with a GIN index (migration 0017,
+NBK-106). The queries match, rank and order on that column. Before, they
+recomputed `to_tsvector` per match, which made a common word slow:
+
+| Query | Matches | Recomputed | Stored |
+| --- | --- | --- | --- |
+| "the" | 21,739 | 9.85 s | 0.25–0.30 s |
+| "bene gesserit" | 1,999 | 1.41 s | 0.024 s |
+
+Measured on a copy of a 160,297-Chunk development database. Adding the
+column there took about 2 min 40 s once (the table rewrite, then the
+index).
+
+The configuration's name lives
 once in TypeScript, `TEXT_SEARCH_CONFIG` in `src/search/keywords.ts`, along
 with the Excerpt helpers both routes share.
 
@@ -190,8 +202,9 @@ and drop it from the Excerpt.
 GET /notebooks/:notebookId/search/threads?q=<keywords>
 ```
 
-Every question and answer is matched as above, on `simple_unaccent`.
-Migration 0014 first indexed it on plain `simple`; 0015 moved the index.
+Every question and answer is matched as above, on `simple_unaccent`, from
+each message's stored `search_vector` (migration 0017; 0014 and 0015 had
+indexed the expression on `simple`, then on `simple_unaccent`).
 
 A result is an **Exchange** (GLOSSARY.md): a hit on a question pairs with the
 answer after it, and a hit on an answer pairs with the question before it.
