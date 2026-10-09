@@ -175,7 +175,7 @@ describe('DocumentDetailPage — opened from a Citation', () => {
     expect(screen.queryByTestId('cited-version-notice')).toBeNull();
   });
 
-  it("marks the passage at the cited chunk's location", async () => {
+  it('marks the cited Chunk at its location', async () => {
     const client = citationClient();
 
     await renderPage(client, citationRoute());

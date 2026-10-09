@@ -29,7 +29,7 @@ import {
 } from './notebook-detail-page.spec-helpers';
 import { tooltipOf } from '../chat/chat-panel.spec-helpers';
 
-describe('NotebookDetailPage — workspace', () => {
+describe('NotebookDetailPage — layout', () => {
   it("renders the Notebook's title and its Documents", async () => {
     const listNotebooks = vi
       .fn()
@@ -537,7 +537,7 @@ describe('NotebookDetailPage — workspace', () => {
   // to the app's sidebar — each a labelled landmark so a keyboard user can
   // jump between them, under a slim header that carries the way back, the
   // title and the Notebook's actions.
-  describe('NBK-35: workspace frame', () => {
+  describe('NBK-35: page frame', () => {
     it('lays the Notebook out as two labelled regions, with no Chat Threads column', async () => {
       await renderWithUpload(vi.fn());
 

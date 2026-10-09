@@ -42,7 +42,7 @@ describe('EditableTitle', () => {
 
     expect(renamed).toHaveBeenCalledWith('Research 2026');
     expect(screen.queryByLabelText('Notebook title')).toBeNull();
-    // The owner has not re-bound the title yet, so the button reads the old one.
+    // The host has not re-bound the title yet, so the button reads the old one.
     expect(screen.getByRole('button', { name: 'Research' })).toBeTruthy();
   });
 
@@ -97,8 +97,8 @@ describe('EditableTitle', () => {
   });
 
   // NBK-56: a Notebook card starts the rename from its "…" menu rather than
-  // from the title, so the owner can open the box itself.
-  it('opens the box prefilled with the title when its owner calls edit()', async () => {
+  // from the title, so the host can open the box itself.
+  it('opens the box prefilled with the title when its host calls edit()', async () => {
     const { fixture } = await render(EditableTitle, {
       inputs: { title: 'Research', editLabel: 'Notebook title' },
     });
@@ -146,7 +146,7 @@ describe('EditableTitle', () => {
   it.each([
     ['committed', 'Enter'],
     ['discarded', 'Escape'],
-  ])('tells its owner the box closed when the edit is %s', async (_case, key) => {
+  ])('tells its host the box closed when the edit is %s', async (_case, key) => {
     const closed = vi.fn();
     await render(EditableTitle, {
       inputs: { title: 'Research', editLabel: 'Notebook title' },
