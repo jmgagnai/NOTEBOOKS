@@ -70,14 +70,15 @@ describe('Versioning integrity, end to end', () => {
   /**
    * Embeddings are opaque numbers, so they are pinned to something a test can
    * reason about: one orthonormal basis vector of the embedding space per
-   * topic phrase (the device NBK-9's and NBK-12's tests use). Cosine
-   * similarity between two distinct axes is exactly 0 and between an axis and
-   * itself exactly 1, so every expected score below is a known-good literal
-   * rather than a number recomputed the way the code computes it.
+   * topic phrase (the device NBK-12's tests use). Cosine similarity between
+   * two distinct axes is exactly 0 and between an axis and itself exactly 1,
+   * so chat retrieval ranks a Version's Chunk first exactly when the question
+   * is about its claim.
    *
    * Each phrase is the figure one Document Version claims, so "which Version
-   * answered this" is readable straight off the score: a question about
-   * fourteen weeks scores 1 against v1's chunk and 0 against v2's.
+   * answered this" is decided by the claim alone: a question about fourteen
+   * weeks is nearest v1's chunk. Search finds the claim's words instead
+   * (NBK-104).
    */
   const TOPICS = ['fourteen weeks', 'six weeks', 'nine weeks', 'carrier capacity'];
 
@@ -125,9 +126,7 @@ describe('Versioning integrity, end to end', () => {
 
   /**
    * The Abstract stage 2 generates for a Version, carrying the Version's own
-   * claim so a search result can be told apart from the previous Version's.
-   * Per GLOSSARY.md the Abstract is the artifact search results carry, which
-   * is what makes it the observable "which Version did search return".
+   * claim so each Version's summaries can be told apart.
    */
   function abstractFor(claim: string): string {
     return `Abstract of the logistics review stating ${claim}. ${words(60)}`;
@@ -329,15 +328,14 @@ describe('Versioning integrity, end to end', () => {
     await ensureBucket(s3, DOCUMENTS_BUCKET);
 
     // One app, with every dependency a full deployment has: uploads store
-    // bytes in MinIO and enqueue stage 1, chat answers through OpenRouter,
-    // and search embeds its query with the same model stage 3 used.
+    // bytes in MinIO and enqueue stage 1, and chat answers through
+    // OpenRouter. Search is by keyword (NBK-104) and needs nothing more.
     app = await buildApp({
       pool,
       s3,
       documentsBucket: DOCUMENTS_BUCKET,
       jobs,
       chat: { complete, embed, model: 'test/chat-model' },
-      embed,
     });
   }, 300_000);
 
@@ -468,14 +466,21 @@ describe('Versioning integrity, end to end', () => {
     return rows[0].ingestion_status;
   }
 
-  interface SearchHit extends ApiDocument {
-    score: number;
+  /** A Documents search hit (NBK-104): one Chunk, and the Version it is from. */
+  interface SearchHit {
+    documentId: string;
+    match: { versionId: string };
   }
 
-  async function search(session: string, notebookId: string, q: string): Promise<SearchHit[]> {
+  /**
+   * Searches for a Version's claim ("six weeks"), as a phrase: since NBK-104
+   * search is by keyword, so which Version is searched shows as whether a
+   * claim only one Version states is found at all.
+   */
+  async function search(session: string, notebookId: string, claim: string): Promise<SearchHit[]> {
     const response = await app.inject({
       method: 'GET',
-      url: `/notebooks/${notebookId}/search?q=${encodeURIComponent(q)}`,
+      url: `/notebooks/${notebookId}/search?q=${encodeURIComponent(`"${claim}"`)}`,
       cookies: { session },
     });
     expect(response.statusCode).toBe(200);
@@ -567,17 +572,10 @@ describe('Versioning integrity, end to end', () => {
     expect(v1Document.latestVersion.versionNumber).toBe(1);
     const v1 = v1Document.latestVersion.id;
 
-    const readyAfterUpload = await search(
-      session,
-      notebookId,
-      'how long are lead times, fourteen weeks?',
-    );
+    const readyAfterUpload = await search(session, notebookId, 'fourteen weeks');
     expect(readyAfterUpload).toHaveLength(1);
-    expect(readyAfterUpload[0].status).toBe('ready');
-    // Exactly 1: the query and v1's only chunk are the same axis of the
-    // embedding space.
-    expect(readyAfterUpload[0].score).toBe(1);
-    expect(readyAfterUpload[0].abstract).toBe(abstractFor('fourteen weeks'));
+    expect(readyAfterUpload[0].documentId).toBe(v1Document.id);
+    expect(readyAfterUpload[0].match.versionId).toBe(v1);
 
     // 2. Ask a question, and 3. get a Citation out of the answer.
     const threadId = await startThread(session, notebookId, 'Lead times');
@@ -607,25 +605,15 @@ describe('Versioning integrity, end to end', () => {
 
     // 5. Search again.
     //
-    // The new Version is included — positively: the Document comes back with
-    // v2's Abstract, v2 as its latest Version, and a perfect score for a
-    // query about what v2 says.
-    const forNewClaim = await search(session, notebookId, 'lead times of six weeks');
+    // The new Version is included — positively: what v2 says is found, in
+    // v2's Chunk of the same Document.
+    const forNewClaim = await search(session, notebookId, 'six weeks');
     expect(forNewClaim).toHaveLength(1);
-    expect(forNewClaim[0].id).toBe(v1Document.id);
-    expect(forNewClaim[0].latestVersion.id).toBe(v2);
-    expect(forNewClaim[0].abstract).toBe(abstractFor('six weeks'));
-    expect(forNewClaim[0].score).toBe(1);
+    expect(forNewClaim[0].documentId).toBe(v1Document.id);
+    expect(forNewClaim[0].match.versionId).toBe(v2);
 
-    // And the old Version is excluded. Said as a score rather than an
-    // absence, because search filters nothing by relevance (docs/search.md):
-    // the Document is still returned for a query about v1's figure, but with
-    // similarity 0 — the distance to v2's chunk. Were v1's chunks still
-    // searched it would be 1.
-    const forOldClaim = await search(session, notebookId, 'lead times of fourteen weeks');
-    expect(forOldClaim).toHaveLength(1);
-    expect(forOldClaim[0].latestVersion.id).toBe(v2);
-    expect(forOldClaim[0].score).toBe(0);
+    // And the old Version is excluded: what only v1 says is found nowhere.
+    expect(await search(session, notebookId, 'fourteen weeks')).toEqual([]);
 
     // Chat agrees: a question about the superseded figure is now answered
     // from v2's text, and v1's text is nowhere in the prompt.
@@ -699,26 +687,22 @@ describe('Versioning integrity, end to end', () => {
 
     // With neither Version `ready`, the Document is out of search entirely
     // rather than answering from a half-ingested Version.
-    expect(await search(session, notebookId, 'lead times of fourteen weeks')).toEqual([]);
+    expect(await search(session, notebookId, 'fourteen weeks')).toEqual([]);
+    expect(await search(session, notebookId, 'six weeks')).toEqual([]);
 
     // v2's pipeline finishes first, leaving v1's stage 2 and 3 still queued.
     await drainIngestion({ versionId: v2 });
-    const afterV2 = await search(session, notebookId, 'lead times of six weeks');
+    const afterV2 = await search(session, notebookId, 'six weeks');
     expect(afterV2).toHaveLength(1);
-    expect(afterV2[0].latestVersion.id).toBe(v2);
-    expect(afterV2[0].score).toBe(1);
+    expect(afterV2[0].match.versionId).toBe(v2);
 
     // Now v1's ingestion catches up and takes the *superseded* Version all
     // the way to `ready`, chunks and all.
     await drainIngestion({ versionId: v1 });
     expect(await versionStatus(v1)).toBe('ready');
 
-    // It still contributes nothing. A query about v1's figure scores 0 — the
-    // distance to v2's chunk — not the 1 it would score against v1's own.
-    const afterLateV1 = await search(session, notebookId, 'lead times of fourteen weeks');
-    expect(afterLateV1).toHaveLength(1);
-    expect(afterLateV1[0].latestVersion.id).toBe(v2);
-    expect(afterLateV1[0].score).toBe(0);
+    // It still contributes nothing: what only v1 says is found nowhere.
+    expect(await search(session, notebookId, 'fourteen weeks')).toEqual([]);
 
     // And chat is grounded in v2's text alone.
     const threadId = await startThread(session, notebookId, 'Lead times');
@@ -783,9 +767,9 @@ describe('Versioning integrity, end to end', () => {
     expect(listed[0].status).toBe('failed');
     expect(listed[0].latestVersion.versionNumber).toBe(2);
 
-    // But out of search: no fallback to v1, so the query that scored 1
-    // against v1 ten lines ago now finds nothing at all.
-    expect(await search(session, notebookId, 'lead times of fourteen weeks')).toEqual([]);
+    // But out of search: no fallback to v1, so v1's claim, found ten lines
+    // ago, now finds nothing at all.
+    expect(await search(session, notebookId, 'fourteen weeks')).toEqual([]);
 
     // And out of chat, which says so rather than answering from v1.
     chatAnswer = 'This should never be generated: there is nothing to ground it in.';
@@ -873,14 +857,11 @@ describe('Versioning integrity, end to end', () => {
       );
     }
 
-    // Only the third Version is searched: its figure scores 1, the two it
-    // superseded score 0.
-    expect((await search(session, notebookId, 'lead times of nine weeks'))[0].score).toBe(1);
-    expect((await search(session, notebookId, 'lead times of fourteen weeks'))[0].score).toBe(0);
-    expect((await search(session, notebookId, 'lead times of six weeks'))[0].score).toBe(0);
-    expect((await search(session, notebookId, 'lead times of nine weeks'))[0].abstract).toBe(
-      abstractFor('nine weeks'),
-    );
+    // Only the third Version is searched: its claim is found, the claims of
+    // the two it superseded are not.
+    expect(await search(session, notebookId, 'nine weeks')).toHaveLength(1);
+    expect(await search(session, notebookId, 'fourteen weeks')).toEqual([]);
+    expect(await search(session, notebookId, 'six weeks')).toEqual([]);
   });
 
   // The third seam, and the one NBK-12 left a sharp edge on deliberately:
@@ -941,9 +922,8 @@ describe('Versioning integrity, end to end', () => {
 
     // And the current Version is unaffected by the failed re-chunk of the old
     // one: search still answers from v2.
-    const hits = await search(session, notebookId, 'lead times of six weeks');
+    const hits = await search(session, notebookId, 'six weeks');
     expect(hits).toHaveLength(1);
-    expect(hits[0].latestVersion.id).toBe(v2);
-    expect(hits[0].score).toBe(1);
+    expect(hits[0].match.versionId).toBe(v2);
   });
 });

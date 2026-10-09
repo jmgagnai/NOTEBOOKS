@@ -37,9 +37,8 @@
       <mat-progress-spinner class="search-page__spinner" mode="indeterminate" diameter="28" />
     } @else if (!store.searched()) {
       <p class="search-page__hint">
-        Search finds Documents by meaning, not just by the words you type, and Chat Threads by the
-        words in their questions and answers. Only Documents that have finished ingesting are
-        searched.
+        Search finds the words you type in the Notebook's Documents and Chat Threads, accents
+        ignored. Only Documents that have finished ingesting are searched.
       </p>
     } @else if (nothingMatches()) {
       <p class="search-page__hint">Nothing in this Notebook matches "{{ store.query() }}".</p>
@@ -56,42 +55,25 @@
             <p class="search-page__error">{{ error }}</p>
           } @else {
             <!--
-              One flat row per Document, the whole row a link to it at its
-              best Chunk (NBK-96). Headed by its extracted title, as the
-              Document page is, and led by its Abstract — per GLOSSARY.md the
-              artifact "used in search results".
+              One flat row per matching Chunk (NBK-104), the whole row a link
+              to the Document at that Chunk (NBK-96): its Excerpt, the words
+              searched for bold, then which Document it is from and where.
             -->
             <ul class="search-page__results">
-              @for (result of store.results(); track result.id) {
+              @for (result of store.results(); track result.match.chunkId) {
                 <li>
                   <a
                     class="search-page__result"
-                    [routerLink]="['/notebooks', notebookId, 'documents', result.id]"
+                    [routerLink]="['/notebooks', notebookId, 'documents', result.documentId]"
                     [queryParams]="chunkLink(result.match)"
                     [state]="openedFromSearch"
                   >
-                    <mat-icon class="search-page__result-icon" [svgIcon]="kind(result).icon" />
                     <span class="search-page__result-body">
-                      <span class="search-page__result-title">{{
-                        result.title ?? result.filename
-                      }}</span>
-                      @if (result.title) {
-                        <span class="search-page__result-meta"
-                          >{{ result.filename }} · v{{ result.latestVersion.versionNumber }}</span
-                        >
-                      } @else {
-                        <span class="search-page__result-meta"
-                          >v{{ result.latestVersion.versionNumber }}</span
-                        >
-                      }
-                      @if (result.abstract) {
-                        <span class="search-page__result-abstract">{{ result.abstract }}</span>
-                      } @else {
-                        <span
-                          class="search-page__result-abstract search-page__result-abstract--pending"
-                          >Abstract not generated yet.</span
-                        >
-                      }
+                      <app-marked-text
+                        class="search-page__result-excerpt"
+                        [segments]="result.excerpt"
+                      />
+                      <span class="search-page__result-meta">{{ whereFrom(result) }}</span>
                     </span>
                   </a>
                 </li>
@@ -131,7 +113,7 @@
                         [segments]="exchange.question"
                       />
                       <app-marked-text
-                        class="search-page__result-abstract search-page__result-abstract--excerpt"
+                        class="search-page__result-answer"
                         [segments]="exchange.answer"
                       />
                     </span>

@@ -1,35 +1,37 @@
 import type { Pool } from 'pg';
 import { notebookIsActive } from '../notebooks/active-notebooks.js';
-import type { ExchangeSearchResult, TextSegment } from './schema.js';
+import {
+  headlineOptions,
+  namesAWord,
+  segments,
+  TEXT_SEARCH_CONFIG,
+  withoutTags,
+} from './keywords.js';
+import type { ExchangeSearchResult } from './schema.js';
 
 /** The most Exchanges one Chat Thread search returns (NBK-97). */
 export const EXCHANGE_RESULT_LIMIT = 20;
-
-// What `ts_headline` puts around a matched word. Private-use code points:
-// message text never contains them, so splitting on them is exact, and no
-// markup ever travels — the frontend renders text and bold, not HTML.
-const START = '';
-const STOP = '';
 
 /**
  * Keyword search over a Notebook's Chat Threads (NBK-97), one result per
  * matching **Exchange** (GLOSSARY.md): a hit on a question pairs with the
  * answer after it, a hit on an answer with the question before it, and an
  * Exchange both halves of which match is one result, ranked by the two
- * together. Full-text, `simple` configuration, on the expression migration
- * 0014 indexes. Deleted Chat Threads and Notebooks are left out.
+ * together. Full-text on `simple_unaccent` (accents and case ignored), on
+ * the expression migration 0015 indexes. Deleted Chat Threads and Notebooks
+ * are left out.
  */
 const SEARCH_EXCHANGES_SQL = `
-  WITH q AS (SELECT websearch_to_tsquery('simple', $2) AS query),
+  WITH q AS (SELECT websearch_to_tsquery('${TEXT_SEARCH_CONFIG}', $2) AS query),
   hits AS (
     SELECT m.id, m.chat_thread_id, m.role, m.seq,
-           ts_rank(to_tsvector('simple', m.content), q.query) AS rank
+           ts_rank(to_tsvector('${TEXT_SEARCH_CONFIG}', m.content), q.query) AS rank
     FROM chat_messages m
     JOIN chat_threads t ON t.id = m.chat_thread_id
     CROSS JOIN q
     WHERE t.notebook_id = $1 AND t.deleted_at IS NULL
       AND ${notebookIsActive('t.notebook_id')}
-      AND to_tsvector('simple', m.content) @@ q.query
+      AND to_tsvector('${TEXT_SEARCH_CONFIG}', m.content) @@ q.query
   ),
   pairs AS (
     SELECT h.chat_thread_id, h.rank,
@@ -55,8 +57,8 @@ const SEARCH_EXCHANGES_SQL = `
     e.chat_thread_id, t.title AS thread_title,
     e.question_id, e.answer_id, qm.created_at AS asked_at,
     u.id AS asker_id, u.email AS asker_email,
-    ts_headline('simple', qm.content, q.query, $4) AS question,
-    ts_headline('simple', am.content, q.query, $5) AS answer
+    ts_headline('${TEXT_SEARCH_CONFIG}', ${withoutTags('qm.content')}, q.query, $4) AS question,
+    ts_headline('${TEXT_SEARCH_CONFIG}', ${withoutTags('am.content')}, q.query, $5) AS answer
   FROM exchanges e
   JOIN chat_threads t ON t.id = e.chat_thread_id
   JOIN chat_messages qm ON qm.id = e.question_id
@@ -69,10 +71,10 @@ const SEARCH_EXCHANGES_SQL = `
 
 // The question is short and shown whole; the answer as up to two fragments
 // around the matches, about two lines.
-const QUESTION_HEADLINE = `StartSel=${START}, StopSel=${STOP}, HighlightAll=true`;
-const ANSWER_HEADLINE =
-  `StartSel=${START}, StopSel=${STOP}, MaxFragments=2, MaxWords=24, MinWords=10, ` +
-  'FragmentDelimiter=" … "';
+const QUESTION_HEADLINE = headlineOptions('HighlightAll=true');
+const ANSWER_HEADLINE = headlineOptions(
+  'MaxFragments=2, MaxWords=24, MinWords=10, FragmentDelimiter=" … "',
+);
 
 interface ExchangeRow {
   chat_thread_id: string;
@@ -91,7 +93,7 @@ export async function searchExchanges(
   notebookId: string,
   query: string,
 ): Promise<ExchangeSearchResult[]> {
-  if (query.trim() === '') return [];
+  if (!(await namesAWord(pool, query))) return [];
   const { rows } = await pool.query<ExchangeRow>(SEARCH_EXCHANGES_SQL, [
     notebookId,
     query,
@@ -109,19 +111,4 @@ export async function searchExchanges(
     question: segments(row.question),
     answer: segments(row.answer),
   }));
-}
-
-/** A `ts_headline` excerpt as plain text runs, the matched ones flagged. */
-export function segments(headline: string): TextSegment[] {
-  const out: TextSegment[] = [];
-  for (const [i, part] of headline.split(START).entries()) {
-    if (i === 0) {
-      if (part) out.push({ text: part, match: false });
-      continue;
-    }
-    const [matched, rest = ''] = part.split(STOP);
-    if (matched) out.push({ text: matched, match: true });
-    if (rest) out.push({ text: rest, match: false });
-  }
-  return out;
 }

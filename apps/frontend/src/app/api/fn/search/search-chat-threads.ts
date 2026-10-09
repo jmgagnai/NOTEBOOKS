@@ -11,7 +11,7 @@ import { RequestBuilder } from '../../request-builder';
 export interface SearchChatThreads$Params {
 
 /**
- * Keywords, matched literally in questions and answers; blank returns no results.
+ * Keywords, matched literally in questions and answers, accents and case ignored; blank returns no results.
  */
   q?: string;
   notebookId: string;

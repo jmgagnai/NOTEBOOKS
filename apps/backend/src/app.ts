@@ -49,12 +49,6 @@ export interface BuildAppOptions {
   // deployment without an OpenRouter key still serves Thread CRUD, and
   // asking a question reports 503 instead of recording an unanswerable one.
   chat?: ChatDeps;
-  // Notebook search (NBK-9) embeds the incoming query with the same model
-  // ingestion stage 3 embedded the chunks with. Unlike the options above,
-  // omitting it does NOT drop the route: `GET /notebooks/:id/search` stays
-  // registered and answers 503, so the published contract has one shape
-  // whether or not an OpenRouter key is configured.
-  embed?: Embedder;
   // The Administrators' emails (GLOSSARY.md), as `ADMIN_EMAILS` lists them:
   // who may restore a deleted Chat Thread (NBK-95). Matched without regard
   // to case or surrounding spaces. Omitted, there is no Administrator.
@@ -73,7 +67,6 @@ export async function buildApp({
   jobs,
   appEvents,
   chat,
-  embed,
   administrators = [],
 }: BuildAppOptions): Promise<FastifyInstance> {
   const app = Fastify({ logger: false });
@@ -130,7 +123,7 @@ export async function buildApp({
       administrators.map((email) => email.trim().toLowerCase()).filter((email) => email !== ''),
     ),
   });
-  registerSearchRoutes(app, { pool, embed });
+  registerSearchRoutes(app, { pool });
   if (s3 && documentsBucket) {
     registerDocumentRoutes(app, { pool, s3, documentsBucket, jobs });
   }

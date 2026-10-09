@@ -208,6 +208,43 @@ describe('Chat Thread search', () => {
     expect(response.statusCode).toBe(404);
   });
 
+  // NBK-104: the same matching as Documents — accents and case ignored.
+  it('ignores accents and case, both ways', async () => {
+    const session = await signIn('ada@example.com');
+    const notebookId = await notebookOf(session);
+    await threadWith(session, notebookId, 'Where', [
+      ['Where is the needle?', 'At Étretat, in the sea.'],
+    ]);
+
+    const unaccented = (await search(session, notebookId, 'etretat')).json() as ExchangeResult[];
+    const accented = (await search(session, notebookId, 'ÉTRÉTAT')).json() as ExchangeResult[];
+
+    expect(unaccented.map((hit) => marked(hit.answer))).toEqual([['Étretat']]);
+    expect(accented).toHaveLength(1);
+  });
+
+  it('finds nothing for a query that only excludes', async () => {
+    const session = await signIn('ada@example.com');
+    const notebookId = await notebookOf(session);
+    await threadWith(session, notebookId, 'Any', [['Anything?', 'Something.']]);
+
+    const response = await search(session, notebookId, '-lupin');
+
+    expect(response.json()).toEqual([]);
+  });
+
+  it("keeps angle brackets in an answer's Excerpt as text", async () => {
+    const session = await signIn('ada@example.com');
+    const notebookId = await notebookOf(session);
+    await threadWith(session, notebookId, 'Code', [
+      ['What type?', 'Use List<String> for the Lupin names.'],
+    ]);
+
+    const [hit] = (await search(session, notebookId, 'lupin')).json() as ExchangeResult[];
+
+    expect(plain(hit.answer)).toContain('List<String>');
+  });
+
   it('returns no results for a blank query', async () => {
     const session = await signIn();
     const notebookId = await notebookOf(session);
