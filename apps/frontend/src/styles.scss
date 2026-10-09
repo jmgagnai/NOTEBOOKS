@@ -243,6 +243,19 @@ html {
   // subtle grey Copilot puts its navigation on, reused rather than a new
   // colour so it stays one of the theme's greys.
   --app-sidebar-surface: var(--mat-sys-surface-container);
+  // The words a search result was found by, where it opens: inside the
+  // cited Chunk's or the Exchange's own tint, so a yellow distinct from it
+  // and from every theme colour, as a find-in-page marks.
+  --app-search-hit: #ffe66d;
+}
+
+// A search result's words where it opens (shared/search-words.ts): the
+// cited Chunk of a Document, the Exchange of a Chat Thread. Global because
+// the Document's marks are in sanitised HTML no component style reaches.
+mark.search-hit {
+  background: var(--app-search-hit);
+  color: inherit;
+  border-radius: var(--mat-sys-corner-extra-small);
 }
 
 html,

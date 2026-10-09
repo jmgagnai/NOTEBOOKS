@@ -164,6 +164,7 @@
                 [markdown]="markdown"
                 [highlightFrom]="citedFrom()"
                 [highlightTo]="citedTo()"
+                [markWords]="markWords()"
                 (progress)="contentProgress.set($event)"
               />
             } @else if (versionFailed()) {

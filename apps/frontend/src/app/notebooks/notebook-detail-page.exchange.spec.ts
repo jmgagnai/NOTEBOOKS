@@ -116,6 +116,20 @@ describe('NotebookDetailPage — opening a Chat Thread at an Exchange (NBK-97)',
     expect(marked).toEqual([rowOf('What was revenue in Q2?'), rowOf('Revenue in Q2 was 11.9M.')]);
   });
 
+  // The search result's words are marked inside the Exchange, question and
+  // answer, and nowhere else in the Chat Thread.
+  it('marks the words searched for inside that Exchange, and only there', async () => {
+    await renderAt(`${AT_A1}&words=revenue`);
+
+    await screen.findAllByTestId('found-exchange');
+    await waitFor(() => expect(document.querySelectorAll('mark')).toHaveLength(2));
+    const [question, answer] = screen.getAllByTestId('found-exchange');
+    expect(question.querySelector('mark')?.textContent).toBe('revenue');
+    expect(answer.querySelector('mark')?.textContent).toBe('Revenue');
+    // "Revenue in Q3 was 12.4M." is the next Exchange: not marked.
+    expect(rowOf('Revenue in Q3 was 12.4M.').querySelector('mark')).toBeNull();
+  });
+
   it('opens that Chat Thread even when another one of the Notebook is already open', async () => {
     await renderAt(`/notebooks/${NOTEBOOK_ID}`);
     await screen.findByText('Who ships the parts?');

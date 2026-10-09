@@ -228,7 +228,22 @@ describe('SearchPage', () => {
         chunk: 'chunk-7',
         from: '120',
         to: '340',
+        words: 'mars',
       });
+    });
+
+    // The words searched for travel with the result, so the opened page can
+    // mark them in yellow inside the cited Chunk: the corrected ones, if a
+    // word was corrected, and never one the query excluded.
+    it('carries the words searched for, as corrected, and not the excluded ones', async () => {
+      await renderSearch(
+        vi.fn().mockResolvedValue(found([result()], '"rossigny castle" or Étretat -lupin')),
+      );
+      await searchFor('"rosigny castle" or Étretat -lupin');
+
+      const link = await screen.findByRole('link', { name: /The Red Planet/ });
+      const params = new URL(link.getAttribute('href')!, 'http://app').searchParams;
+      expect(params.get('words')).toBe('rossigny castle Étretat');
     });
 
     it('leaves the range out of the link when the Chunk could not be located', async () => {
@@ -245,7 +260,11 @@ describe('SearchPage', () => {
 
       const link = await screen.findByRole('link', { name: /The Red Planet/ });
       const params = new URL(link.getAttribute('href')!, 'http://app').searchParams;
-      expect(Object.fromEntries(params)).toEqual({ version: 'v-1', chunk: 'chunk-7' });
+      expect(Object.fromEntries(params)).toEqual({
+        version: 'v-1',
+        chunk: 'chunk-7',
+        words: 'mars',
+      });
     });
   });
 
@@ -435,7 +454,11 @@ describe('SearchPage', () => {
       const row = await screen.findByRole('link', { name: /Who is who/ });
       const href = new URL(row.getAttribute('href')!, 'http://app');
       expect(href.pathname).toBe(`/notebooks/${NOTEBOOK_ID}`);
-      expect(Object.fromEntries(href.searchParams)).toEqual({ thread: 'thread-1', message: 'a-1' });
+      expect(Object.fromEntries(href.searchParams)).toEqual({
+        thread: 'thread-1',
+        message: 'a-1',
+        words: 'rossigny',
+      });
     });
 
     it('renders message text as text, never as markup', async () => {

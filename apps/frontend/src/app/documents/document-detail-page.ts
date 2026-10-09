@@ -132,6 +132,15 @@ export class DocumentDetailPage implements OnInit, OnDestroy {
   protected readonly citedTo = computed(() => numberParam(this.query().get('to')));
 
   /**
+   * The words a search result was found by (`&words=`), marked in yellow
+   * inside the cited Chunk — only when there is one to mark them in, never
+   * across the whole Document.
+   */
+  protected readonly markWords = computed(() =>
+    this.citedFrom() === null ? [] : (this.query().get('words') ?? '').split(' ').filter(Boolean),
+  );
+
+  /**
    * Whether the reader has expanded past the Executive Summary. Component
    * state rather than store state: it is this view's disclosure, and the
    * fetched content itself (which is what's worth keeping) lives in the

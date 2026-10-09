@@ -11,8 +11,13 @@ import { TextSegment } from './search.store';
   standalone: true,
   // One line, or the runs pick up spaces between them.
   // prettier-ignore
-  template: `@for (segment of segments(); track $index) {@if (segment.match) {<strong>{{ segment.text }}</strong>} @else {{{ segment.text }}}}`,
+  template: `@for (segment of segments(); track $index) {@if (segment.match) {@if (marker() === 'mark') {<mark class="search-hit">{{ segment.text }}</mark>} @else {<strong>{{ segment.text }}</strong>}} @else {{{ segment.text }}}}`,
 })
 export class MarkedText {
-  readonly segments = input.required<TextSegment[]>();
+  readonly segments = input.required<readonly TextSegment[]>();
+  /**
+   * How a match shows: bold in a search result's Excerpt, yellow (`<mark>`)
+   * where the result opens, inside the Exchange it found.
+   */
+  readonly marker = input<'strong' | 'mark'>('strong');
 }

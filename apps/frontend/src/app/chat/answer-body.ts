@@ -3,6 +3,8 @@ import { Router, RouterLink } from '@angular/router';
 import { Citation } from './chat.store';
 import { answerSegments, citationLink, citationParams, citationTitle } from './citations';
 import { MarkdownView } from '../documents/markdown-view';
+import { MarkedText } from '../search/marked-text';
+import { markRuns } from '../shared/search-words';
 
 /** Escapes a value for a double-quoted HTML attribute inside Markdown source. */
 function escapeAttribute(value: string): string {
@@ -36,7 +38,7 @@ function escapeAttribute(value: string): string {
 @Component({
   selector: 'app-answer-body',
   standalone: true,
-  imports: [MarkdownView, RouterLink],
+  imports: [MarkdownView, MarkedText, RouterLink],
   templateUrl: './answer-body.html',
   styleUrl: './answer-body.scss',
   host: { '(click)': 'followInAppLink($event)' },
@@ -45,6 +47,8 @@ export class AnswerBody {
   readonly notebookId = input.required<string>();
   readonly content = input.required<string>();
   readonly citations = input.required<Citation[]>();
+  /** Words a search result was found by, marked in yellow (NBK-97's Exchange). */
+  readonly markWords = input<readonly string[]>([]);
 
   private readonly router = inject(Router);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
@@ -70,6 +74,7 @@ export class AnswerBody {
   protected readonly link = (citation: Citation) => citationLink(this.notebookId(), citation);
   protected readonly params = (citation: Citation) => citationParams(citation);
   protected readonly title = citationTitle;
+  protected readonly runs = (text: string) => markRuns(text, this.markWords());
 
   constructor() {
     // The sanitizer strips ARIA attributes from rendered HTML, so the

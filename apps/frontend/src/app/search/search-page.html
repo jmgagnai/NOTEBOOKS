@@ -116,7 +116,11 @@
                     <a
                       class="search-page__result"
                       [routerLink]="['/notebooks', notebookId]"
-                      [queryParams]="{ thread: exchange.threadId, message: exchange.answerId }"
+                      [queryParams]="{
+                        thread: exchange.threadId,
+                        message: exchange.answerId,
+                        words: words(),
+                      }"
                     >
                       <mat-icon class="search-page__result-icon" svgIcon="chat" />
                       <span class="search-page__result-body">

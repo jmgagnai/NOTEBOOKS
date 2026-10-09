@@ -218,4 +218,24 @@ describe('DocumentDetailPage — opened from a Citation', () => {
 
     expect(await screen.findByText('Document Version not found.')).toBeTruthy();
   });
+
+  // A search result also says which words were searched for: they are
+  // marked inside the cited Chunk — whole words, accents and case ignored —
+  // and nowhere else.
+  it('marks the words searched for inside the cited Chunk, and only there', async () => {
+    await renderPage(citationClient(), citationRoute({ words: 'REVENUE grèw' }));
+
+    const cited = await screen.findByTestId('cited-passage');
+    const marks = [...cited.querySelectorAll('mark')].map((m) => m.textContent);
+    expect(marks).toEqual(['Revenue', 'grew']);
+    // "## Revenue" sits outside the cited Chunk.
+    expect(document.querySelectorAll('mark')).toHaveLength(2);
+  });
+
+  it('marks nothing when the link names no words, as a Citation does not', async () => {
+    await renderPage(citationClient(), citationRoute());
+
+    await screen.findByTestId('cited-passage');
+    expect(document.querySelector('mark')).toBeNull();
+  });
 });

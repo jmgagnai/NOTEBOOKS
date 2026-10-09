@@ -148,7 +148,13 @@ export class NotebookDetailPage implements OnInit, OnDestroy {
     // Thread search result (NBK-97) arrives naming a Thread and the answer
     // of the Exchange to open it at.
     const query = this.route.snapshot.queryParamMap;
-    void this.chatStore.loadThreads(this.notebookId, query.get('thread'), query.get('message'));
+    // …and the words it was found by, marked inside that Exchange.
+    void this.chatStore.loadThreads(
+      this.notebookId,
+      query.get('thread'),
+      query.get('message'),
+      (query.get('words') ?? '').split(' ').filter(Boolean),
+    );
     this.chatStore.watchNotebook(this.notebookId);
   }
 
