@@ -61,7 +61,7 @@
               <ng-container
                 *ngTemplateOutlet="
                   question;
-                  context: { $implicit: message, marks: marksFor(message.id) }
+                  context: { $implicit: message, runs: runsFor(message.id) }
                 "
               />
             </li>
@@ -213,15 +213,15 @@
   shared Thread stays attributed — GLOSSARY.md requires every message to
   record who asked it — without "@example.com" on every line.
 -->
-<ng-template #question let-question let-sending="sending" let-marks="marks">
+<ng-template #question let-question let-sending="sending" let-runs="runs">
   <div class="thread-view__body thread-view__bubble">
     <span class="thread-view__message-author" data-testid="chat-message-author">{{
       shortName(question.askedBy.email)
     }}</span>
-    <!-- The words a search result was found by, in yellow (one line: no stray spaces). -->
-    @if (marks?.length) {
+    <!-- The words a search result was found by, in yellow, in the question it found. -->
+    @if (runs) {
       <p class="thread-view__message-content">
-        <app-marked-text marker="mark" [segments]="runs(question.content, marks)" />
+        <app-marked-text marker="mark" [segments]="runs" />
       </p>
     } @else {
       <p class="thread-view__message-content">{{ question.content }}</p>

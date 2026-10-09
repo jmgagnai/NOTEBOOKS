@@ -28,6 +28,11 @@ export function searchChatThreads(http: HttpClient, rootUrl: string, params: Sea
  * The query actually searched, its misspelt words corrected to words the Notebook holds; null when it was searched as typed.
  */
 'correctedQuery': string | null;
+
+/**
+ * The words searched for — as corrected, without `or` or excluded words — to mark where a result opens.
+ */
+'words': Array<string>;
 'results': Array<{
 'threadId': string;
 'threadTitle': string;
@@ -82,6 +87,11 @@ export function searchChatThreads(http: HttpClient, rootUrl: string, params: Sea
        * The query actually searched, its misspelt words corrected to words the Notebook holds; null when it was searched as typed.
        */
       'correctedQuery': string | null;
+      
+      /**
+       * The words searched for — as corrected, without `or` or excluded words — to mark where a result opens.
+       */
+      'words': Array<string>;
       'results': Array<{
       'threadId': string;
       'threadTitle': string;

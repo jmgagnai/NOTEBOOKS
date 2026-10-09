@@ -7,7 +7,7 @@
 } @placeholder {
   <!-- Until the renderer loads (NBK-52): the source text, its line breaks kept. -->
   <p class="answer-body__plain">
-    @for (segment of segments(); track $index) {
+    @for (segment of placeholderSegments(); track $index) {
       @if (segment.citation; as citation) {
         <a
           class="answer-body__marker"
@@ -17,9 +17,9 @@
           [queryParams]="params(citation)"
           >{{ citation.marker }}</a
         >
-      } @else if (markWords().length) {
+      } @else if (segment.runs) {
         <!-- The search result's words, as the rendered answer will mark them. -->
-        <span><app-marked-text marker="mark" [segments]="runs(segment.text)" /></span>
+        <span><app-marked-text marker="mark" [segments]="segment.runs" /></span>
       } @else {
         <span>{{ segment.text }}</span>
       }

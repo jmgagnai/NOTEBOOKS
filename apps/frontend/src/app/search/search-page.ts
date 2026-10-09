@@ -6,7 +6,6 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { ChunkPin, chunkLinkParams } from '../documents/chunk-link';
-import { wordsToMark } from '../shared/search-words';
 import { OPENED_FROM_SEARCH } from '../documents/opened-from-search';
 import { NotebooksStore } from '../notebooks/notebooks.store';
 import { MarkedText } from './marked-text';
@@ -151,14 +150,11 @@ export class SearchPage implements OnDestroy {
   }
 
   /**
-   * The words searched for, as the result's link carries them (`&words=`) so
-   * the opened page marks them in yellow inside the cited Chunk or Exchange:
-   * the corrected query's, if a word was corrected. Null — no parameter —
-   * when there are none.
+   * The words searched for, as the backend read the query, carried by each
+   * result's link (`&words=`) so the opened page marks them in yellow inside
+   * the cited Chunk or Exchange. Null — no parameter — when there are none.
    */
-  protected readonly words = computed(
-    () => wordsToMark(this.store.correctedQuery() ?? this.store.query()).join(' ') || null,
-  );
+  protected readonly words = computed(() => this.store.words().join(' ') || null);
 
   /** A Document result opens the Document at its Chunk, as a Citation does, with the words. */
   protected chunkLink(match: ChunkPin): Record<string, string | number> {

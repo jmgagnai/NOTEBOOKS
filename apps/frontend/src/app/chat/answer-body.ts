@@ -74,7 +74,17 @@ export class AnswerBody {
   protected readonly link = (citation: Citation) => citationLink(this.notebookId(), citation);
   protected readonly params = (citation: Citation) => citationParams(citation);
   protected readonly title = citationTitle;
-  protected readonly runs = (text: string) => markRuns(text, this.markWords());
+  /**
+   * The source text shown until the renderer loads, its text runs marked
+   * with the search result's words when there are some (computed once).
+   */
+  protected readonly placeholderSegments = computed(() => {
+    const words = this.markWords();
+    return this.segments().map((segment) => ({
+      ...segment,
+      runs: words.length && !segment.citation ? markRuns(segment.text, words) : null,
+    }));
+  });
 
   constructor() {
     // The sanitizer strips ARIA attributes from rendered HTML, so the

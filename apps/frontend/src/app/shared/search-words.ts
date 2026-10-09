@@ -1,8 +1,9 @@
 /**
  * The words a search matched, marked where a search result opens: inside the
- * cited Chunk of a Document, or the Exchange of a Chat Thread. They travel
- * from the Search page in the result's link (`&words=`), and are matched as
- * the search matches them: whole words, accents and case ignored.
+ * cited Chunk of a Document, or the Exchange of a Chat Thread. The backend
+ * says which words they are; they travel from the Search page in the
+ * result's link (`&words=`), and are matched here as the search matches
+ * them: whole words, accents and case ignored.
  */
 
 /** A run of text, `match` when it is one of the words to mark. */
@@ -13,24 +14,6 @@ export interface MarkedRun {
 
 /** Runs of letters and digits: what the search counts as words. */
 const WORD = /[\p{L}\p{N}]+/gu;
-
-/**
- * The words to mark for a query, in web-search syntax: every word, a quoted
- * phrase's included, but not `or` and not one excluded with a `-` that opens
- * a term outside quotes. Mirrors `isExcluded` in
- * apps/backend/src/search/correction.ts, which reads the query the same way.
- */
-export function wordsToMark(query: string): string[] {
-  const words: string[] = [];
-  for (const m of query.matchAll(WORD)) {
-    const excluded =
-      query[m.index - 1] === '-' &&
-      (m.index === 1 || /\s/.test(query[m.index - 2])) &&
-      (query.slice(0, m.index).match(/"/g) ?? []).length % 2 === 0;
-    if (!excluded && m[0].toLowerCase() !== 'or') words.push(m[0]);
-  }
-  return [...new Set(words)];
-}
 
 /** A word as the search compares it: lowercased, accents removed. */
 function folded(word: string): string {

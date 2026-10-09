@@ -37,6 +37,12 @@ function searchResponse<T extends z.ZodTypeAny>(result: T) {
         'The query actually searched, its misspelt words corrected to words the Notebook ' +
           'holds; null when it was searched as typed.',
       ),
+    words: z
+      .array(z.string())
+      .describe(
+        'The words searched for — as corrected, without `or` or excluded words — to mark ' +
+          'where a result opens.',
+      ),
     results: z.array(result),
   });
 }

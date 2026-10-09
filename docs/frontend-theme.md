@@ -41,6 +41,7 @@ form fields. Material hides the floating label at this density only for the
 | Disabled text | `--app-text-disabled` | `#BDBDBD` |
 | Border / strong border | `--mat-sys-outline-variant` / `--mat-sys-outline` | `#E0E0E0` / `#D1D1D1` |
 | Chat composer's focused border (in place of a focus ring) | `--app-outline-focus` | `#8A8A8A` |
+| A search result's words where it opens (`mark.search-hit`, a global rule in `styles.scss`: the marks sit in sanitised HTML no component style reaches) | `--app-search-hit` | `#FFE66D` |
 | Error | `--mat-sys-error`, `--mat-sys-error-container` / `--mat-sys-on-error-container` | `#C50F1F`, `#FDE7E9` / `#C50F1F` |
 | Success (`ready`) | `--mat-sys-tertiary-container` / `--mat-sys-on-tertiary-container` (`--mat-sys-tertiary`) | `#E7F5E7` / `#0E700E` |
 | Dark overlays (tooltip, snack bar) | `--mat-sys-inverse-surface` / `--mat-sys-inverse-on-surface` / `--mat-sys-inverse-primary` | `#242424` / `#FFFFFF` / `#8AB9EA` |

@@ -14,8 +14,8 @@ const NOTEBOOK_ID = '11111111-1111-1111-1111-111111111111';
 const SEARCH_URL = `/notebooks/${NOTEBOOK_ID}/search`;
 
 /** What a search answers with (NBK-105): its results, and the query searched if it was corrected. */
-function found<T>(results: T[], correctedQuery: string | null = null) {
-  return { correctedQuery, results };
+function found<T>(results: T[], correctedQuery: string | null = null, words: string[] = []) {
+  return { correctedQuery, words, results };
 }
 
 /**
@@ -217,7 +217,7 @@ describe('SearchPage', () => {
     });
 
     it('links each result to its Chunk, the way a Citation does', async () => {
-      await renderSearch(vi.fn().mockResolvedValue(found([result()])));
+      await renderSearch(vi.fn().mockResolvedValue(found([result()], null, ['mars'])));
       await searchFor('mars');
 
       const link = await screen.findByRole('link', { name: /The Red Planet/ });
@@ -233,27 +233,31 @@ describe('SearchPage', () => {
     });
 
     // The words searched for travel with the result, so the opened page can
-    // mark them in yellow inside the cited Chunk: the corrected ones, if a
-    // word was corrected, and never one the query excluded.
-    it('carries the words searched for, as corrected, and not the excluded ones', async () => {
+    // mark them in yellow inside the cited Chunk — the words as the backend
+    // read the query (corrected, without `or` or excluded ones).
+    it('carries the words the backend searched for', async () => {
       await renderSearch(
-        vi.fn().mockResolvedValue(found([result()], '"rossigny castle" or Étretat -lupin')),
+        vi.fn().mockResolvedValue(found([result()], 'rossigny or castle', ['rossigny', 'castle'])),
       );
-      await searchFor('"rosigny castle" or Étretat -lupin');
+      await searchFor('rosigny or castle');
 
       const link = await screen.findByRole('link', { name: /The Red Planet/ });
       const params = new URL(link.getAttribute('href')!, 'http://app').searchParams;
-      expect(params.get('words')).toBe('rossigny castle Étretat');
+      expect(params.get('words')).toBe('rossigny castle');
     });
 
     it('leaves the range out of the link when the Chunk could not be located', async () => {
       await renderSearch(
         vi.fn().mockResolvedValue(
-          found([
-            result({
-              match: { versionId: 'v-1', chunkId: 'chunk-7', charStart: null, charEnd: null },
-            }),
-          ]),
+          found(
+            [
+              result({
+                match: { versionId: 'v-1', chunkId: 'chunk-7', charStart: null, charEnd: null },
+              }),
+            ],
+            null,
+            ['mars'],
+          ),
         ),
       );
       await searchFor('mars');
@@ -446,8 +450,9 @@ describe('SearchPage', () => {
     });
 
     it('opens the Chat Thread at that Exchange', async () => {
-      await renderSearch(vi.fn().mockResolvedValue(found([])), {
-        searchChatThreads: vi.fn().mockResolvedValue(found([exchange()])),
+      // Both searches read the same query, so both say the same words.
+      await renderSearch(vi.fn().mockResolvedValue(found([], null, ['rossigny'])), {
+        searchChatThreads: vi.fn().mockResolvedValue(found([exchange()], null, ['rossigny'])),
       });
       await searchFor('rossigny');
 

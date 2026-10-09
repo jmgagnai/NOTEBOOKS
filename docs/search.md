@@ -91,9 +91,11 @@ corrected to the closest word it does: "rosigny" becomes "rossigny", and
 
 ## The words, where a result opens
 
-A result's link carries the words it was found by (`&words=`). They come
-from the corrected query if a word was corrected, without `or` or excluded
-`-words` (`wordsToMark`, `apps/frontend/src/app/shared/search-words.ts`).
+Both routes also return `words`: the words the search read the query as
+(`searchedWords`, `src/search/correction.ts`). They come from the corrected
+query if a word was corrected, without `or` or excluded `-words`. A result's
+link carries them (`&words=`), so the rule lives in the backend only, and
+the frontend just marks (`apps/frontend/src/app/shared/search-words.ts`).
 The opened page marks them in yellow (`<mark class="search-hit">`, token
 `--app-search-hit`) inside the highlighted part only: the cited Chunk of a
 Document, or the question and answer of a Chat Thread's Exchange. Matching
