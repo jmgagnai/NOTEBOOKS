@@ -63,8 +63,11 @@
     text-decoration: none;
   }
 
+  // As tall as the title and date beside it, so each row leads with it.
   &__row-icon {
     flex: none;
+    width: 36px;
+    height: 36px;
     color: var(--mat-sys-on-surface-variant);
   }
 
