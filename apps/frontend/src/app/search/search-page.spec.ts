@@ -614,10 +614,13 @@ describe('SearchPage', () => {
   });
 
   // Each search returns its best 20; when more matched, the section says
-  // so, with how many, and how to narrow the search.
+  // so above its list, where it is seen before scrolling, with how many and
+  // how to narrow the search.
   describe('a list cut at its best results', () => {
     const NARROW = 'Add a word or a "quoted phrase" to narrow the search.';
     const many = <T>(make: (i: number) => T) => Array.from({ length: 20 }, (_, i) => make(i));
+    const isAbove = (notice: HTMLElement, list: HTMLElement) =>
+      Boolean(notice.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING);
 
     it('says how many Chunks matched beyond those shown, under the Documents', async () => {
       await renderSearch(
@@ -637,9 +640,10 @@ describe('SearchPage', () => {
       await searchFor('mars');
 
       const documents = await screen.findByRole('region', { name: 'Documents' });
-      expect(
-        within(documents).getByText(`Showing the 20 best of 143 matching Chunks. ${NARROW}`),
-      ).toBeTruthy();
+      const notice = within(documents).getByText(
+        `Showing the 20 best of 143 matching Chunks. ${NARROW}`,
+      );
+      expect(isAbove(notice, within(documents).getByRole('list'))).toBe(true);
     });
 
     it('says how many Exchanges matched beyond those shown, under the Chat Threads', async () => {
@@ -656,9 +660,10 @@ describe('SearchPage', () => {
       await searchFor('rossigny');
 
       const threads = await screen.findByRole('region', { name: 'Chat Threads' });
-      expect(
-        within(threads).getByText(`Showing the 20 best of 25 matching Exchanges. ${NARROW}`),
-      ).toBeTruthy();
+      const notice = within(threads).getByText(
+        `Showing the 20 best of 25 matching Exchanges. ${NARROW}`,
+      );
+      expect(isAbove(notice, within(threads).getByRole('list'))).toBe(true);
     });
 
     it('says nothing when every match is shown', async () => {
