@@ -109,6 +109,13 @@ export interface StartJobQueueOptions {
    * sibling — see `reclaimActiveJobs`.
    */
   reclaimActiveJobs?: boolean;
+  /**
+   * Stops the conversions a previous process left running (NBK-111), before
+   * their jobs are reclaimed and run again — under the same switch, since it
+   * rests on the same single-worker assumption. The server passes
+   * `removeDoclingContainers`.
+   */
+  clearAbandonedConversions?: () => Promise<void>;
   /** Where the reclaim reports what it took back. Defaults to the console. */
   log?: (message: string) => void;
 }
@@ -246,6 +253,16 @@ export async function startJobQueue(options: StartJobQueueOptions): Promise<JobQ
     const { complete, models, embed, ...convertDeps } = options.worker;
 
     if (options.reclaimActiveJobs !== false) {
+      try {
+        await options.clearAbandonedConversions?.();
+      } catch (err) {
+        // A worker that cannot clear them still has to start: the reclaimed
+        // jobs run regardless, as they did before NBK-111.
+        // eslint-disable-next-line no-console
+        (options.log ?? console.warn)(
+          `Could not clear abandoned conversions: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
       await reclaimActiveJobs(
         boss,
         convertDeps.pool,

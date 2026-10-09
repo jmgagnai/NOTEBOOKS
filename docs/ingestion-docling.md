@@ -161,6 +161,27 @@ already converted keep their Converted Markdown; nothing records which mode
 a Version was converted under, and nothing re-converts. Upload the file
 again to get a new Version converted the new way.
 
+### A conversion the backend gives up on is stopped, not abandoned
+
+Each conversion runs in its own container, started by `docker run`. Killing
+that `docker run` process does not stop the container: it goes on converting,
+holding gigabytes of memory, while pg_boss starts the next attempt beside it
+(NBK-111, seen on 2026-10-09 with three conversions of one novel at once). So
+every container is named (`notebooks-docling-<uuid>`) and labelled
+(`notebooks.role=docling`), and runs with `--init`, which forwards signals to
+Docling and reaps it so a killed conversion does not linger as a zombie:
+
+- **On timeout**, the converter also runs `docker rm -f <name>`.
+- **On start**, a worker that reclaims the jobs a previous process left
+  active first removes every container carrying the label
+  (`removeDoclingContainers`). That process's conversions are the only ones
+  that can be running, under the same single-worker assumption as reclaiming
+  (`reclaimActiveJobs`); a deployment that turns reclaiming off removes
+  nothing.
+
+Containers started before this have no label: remove them by hand
+(`docker ps --filter ancestor=<DOCLING_IMAGE>`).
+
 ### What the user is told when conversion fails
 
 Each way stage 1 can fail is recorded with a failure reason (NBK-65,

@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { access, readFile, rename } from 'node:fs/promises';
 import { basename, dirname, extname, join, parse } from 'node:path';
 import { withoutEmbeddedPictures } from './embedded-pictures.js';
@@ -67,6 +68,8 @@ export interface DoclingOptions {
   timeoutMs?: number;
   /** Docling's table-structure mode for PDFs. Defaults to `DOCLING_TABLE_MODE` or `fast`. */
   tableMode?: DoclingTableMode;
+  /** Where a container it could not remove is reported (NBK-111). Defaults to the console. */
+  log?: (message: string) => void;
 }
 
 /**
@@ -192,7 +195,8 @@ const MIN_TEXT_CHARS_FOR_TEXT_PDF = 20;
  */
 export function createDoclingConverter(options: DoclingOptions = {}): MarkdownConverter {
   const image = options.image ?? process.env.DOCLING_IMAGE ?? DOCLING_IMAGE;
-  const docker = options.docker ?? process.env.DOCKER_BIN ?? 'docker';
+  const docker = resolveDockerBinary(options.docker);
+  const log = options.log ?? warn;
   const timeoutMs = resolveDoclingTimeoutMs(options.timeoutMs);
   const tableMode = resolveDoclingTableMode(options.tableMode);
 
@@ -211,9 +215,19 @@ export function createDoclingConverter(options: DoclingOptions = {}): MarkdownCo
     const producedName = `${parse(inputName).name}.md`;
     const produced = join(outputDir, producedName);
 
+    // Named and labelled so a container the backend gives up on can be
+    // stopped (NBK-111): killing `docker run` leaves its container running.
+    const containerName = `notebooks-docling-${randomUUID()}`;
     const args = [
       'run',
       '--rm',
+      // An init process as PID 1 forwards signals to Docling and reaps it, so
+      // a killed conversion goes away instead of lingering as a zombie.
+      '--init',
+      '--name',
+      containerName,
+      '--label',
+      DOCLING_CONTAINER_LABEL,
       // No network: conversion is pure local computation, and every model
       // it needs is in the image (at DOCLING_ARTIFACTS_PATH). This also
       // makes a malformed document unable to reach anything.
@@ -261,6 +275,13 @@ export function createDoclingConverter(options: DoclingOptions = {}): MarkdownCo
 
       const timer = setTimeout(() => {
         child.kill('SIGKILL');
+        void runDocker(docker, ['rm', '-f', containerName]).then((removed) => {
+          if (!removed.ok) {
+            log(
+              `Could not remove timed-out Docling container ${containerName}: ${removed.output.trim()}`,
+            );
+          }
+        });
         reject(
           new IngestionFailure(
             'timed-out',
@@ -344,3 +365,65 @@ export function createDoclingConverter(options: DoclingOptions = {}): MarkdownCo
 export function markdownOutputPath(directory: string): string {
   return join(directory, 'converted.md');
 }
+
+/**
+ * The label every Docling container this app starts carries (NBK-111), so
+ * the ones a stopped backend left converting can be found and removed.
+ */
+export const DOCLING_CONTAINER_LABEL = 'notebooks.role=docling';
+
+/** Runs one `docker` command to completion; never throws, so a cleanup cannot fail its caller. */
+function runDocker(docker: string, args: string[]): Promise<{ ok: boolean; output: string }> {
+  return new Promise((resolve) => {
+    const child = spawn(docker, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    let output = '';
+    child.stdout?.on('data', (chunk: Buffer) => (output += chunk.toString('utf8')));
+    child.stderr?.on('data', (chunk: Buffer) => (output += chunk.toString('utf8')));
+    child.on('error', (err) => resolve({ ok: false, output: err.message }));
+    child.on('close', (code) => resolve({ ok: code === 0, output }));
+  });
+}
+
+/**
+ * Removes every Docling container this app started that is still there
+ * (NBK-111). A worker starting up calls it before it re-runs the jobs its
+ * predecessor left active: that predecessor's conversions are still running
+ * in their containers, and a re-run beside one doubles the memory a large
+ * Document needs. Only safe where one worker process owns the conversions —
+ * the same assumption as reclaiming those jobs.
+ *
+ * Never throws: Docker being unreachable here is reported, and the
+ * conversion that needs it reports it again in its own terms.
+ */
+export async function removeDoclingContainers(
+  options: Pick<DoclingOptions, 'docker' | 'log'> = {},
+): Promise<void> {
+  const docker = resolveDockerBinary(options.docker);
+  const log = options.log ?? warn;
+  const listed = await runDocker(docker, [
+    'ps',
+    '-aq',
+    '--filter',
+    `label=${DOCLING_CONTAINER_LABEL}`,
+  ]);
+  if (!listed.ok) {
+    log(`Could not list leftover Docling containers: ${listed.output.trim()}`);
+    return;
+  }
+  const ids = listed.output.split(/\s+/).filter((id) => id !== '');
+  // One at a time: a container already on its way out (its `--rm` running)
+  // refuses removal, and must not make the others look as if they failed.
+  for (const id of ids) {
+    const removed = await runDocker(docker, ['rm', '-f', id]);
+    if (!removed.ok)
+      log(`Could not remove leftover Docling container ${id}: ${removed.output.trim()}`);
+  }
+}
+
+/** The `docker` binary: as given, else `DOCKER_BIN`, else `docker` on the PATH. */
+function resolveDockerBinary(docker?: string): string {
+  return docker ?? process.env.DOCKER_BIN ?? 'docker';
+}
+
+// eslint-disable-next-line no-console
+const warn = (message: string): void => console.warn(message);

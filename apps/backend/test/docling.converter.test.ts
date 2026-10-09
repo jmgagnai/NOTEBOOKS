@@ -10,6 +10,8 @@ import {
   DOCLING_IMAGE,
   type DoclingOptions,
   createDoclingConverter,
+  DOCLING_CONTAINER_LABEL,
+  removeDoclingContainers,
   looksScanned,
   markdownOutputPath,
 } from '../src/ingestion/docling.js';
@@ -101,6 +103,23 @@ cp '${outputFile}' "$out/$stem.md"`,
   };
 }
 
+/**
+ * A stand-in `docker` that appends each call's arguments, one line per call,
+ * to a log, then runs `then` (NBK-111). `calls()` reads the log back.
+ */
+async function loggingDocker(then = '') {
+  const log = join(await mkdtemp(join(tmpdir(), 'nbk-docling-calls-')), 'calls.log');
+  const docker = await scriptedDocker(
+    `printf '%s ' "$@" >> '${log}'; printf '\\n' >> '${log}'\n${then}`,
+  );
+  const calls = async () =>
+    (await readFile(log, 'utf8').catch(() => ''))
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line !== '');
+  return { docker, calls };
+}
+
 describe('Docling converter: arguments and OCR policy (fake docker)', () => {
   it('converts a text PDF without OCR, pointing the CLI at the models in the image', async () => {
     const workDir = await mkdtemp(join(tmpdir(), 'nbk-docling-fake-'));
@@ -122,6 +141,28 @@ describe('Docling converter: arguments and OCR policy (fake docker)', () => {
     expect(args).toContain('--no-ocr');
     expect(args).not.toContain('--ocr');
     expect(await readFile(outputPath, 'utf8')).toContain('Revenue grew in every region.');
+  });
+
+  // NBK-111: a container the backend gives up on has to be findable, to be
+  // stopped — by its own name on a timeout, by the app's label when a
+  // restarted worker clears what its predecessor left — and `--init` lets
+  // a killed Docling be reaped instead of lingering as a zombie.
+  it('names and labels each container, and runs it with an init process', async () => {
+    const workDir = await mkdtemp(join(tmpdir(), 'nbk-docling-fake-'));
+    const inputPath = join(workDir, 'report.pdf');
+    await writeFile(inputPath, textPdf('Quarterly report'));
+    const fake = await fakeDocker(workDir, '# Quarterly report\n\nRevenue grew.\n');
+    const convert = createDoclingConverter({ docker: fake.docker });
+
+    await convert({ inputPath, outputPath: markdownOutputPath(workDir) });
+    await convert({ inputPath, outputPath: markdownOutputPath(workDir) });
+
+    const [first, second] = await fake.invocations();
+    expect(first).toContain('--init');
+    expect(first[first.indexOf('--label') + 1]).toBe(DOCLING_CONTAINER_LABEL);
+    const name = (args: string[]) => args[args.indexOf('--name') + 1];
+    expect(name(first)).toMatch(/^notebooks-docling-/);
+    expect(name(second)).not.toBe(name(first));
   });
 
   it('refuses a PDF that came back without a text layer instead of OCRing it', async () => {
@@ -247,6 +288,41 @@ describe('Docling converter: named failures (scripted docker)', () => {
     expect(failure).toMatchObject({ reason: 'timed-out' });
   });
 
+  // NBK-111: killing `docker run` leaves its container converting, so a
+  // timeout removes the container itself, by the name it was started with.
+  it('removes the timed-out container by its name', async () => {
+    const { docker, calls } = await loggingDocker('if [ "$1" = run ]; then exec sleep 30; fi');
+    // Run once first: macOS can hold a new executable's first run for
+    // seconds while it scans it, and the timeout would kill that run before
+    // it logged anything.
+    await promisify(execFile)(docker, ['warm-up']);
+
+    await convertWith(docker, 1_000);
+
+    await vi.waitFor(async () => {
+      const run = (await calls()).find((call) => call.startsWith('run '))!.split(' ');
+      expect(await calls()).toContain(`rm -f ${run[run.indexOf('--name') + 1]}`);
+    });
+  });
+
+  it('reports a timed-out container it could not remove', async () => {
+    const { docker } = await loggingDocker(
+      'if [ "$1" = run ]; then exec sleep 30; fi; echo "No such container" >&2; exit 1',
+    );
+    await promisify(execFile)(docker, ['warm-up']).catch(() => {});
+    const logged: string[] = [];
+    const workDir = await mkdtemp(join(tmpdir(), 'nbk-docling-fail-'));
+    const inputPath = join(workDir, 'report.pdf');
+    await writeFile(inputPath, textPdf('Quarterly report'));
+
+    await createDoclingConverter({ docker, timeoutMs: 1_000, log: (m) => logged.push(m) })({
+      inputPath,
+      outputPath: markdownOutputPath(workDir),
+    }).catch(() => {});
+
+    await vi.waitFor(() => expect(logged.join('\n')).toContain('No such container'));
+  });
+
   it("is 'service-unavailable' when Docling cannot be started", async () => {
     const failure = await convertWith(missingDocker());
 
@@ -280,6 +356,56 @@ describe('looksScanned', () => {
     expect(looksScanned(`${page}\n\nThe harvest was gathered before the first frost.\n`)).toBe(
       false,
     );
+  });
+});
+
+// NBK-111: what a worker starting up clears before it re-runs the jobs its
+// predecessor left active — that predecessor's conversions, still running.
+describe('removeDoclingContainers (scripted docker)', () => {
+  it("removes every container carrying the app's Docling label", async () => {
+    const { docker, calls } = await loggingDocker(
+      `if [ "$1" = ps ]; then printf 'c0ffee1\\nc0ffee2\\n'; fi`,
+    );
+
+    await removeDoclingContainers({ docker, log: () => {} });
+
+    expect(await calls()).toEqual([
+      `ps -aq --filter label=${DOCLING_CONTAINER_LABEL}`,
+      'rm -f c0ffee1',
+      'rm -f c0ffee2',
+    ]);
+  });
+
+  it('removes nothing when there is nothing left', async () => {
+    const { docker, calls } = await loggingDocker();
+
+    await removeDoclingContainers({ docker, log: () => {} });
+
+    expect(await calls()).toEqual([`ps -aq --filter label=${DOCLING_CONTAINER_LABEL}`]);
+  });
+
+  // One already on its way out (its `--rm` running) refuses removal; the
+  // others still go, and only that one is reported.
+  it('removes the rest when one cannot be removed, and reports that one', async () => {
+    const { docker, calls } = await loggingDocker(
+      `if [ "$1" = ps ]; then printf 'gone1\\nkeep2\\n'; fi
+if [ "$3" = gone1 ]; then echo 'removal already in progress' >&2; exit 1; fi`,
+    );
+    const logged: string[] = [];
+
+    await removeDoclingContainers({ docker, log: (m) => logged.push(m) });
+
+    expect(await calls()).toContain('rm -f keep2');
+    expect(logged.join('\n')).toContain('gone1');
+    expect(logged.join('\n')).not.toContain('keep2');
+  });
+
+  it('reports, without throwing, when Docker cannot be reached', async () => {
+    const logged: string[] = [];
+
+    await removeDoclingContainers({ docker: missingDocker(), log: (m) => logged.push(m) });
+
+    expect(logged).toHaveLength(1);
   });
 });
 
