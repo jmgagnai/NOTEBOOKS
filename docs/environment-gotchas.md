@@ -155,6 +155,30 @@ says where it tried. Fix either by stopping the local service for the session
 (`brew services stop postgresql@14`) or by moving the compose port to 5433 and
 setting `DATABASE_URL` in `.env` to match.
 
+## A branch's migration reaches the dev database the moment it is saved
+
+The backend runs as `tsx watch src/server.ts`, and `server.ts` runs every
+pending migration at startup. Saving a migration file on a branch, or any
+backend file after it, restarts the dev backend, and the migration is then
+applied to the shared dev database. Nobody runs anything; it isn't merged yet.
+Three of the NBK-104..107 migrations reached the dev database this way, one in
+a version that was then rewritten and had to be undone by hand.
+
+- **Measure a heavy migration on a copy first.** Adding a stored column or an
+  index to `chunks` (160,000 rows) rewrote the table for minutes. Copy just the
+  tables it touches into a throwaway `pgvector/pgvector:pg16` container (dump
+  with `\copy … to /tmp/x.tsv` inside the dev container, `docker cp` it across,
+  `\copy … from`) and time the migration and the queries there (NBK-106).
+- **To try a migration without applying it,** stop the dev backend first, or
+  work in a git worktree, whose backend you don't start.
+- **To undo one that landed and then changed:** reverse what it did, then delete
+  its row so the new version runs.
+  ```sql
+  DELETE FROM schema_migrations WHERE name = '<file>.sql';
+  ```
+  Only do this while the branch is unmerged: once merged, a migration is
+  history and the fix is a new migration.
+
 ## Reaching `.env` from a git worktree
 
 `.env` is gitignored, so a fresh worktree does not have it. `scripts/jira.mjs`
