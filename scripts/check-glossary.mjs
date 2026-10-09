@@ -18,8 +18,8 @@
  * in `check-glossary-rules.mjs`, where they are tested.
  *
  * GLOSSARY.md stays the single source of truth: the avoid lists are parsed from
- * it, never restated here. CONTEXTUAL below subtracts the terms that cannot be
- * checked mechanically, each with its reason.
+ * it, never restated here. CONTEXTUAL, in the rules module, subtracts the
+ * terms that cannot be checked mechanically, each with its reason.
  */
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';

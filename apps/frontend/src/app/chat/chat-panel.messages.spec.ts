@@ -90,7 +90,7 @@ describe('Chat panel (ThreadNavigator + ThreadView) — messages and Citations',
       });
     });
 
-    it('turns each Citation marker in the prose into a link to the Chunk it cites', async () => {
+    it('makes each Citation marker in the prose a link to the Chunk it cites', async () => {
       await openRevenueQuestions([
         message({
           id: 'a1',
@@ -138,7 +138,7 @@ describe('Chat panel (ThreadNavigator + ThreadView) — messages and Citations',
       expect(screen.getByText(/Margins improved \[4\]/)).toBeTruthy();
     });
 
-    it('shows no sources for a question, or for an answer that cited nothing', async () => {
+    it('shows no Citations for a question, or for an answer that cited nothing', async () => {
       await openRevenueQuestions([
         message({ id: 'q1', role: 'user', content: 'How long are lead times?' }),
         message({
@@ -177,7 +177,7 @@ describe('Chat panel (ThreadNavigator + ThreadView) — messages and Citations',
       return { settle };
     }
 
-    it('renders each chunk as it arrives, and replaces the streamed answer with the recorded one', async () => {
+    it('renders each streamed piece as it arrives, and replaces the streamed answer with the recorded one', async () => {
       const { settle } = await askWithoutAnswering();
 
       // The panel asked for this Notebook's topic — the same stream the
@@ -201,7 +201,7 @@ describe('Chat panel (ThreadNavigator + ThreadView) — messages and Citations',
 
       // The ask resolves with the recorded exchange — which is the truth
       // (GLOSSARY.md: a client re-reads the truth over the normal API), so
-      // the preview gives way to the two persisted messages rather than
+      // the streamed answer gives way to the two persisted messages rather than
       // leaving a third, duplicate copy of the answer on screen.
       appEvents.events.next(completed());
       settle({
@@ -227,7 +227,7 @@ describe('Chat panel (ThreadNavigator + ThreadView) — messages and Citations',
 
       appEvents.events.next(chunk(0, 'Lead times lengthened to 14 weeks [1].'));
       expect(await screen.findByText(/Lead times lengthened to 14 weeks/)).toBeTruthy();
-      // Nothing to link to yet, so the marker stays plain text.
+      // Nothing to link to yet, so the marker stays text.
       expect(screen.queryByRole('link', { name: 'Citation 1' })).toBeNull();
 
       appEvents.events.next(completed({ citations: [citation()] }));
@@ -238,7 +238,7 @@ describe('Chat panel (ThreadNavigator + ThreadView) — messages and Citations',
     });
 
     // A stream that dies partway leaves prose that will never be persisted,
-    // so the preview has to go: leaving it up would show a reader an answer
+    // so the streamed answer has to go: leaving it up would show a reader an answer
     // that no re-read of the Thread will ever contain.
     it('drops the streamed answer when it fails partway', async () => {
       await askWithoutAnswering();

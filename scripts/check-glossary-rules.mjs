@@ -65,18 +65,31 @@ export function parseAvoidTerms(markdown) {
   return terms;
 }
 
-/** Whole words only, so "snapshot" doesn't fire inside "snapshotted". */
+/**
+ * Whole words only, so "snapshot" doesn't fire inside "snapshotted"; a plural
+ * ("passages", "addresses") is the same word.
+ */
 export function findTerm(text, terms) {
   return terms.find((term) =>
-    new RegExp(`\\b${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(text),
+    new RegExp(`\\b${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:s|es)?\\b`, 'i').test(text),
   );
 }
 
-// A test title: the first argument of `describe`, `it` or `test`, also in
-// their `.each(table)(title, …)` form, quoted any of the three ways. The
-// `\b` keeps `split('it')` and `submit('…')` out.
-const TITLE =
-  /\b(?:describe|it|test)(?:\.each\((?:[^()]|\([^()]*\))*\))?\(\s*(['"`])((?:\\.|(?!\1)[^\\])*)\1/g;
+// A test title: the first argument of `describe`, `it` or `test`, also with
+// their modifiers (`.skip`, `.only`, `.todo`, …) and in their `.each(table)`
+// or tagged-template `.each\`table\`` form, quoted any of the three ways.
+// Not after a `.` or a word character, so `pattern.test('…')`, `vi.it(…)`
+// and `split('it')` are not titles.
+const TITLE = new RegExp(
+  String.raw`(?<![.\w$])(?:describe|it|test)` +
+    String.raw`(?:\.(?:skip|only|todo|concurrent|sequential|fails))*` +
+    String.raw`(?:\.each(?:\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*\)|\s*\`[^\`]*\`))?` +
+    String.raw`\(\s*(['"\`])((?:\\.|(?!\1)[^\\])*)\1`,
+  'g',
+);
+
+/** A whole line commented out with `//`: a disabled test is not a title. */
+const COMMENTED_LINE = /^\s*\/\/.*$/gm;
 
 /**
  * The titles of the tests in one spec or test file (NBK-101): what a reader
@@ -84,5 +97,7 @@ const TITLE =
  * literal's `${…}` is kept as written; escaped characters are unescaped.
  */
 export function testTitles(source) {
-  return [...source.matchAll(TITLE)].map((m) => m[2].replace(/\\(.)/g, '$1'));
+  return [...source.replace(COMMENTED_LINE, '').matchAll(TITLE)].map((m) =>
+    m[2].replace(/\\(.)/g, '$1'),
+  );
 }

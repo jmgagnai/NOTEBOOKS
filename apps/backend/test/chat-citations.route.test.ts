@@ -474,10 +474,10 @@ describe('Chat citations', () => {
 
   // The invariant that makes a Citation worth clicking: it can only ever name
   // a Chunk this answer was actually grounded in. A model will sometimes
-  // number a source it was never given, and that must resolve to nothing
+  // number a Chunk it was never given, and that must resolve to nothing
   // rather than to whatever chunk happens to sit at that index in the
   // Notebook.
-  it('drops Citation markers that match no retrieved Chunk, and records the answer regardless', async () => {
+  it('drops markers that match no retrieved Chunk, and records the answer regardless', async () => {
     const answerText =
       'Lead times lengthened to 14 weeks [1]. Margins improved [4]. See also [0] and [1].';
     const chatApp = await appWithChat(openRouterStub(answerText).stubFetch);
@@ -485,7 +485,7 @@ describe('Chat citations', () => {
       const session = await loginAsNewUser('citations-dangling@example.com');
       const notebookId = await createNotebook(session, 'Dangling markers');
 
-      // The only retrievable passage in the Notebook.
+      // The only retrievable Chunk in the Notebook.
       const retrievable = await seedDocument(notebookId, 'logistics.md', 'Logistics review.', [
         [{ text: 'Supply chain lead times lengthened to 14 weeks.', headingPath: ['Lead times'] }],
       ]);
@@ -523,8 +523,8 @@ describe('Chat citations', () => {
       // plain characters they are rather than the prose being rewritten.
       expect(body.answer.content).toBe(answerText);
 
-      // Only the marker that names a retrieved passage became a Citation,
-      // and the passage cited twice is one source, not two.
+      // Only the marker that names a retrieved Chunk became a Citation,
+      // and the Chunk cited twice is one Citation, not two.
       expect(body.answer.citations).toHaveLength(1);
       expect(body.answer.citations[0].marker).toBe(1);
       expect(body.answer.citations[0].chunkId).toBe(retrievable.versions[0].chunkIds[0]);
@@ -632,7 +632,7 @@ describe('Chat citations', () => {
     }
   });
 
-  it('asks the model for markers, and numbers the passages it may cite', async () => {
+  it('asks the model for markers, and numbers the Chunks it may cite', async () => {
     const stub = openRouterStub('Lead times lengthened to 14 weeks [1].');
     const chatApp = await appWithChat(stub.stubFetch);
     try {
