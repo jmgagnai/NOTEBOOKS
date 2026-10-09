@@ -29,7 +29,12 @@ services:
       - "9000:9000"
       - "9001:9001"
     volumes:
-      - minio-data:/data
+      # The Bitnami image keeps its data in /bitnami/minio/data, not the
+      # official image's /data. Mounted at /data, the named volume stayed
+      # empty and Docker backed the real data directory with an anonymous
+      # volume, a new, empty one each time the container was recreated:
+      # every stored file seemed to vanish (2026-10-09).
+      - minio-data:/bitnami/minio/data
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 5s
