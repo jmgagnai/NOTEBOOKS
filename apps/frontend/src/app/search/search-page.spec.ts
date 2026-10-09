@@ -108,27 +108,41 @@ async function searchFor(query: string): Promise<void> {
 // client (SearchService) mocked.
 describe('SearchPage', () => {
   describe('the frame (NBK-96)', () => {
-    it('is headed "Search · <Notebook title>", with ✕ back to the Notebook', async () => {
+    it('is headed by the Notebook title alone, with ✕ back to the Notebook', async () => {
       await renderSearch(vi.fn(), {
         notebooks: [{ id: NOTEBOOK_ID, title: 'Research', createdAt: '2026-01-01T00:00:00.000Z' }],
       });
 
       const header = await screen.findByTestId('search-page-header');
-      expect(await within(header).findByText('Search · Research')).toBeTruthy();
+      expect(await within(header).findByText('Research')).toBeTruthy();
+      expect(within(header).queryByText(/Search/)).toBeNull();
       const close = within(header).getByRole('link', { name: 'Back to the Notebook' });
       expect(close.getAttribute('href')).toBe(`/notebooks/${NOTEBOOK_ID}`);
       expect(screen.queryByText(/← Back to the Notebook/)).toBeNull();
     });
 
-    it('offers a search box with no Search button, and sends nothing while typing', async () => {
+    it('offers a search box named for the Notebook, with no Search button, sending nothing while typing', async () => {
       const searchNotebook = vi.fn().mockResolvedValue(found([]));
-      await renderSearch(searchNotebook);
+      await renderSearch(searchNotebook, {
+        notebooks: [{ id: NOTEBOOK_ID, title: 'Research', createdAt: '2026-01-01T00:00:00.000Z' }],
+      });
 
       const input = await box();
-      expect(input.getAttribute('placeholder')).toBe('Search this Notebook');
+      await waitFor(() => expect(input.getAttribute('placeholder')).toBe('Search Research'));
       expect(screen.queryByRole('button', { name: 'Search' })).toBeNull();
       fireEvent.input(input, { target: { value: 'mars' } });
       expect(searchNotebook).not.toHaveBeenCalled();
+    });
+
+    // Before a search, the page is mostly empty: a large search picture in
+    // the logo's style fills it, and goes once there are results.
+    it('shows the search picture until a search has results', async () => {
+      await renderSearch(vi.fn().mockResolvedValue(found([result()])));
+      expect(await screen.findByTestId('search-welcome')).toBeTruthy();
+
+      await searchFor('mars');
+
+      await waitFor(() => expect(screen.queryByTestId('search-welcome')).toBeNull());
     });
 
     it('puts the Notebook title in the browser tab, and the default back on leaving', async () => {

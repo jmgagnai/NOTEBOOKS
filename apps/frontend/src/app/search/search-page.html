@@ -1,12 +1,10 @@
 <div class="search-page">
   <!--
-    The header row (NBK-96), as the Document page's: what is searched, and
-    ✕ back to the Notebook in place of the old text link.
+    The header row (NBK-96), as the Document page's: the Notebook searched,
+    its title alone, and ✕ back to it in place of the old text link.
   -->
   <div class="search-page__header" data-testid="search-page-header">
-    <span class="search-page__header-title"
-      >Search · {{ notebook()?.title ?? 'this Notebook' }}</span
-    >
+    <span class="search-page__header-title">{{ notebook()?.title }}</span>
     <a
       mat-icon-button
       [routerLink]="['/notebooks', notebookId]"
@@ -26,7 +24,7 @@
         type="search"
         name="q"
         aria-label="Search this Notebook"
-        placeholder="Search this Notebook"
+        [placeholder]="notebook() ? 'Search ' + notebook()!.title : 'Search this Notebook'"
         [value]="draft()"
         (input)="onDraftInput($event)"
         (keydown.enter)="onEnter($any($event))"
@@ -40,6 +38,14 @@
         Search finds the words you type in the Notebook's Documents and Chat Threads, accents
         ignored. Only Documents that have finished ingesting are searched.
       </p>
+      <img
+        class="search-page__welcome"
+        data-testid="search-welcome"
+        [src]="searchPicture"
+        alt=""
+        width="180"
+        height="180"
+      />
     } @else {
       @if (store.correctedQuery(); as corrected) {
         <!--

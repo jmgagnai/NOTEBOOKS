@@ -21,8 +21,17 @@
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
-    font: var(--mat-sys-body-medium);
-    color: var(--mat-sys-on-surface-variant);
+    // The Notebook's title alone, so it carries the header: bolder, darker.
+    font: var(--mat-sys-title-small);
+    color: var(--mat-sys-on-surface);
+  }
+
+  // The picture before a search, centred under the hint.
+  &__welcome {
+    display: block;
+    width: 180px;
+    height: 180px;
+    margin: 4rem auto 0;
   }
 
   &__column {

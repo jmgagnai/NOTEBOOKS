@@ -18,3 +18,9 @@ export const COPYCAT_MARK_SRC = '/copycat-mark.svg';
  * the sign-in and register pages' 96 px.
  */
 export const COPYCAT_LOGO_SRC = '/copycat-logo.svg';
+
+/**
+ * A magnifying glass on the logo's tile, in the logo's colours: the Search
+ * page's picture before a search, where it would otherwise be all but empty.
+ */
+export const COPYCAT_SEARCH_SRC = '/copycat-search.svg';
