@@ -11,6 +11,8 @@ import type { ConvertToMarkdownPayload } from '../src/ingestion/convert-to-markd
 import type { JobQueue } from '../src/jobs/queue.js';
 import { createS3Client, ensureBucket, type S3Config } from '../src/storage/s3-client.js';
 import { startMinio } from './support/minio-container.js';
+import type { Logger } from '../src/logging/logger.js';
+import { capturedLogger, LEVEL } from './support/captured-logger.js';
 
 const DOCUMENTS_BUCKET = 'rag-notebook-documents-test';
 
@@ -613,12 +615,13 @@ describe('Document routes', () => {
   // test/convert-to-markdown.job.test.ts and test/job-queue.test.ts.
   describe('ingestion hand-off', () => {
     /** Builds a second app, sharing these containers, with a JobQueue stub. */
-    async function appWith(jobs: JobQueue): Promise<FastifyInstance> {
+    async function appWith(jobs: JobQueue, logger?: Logger): Promise<FastifyInstance> {
       return buildApp({
         pool,
         s3: createS3Client(s3Config),
         documentsBucket: DOCUMENTS_BUCKET,
         jobs,
+        ...(logger ? { logger } : {}),
       });
     }
 
@@ -656,13 +659,19 @@ describe('Document routes', () => {
       }
     });
 
-    it('still stores the upload when enqueueing the job fails', async () => {
-      const appWithJobs = await appWith({
-        enqueueConvertToMarkdown: async () => {
-          throw new Error('pg_boss is down');
-        },
-        stop: async () => {},
-      });
+    it('still stores the upload when enqueueing the job fails, and logs why', async () => {
+      const { logger, lines } = capturedLogger();
+      const appWithJobs = await appWith(
+        {
+          enqueueConvertToMarkdown: async () => {
+            throw new Error('pg_boss is down');
+          },
+          stop: async () => {},
+          // Only the stage this route enqueues; the cast says the rest of
+          // the queue is deliberately absent.
+        } as unknown as JobQueue,
+        logger,
+      );
       try {
         const session = await loginAsNewUser('ingestion-enqueue-fails@example.com');
         const notebookId = await createNotebook(session, 'Ingestion failure');
@@ -680,9 +689,49 @@ describe('Document routes', () => {
         // attempted, so failing the request would strand them. The Version
         // stays "queued" — the standing record of work still owed.
         expect(response.statusCode).toBe(201);
-        expect((response.json() as { status: string }).status).toBe('queued');
+        const body = response.json() as { status: string; latestVersion: { id: string } };
+        expect(body.status).toBe('queued');
+        // NBK-113: an error a user never sees is at least logged, with what
+        // an operator needs to act on it, and never the upload itself.
+        const failure = lines.find((line) => line.level === LEVEL.error);
+        expect(failure).toMatchObject({ versionId: body.latestVersion.id });
+        expect(failure?.msg).toContain('Could not enqueue');
+        expect(JSON.stringify(lines)).not.toContain('stored anyway');
       } finally {
         await appWithJobs.close();
+      }
+    });
+
+    // NBK-113: every request is logged — the live event stream quietly, since
+    // every open page holds one — and a session cookie never.
+    it('logs each request at info, the event stream at debug, and never the session cookie', async () => {
+      const { logger, lines } = capturedLogger();
+      const logged = await buildApp({
+        pool,
+        s3: createS3Client(s3Config),
+        documentsBucket: DOCUMENTS_BUCKET,
+        logger,
+      });
+      try {
+        const session = await loginAsNewUser('logged-requests@example.com');
+        await logged.inject({ method: 'GET', url: '/notebooks', cookies: { session } });
+        // This app has no event stream wired, so it answers at once; the level
+        // is decided by the path, whatever the answer.
+        await logged.inject({ method: 'GET', url: '/events' });
+
+        const completed = lines.filter((line) => line.msg === 'request completed');
+        expect(completed).toEqual([
+          expect.objectContaining({
+            level: LEVEL.info,
+            method: 'GET',
+            url: '/notebooks',
+            statusCode: 200,
+          }),
+          expect.objectContaining({ level: LEVEL.debug, url: '/events' }),
+        ]);
+        expect(JSON.stringify(lines)).not.toContain(session);
+      } finally {
+        await logged.close();
       }
     });
   });

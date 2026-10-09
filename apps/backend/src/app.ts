@@ -4,7 +4,7 @@ import multipart from '@fastify/multipart';
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
 import type { S3Client } from '@aws-sdk/client-s3';
-import Fastify, { type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyInstance, type FastifyBaseLogger } from 'fastify';
 import {
   createJsonSchemaTransformObject,
   jsonSchemaTransform,
@@ -24,6 +24,7 @@ import type { JobQueue } from './jobs/queue.js';
 import type { Embedder } from './llm/embeddings.js';
 import { registerNotebookRoutes } from './notebooks/routes.js';
 import { registerSearchRoutes } from './search/routes.js';
+import { logger as rootLogger, type Logger } from './logging/logger.js';
 
 export interface BuildAppOptions {
   pool: Pool;
@@ -53,6 +54,11 @@ export interface BuildAppOptions {
   // who may restore a deleted Chat Thread (NBK-95). Matched without regard
   // to case or surrounding spaces. Omitted, there is no Administrator.
   administrators?: readonly string[];
+  /**
+   * The backend's logger (NBK-113), which Fastify's `request.log` is.
+   * Defaults to the root logger; tests pass one that keeps its lines.
+   */
+  logger?: Logger;
 }
 
 /**
@@ -68,8 +74,29 @@ export async function buildApp({
   appEvents,
   chat,
   administrators = [],
+  logger = rootLogger,
 }: BuildAppOptions): Promise<FastifyInstance> {
-  const app = Fastify({ logger: false });
+  // One line per request, at its end, instead of Fastify's two: the live
+  // event stream is held open by every page, so it is logged at debug.
+  // Typed as Fastify's base logger, which every route is written against;
+  // a pino `Logger` is one (it is what Fastify itself creates).
+  const app = Fastify({
+    loggerInstance: logger as FastifyBaseLogger,
+    disableRequestLogging: true,
+  });
+  app.addHook('onResponse', async (request, reply) => {
+    const path = request.url.split('?')[0];
+    const level = path === '/events' ? 'debug' : 'info';
+    request.log[level](
+      {
+        method: request.method,
+        url: request.url,
+        statusCode: reply.statusCode,
+        responseTimeMs: Math.round(reply.elapsedTime),
+      },
+      'request completed',
+    );
+  });
 
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);

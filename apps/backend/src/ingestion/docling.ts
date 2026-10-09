@@ -4,6 +4,7 @@ import { access, readFile, rename } from 'node:fs/promises';
 import { basename, dirname, extname, join, parse } from 'node:path';
 import { withoutEmbeddedPictures } from './embedded-pictures.js';
 import { IngestionFailure } from './stage.js';
+import { logger as rootLogger, type Logger } from '../logging/logger.js';
 
 async function fileExists(path: string): Promise<boolean> {
   try {
@@ -68,7 +69,9 @@ export interface DoclingOptions {
   timeoutMs?: number;
   /** Docling's table-structure mode for PDFs. Defaults to `DOCLING_TABLE_MODE` or `fast`. */
   tableMode?: DoclingTableMode;
-  /** Where a container it could not remove is reported (NBK-111). Defaults to the console. */
+  /** The backend's logger (NBK-113), through a `docling` child. Defaults to the root logger. */
+  logger?: Logger;
+  /** Where a container it could not remove is reported (NBK-111). Defaults to the logger, at warn. */
   log?: (message: string) => void;
 }
 
@@ -196,7 +199,7 @@ const MIN_TEXT_CHARS_FOR_TEXT_PDF = 20;
 export function createDoclingConverter(options: DoclingOptions = {}): MarkdownConverter {
   const image = options.image ?? process.env.DOCLING_IMAGE ?? DOCLING_IMAGE;
   const docker = resolveDockerBinary(options.docker);
-  const log = options.log ?? warn;
+  const log = options.log ?? warnThrough(options.logger);
   const timeoutMs = resolveDoclingTimeoutMs(options.timeoutMs);
   const tableMode = resolveDoclingTableMode(options.tableMode);
 
@@ -403,10 +406,10 @@ function runDocker(docker: string, args: string[]): Promise<{ ok: boolean; outpu
  * conversion that needs it reports it again in its own terms.
  */
 export async function removeDoclingContainers(
-  options: Pick<DoclingOptions, 'docker' | 'log'> = {},
+  options: Pick<DoclingOptions, 'docker' | 'logger' | 'log'> = {},
 ): Promise<void> {
   const docker = resolveDockerBinary(options.docker);
-  const log = options.log ?? warn;
+  const log = options.log ?? warnThrough(options.logger);
   const listed = await runDocker(docker, [
     'ps',
     '-aq',
@@ -432,5 +435,8 @@ function resolveDockerBinary(docker?: string): string {
   return docker ?? process.env.DOCKER_BIN ?? 'docker';
 }
 
-// eslint-disable-next-line no-console
-const warn = (message: string): void => console.warn(message);
+/** Warnings through the given logger, or the root one, as the `docling` module. */
+function warnThrough(logger: Logger = rootLogger): (message: string) => void {
+  const doclingLog = logger.child({ module: 'docling' });
+  return (message) => doclingLog.warn(message);
+}

@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Pool } from 'pg';
 import { createPool } from './pool.js';
+import { logger } from '../logging/logger.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_DIR = join(__dirname, 'migrations');
@@ -58,8 +59,7 @@ async function main() {
   const pool = createPool(connectionString);
   try {
     await runMigrations(pool);
-    // eslint-disable-next-line no-console
-    console.log('Migrations applied.');
+    logger.info('Migrations applied.');
   } finally {
     await pool.end();
   }
@@ -68,7 +68,7 @@ async function main() {
 // Only run when invoked directly (`pnpm migrate`), not when imported by tests.
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   main().catch((err) => {
-    console.error(err);
+    logger.error({ err }, 'Migrations failed.');
     process.exitCode = 1;
   });
 }

@@ -22,6 +22,7 @@ import {
   type EmbedChunksPayload,
 } from '../ingestion/embed-chunks.js';
 import { resolveDoclingTimeoutMs } from '../ingestion/docling.js';
+import { logger as rootLogger, type Logger } from '../logging/logger.js';
 
 /**
  * Background jobs run on pg_boss against the same Postgres instance as
@@ -116,7 +117,12 @@ export interface StartJobQueueOptions {
    * `removeDoclingContainers`.
    */
   clearAbandonedConversions?: () => Promise<void>;
-  /** Where the reclaim reports what it took back. Defaults to the console. */
+  /**
+   * The backend's logger (NBK-113); the queue logs through a `jobs` child of
+   * it. Defaults to the root logger.
+   */
+  logger?: Logger;
+  /** Where the reclaim reports what it took back. Defaults to the logger, at info. */
   log?: (message: string) => void;
 }
 
@@ -206,13 +212,15 @@ export async function startJobQueue(options: StartJobQueueOptions): Promise<JobQ
     connectionString: options.connectionString,
     ...(options.schema === undefined ? {} : { schema: options.schema }),
   });
+  const jobsLog = (options.logger ?? rootLogger).child({ module: 'jobs' });
+  const log = options.log ?? ((message: string) => jobsLog.info(message));
+
   boss.on('error', (error) => {
     if (options.onError) {
       options.onError(error);
       return;
     }
-    // eslint-disable-next-line no-console
-    console.error('pg-boss error', error);
+    jobsLog.error({ err: error }, 'pg-boss error');
   });
 
   await boss.start();
@@ -258,18 +266,11 @@ export async function startJobQueue(options: StartJobQueueOptions): Promise<JobQ
       } catch (err) {
         // A worker that cannot clear them still has to start: the reclaimed
         // jobs run regardless, as they did before NBK-111.
-        // eslint-disable-next-line no-console
-        (options.log ?? console.warn)(
-          `Could not clear abandoned conversions: ${err instanceof Error ? err.message : String(err)}`,
-        );
+        const message = `Could not clear abandoned conversions: ${err instanceof Error ? err.message : String(err)}`;
+        if (options.log) options.log(message);
+        else jobsLog.warn({ err }, message);
       }
-      await reclaimActiveJobs(
-        boss,
-        convertDeps.pool,
-        options.schema ?? 'pgboss',
-        // eslint-disable-next-line no-console
-        options.log ?? ((message) => console.log(message)),
-      );
+      await reclaimActiveJobs(boss, convertDeps.pool, options.schema ?? 'pgboss', log);
     }
 
     await boss.work<ConvertToMarkdownPayload>(

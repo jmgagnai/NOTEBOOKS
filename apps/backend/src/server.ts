@@ -10,6 +10,7 @@ import { resolveEmbeddingModel, resolveTaskModels } from './llm/models.js';
 import { createOpenRouterEmbedder } from './llm/embeddings.js';
 import { createOpenRouterCompleter, createOpenRouterStreamer } from './llm/openrouter.js';
 import { createS3Client, ensureBucket } from './storage/s3-client.js';
+import { logger } from './logging/logger.js';
 
 const PORT = Number(process.env.PORT ?? 3000);
 const DATABASE_URL =
@@ -44,11 +45,9 @@ async function reportDatabase(pool: Pool, url: string): Promise<void> {
   const target = new URL(url);
   try {
     const { rows } = await pool.query<{ version: string }>('select version()');
-    // eslint-disable-next-line no-console
-    console.log(`Connected to ${rows[0].version.split(' on ')[0]} at ${target.host}`);
+    logger.info(`Connected to ${rows[0].version.split(' on ')[0]} at ${target.host}`);
   } catch (err) {
-    // eslint-disable-next-line no-console
-    console.error(
+    logger.error(
       `Could not connect to Postgres at ${target.host} as "${target.username}". If another ` +
         'Postgres is listening on that port it shadows the docker-compose one; see ' +
         'docs/environment-gotchas.md.',
@@ -61,7 +60,7 @@ async function main(): Promise<void> {
   // Built before anything opens a connection: it validates its env settings
   // (DOCLING_TABLE_MODE, NBK-72) and throws on a bad one, so a bad setting
   // fails before the database is touched.
-  const convertToMarkdown = createDoclingConverter();
+  const convertToMarkdown = createDoclingConverter({ logger });
   const pool = createPool(DATABASE_URL);
   await reportDatabase(pool, DATABASE_URL);
   await runMigrations(pool);
@@ -85,8 +84,7 @@ async function main(): Promise<void> {
   // workers: an upload is converted and then waits at "converted". Said out
   // loud at startup, because a silently half-run pipeline is a trap.
   if (!OPENROUTER_API_KEY) {
-    // eslint-disable-next-line no-console
-    console.warn(
+    logger.warn(
       'OPENROUTER_API_KEY is not set: ingestion stage 2 (metadata + summaries) and stage 3 ' +
         '(chunking + embeddings) will not run, Documents will stop at the "converted" ' +
         'status instead of reaching "ready", and asking a question in a Chat Thread will ' +
@@ -121,7 +119,8 @@ async function main(): Promise<void> {
 
   const jobs = await startJobQueue({
     connectionString: DATABASE_URL,
-    clearAbandonedConversions: removeDoclingContainers,
+    logger,
+    clearAbandonedConversions: () => removeDoclingContainers({ logger }),
     worker: {
       pool,
       s3,
@@ -145,10 +144,10 @@ async function main(): Promise<void> {
     appEvents,
     chat,
     administrators: ADMIN_EMAILS,
+    logger,
   });
   await app.listen({ port: PORT, host: '0.0.0.0' });
-  // eslint-disable-next-line no-console
-  console.log(`Backend listening on :${PORT} — API docs at http://localhost:${PORT}/documentation`);
+  logger.info(`Backend listening on :${PORT} — API docs at http://localhost:${PORT}/documentation`);
 
   // Jobs in flight get a chance to finish, and the LISTEN connection is
   // closed, instead of both being severed with the process.
@@ -166,6 +165,6 @@ async function main(): Promise<void> {
 // connection and pg-boss are up leaves their handles holding the event loop
 // open, and the process would log the error and then hang (NBK-73).
 main().catch((err) => {
-  console.error(err);
+  logger.fatal({ err }, 'The backend could not start.');
   process.exit(1);
 });
