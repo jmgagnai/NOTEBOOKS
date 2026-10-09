@@ -66,8 +66,12 @@ describe('NotebookDetailPage — opening a Chat Thread at an Exchange (NBK-97)',
         documents: { listDocuments: vi.fn().mockResolvedValue([]) },
         chat: {
           listChatThreads: vi.fn().mockResolvedValue(THREADS),
-          listChatMessages: vi.fn(({ threadId }: { threadId: string }) =>
-            Promise.resolve(MESSAGES[threadId]),
+          // A moment later, as over the network: the view renders the
+          // Thread loading before its messages arrive, which is when a
+          // follow could mistake their arrival for new ones.
+          listChatMessages: vi.fn(
+            ({ threadId }: { threadId: string }) =>
+              new Promise((resolve) => setTimeout(() => resolve(MESSAGES[threadId]), 20)),
           ),
         },
         inRouterShell: true,
@@ -86,6 +90,21 @@ describe('NotebookDetailPage — opening a Chat Thread at an Exchange (NBK-97)',
       expect(scrolled(scrollIntoView)).toEqual([rowOf('What was revenue in Q2?')]),
     );
     expect(scrollIntoView).toHaveBeenCalledWith(expect.objectContaining({ block: 'start' }));
+    expect(scrolled(scrollTo)).not.toContain(listOf('What was revenue in Q2?'));
+  });
+
+  // The bug a reader saw: landed at the Exchange, then scrolled smoothly to
+  // the bottom — rule 3 following the bottom took the Thread's messages
+  // arriving on open for new ones arriving.
+  it('stays at the Exchange once the Chat Thread has loaded, not following it to the bottom', async () => {
+    await renderAt(AT_A1);
+    await waitFor(() =>
+      expect(scrolled(scrollIntoView)).toEqual([rowOf('What was revenue in Q2?')]),
+    );
+
+    // Long enough for any follow-up scroll to have been asked for.
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
     expect(scrolled(scrollTo)).not.toContain(listOf('What was revenue in Q2?'));
   });
 
