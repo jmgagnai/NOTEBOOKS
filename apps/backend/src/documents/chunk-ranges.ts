@@ -34,8 +34,9 @@ interface ChunkTextRow {
  *
  * Only the Versions asked about are read, and each one's Markdown only
  * once. The cost is one pass over those Versions' content: paid once per
- * Citation (persisted on its row, NBK-12), and on every query for a search
- * result's best Chunk (NBK-96, `docs/search.md`).
+ * Citation (persisted on its row, NBK-12), and once per Version for search
+ * results (stored in `chunk_ranges` by `storeChunkRanges`, NBK-107;
+ * ingestion stores new Versions' ranges as it writes them).
  *
  * A chunk whose text cannot be found (a Version with no Converted Markdown,
  * or text that line-ending normalisation has moved away from the source) is
@@ -74,14 +75,67 @@ export async function locateChunkRanges(
   for (const [versionId, chunks] of chunksByVersion) {
     const markdown = markdownByVersion.get(versionId);
     if (!markdown) continue;
-
-    let cursor = 0;
-    for (const chunk of chunks) {
-      const at = markdown.indexOf(chunk.text, cursor);
-      if (at === -1) continue;
-      ranges.set(chunk.id, { charStart: at, charEnd: at + chunk.text.length });
-      cursor = at + 1;
+    const located = locateInMarkdown(
+      markdown,
+      chunks.map((chunk) => chunk.text),
+    );
+    for (const [i, chunk] of chunks.entries()) {
+      const range = located[i];
+      if (range) ranges.set(chunk.id, range);
     }
   }
+  return ranges;
+}
+
+/**
+ * The forward scan itself: where each of a Version's Chunk texts, in
+ * `chunk_index` order, sits in its Converted Markdown, or null where it
+ * cannot be found. Ingestion stage 3 runs it as it writes the Chunks
+ * (NBK-107); `locateChunkRanges` runs it over Chunks already stored.
+ */
+export function locateInMarkdown(
+  markdown: string,
+  texts: readonly string[],
+): (ChunkRange | null)[] {
+  let cursor = 0;
+  return texts.map((text) => {
+    const at = markdown.indexOf(text, cursor);
+    if (at === -1) return null;
+    cursor = at + 1;
+    return { charStart: at, charEnd: at + text.length };
+  });
+}
+
+/**
+ * Locates the Chunks of Versions not located yet — written before ranges
+ * were stored (NBK-107) — and stores what it found in `chunk_ranges`, marking
+ * each Version located, so no later search rescans it. A Chunk that cannot
+ * be found keeps a null range; its Version still counts as located.
+ */
+export async function storeChunkRanges(
+  pool: Pool,
+  versionIds: readonly string[],
+): Promise<Map<string, ChunkRange>> {
+  const unique = [...new Set(versionIds)];
+  if (unique.length === 0) return new Map();
+  const ranges = await locateChunkRanges(pool, unique);
+  const ids = [...ranges.keys()];
+  // Into their own table, never onto `chunks`: rewriting a Chunk's row
+  // would recompute its stored search vector and GIN entries (0018's note).
+  // Only for Chunks that still exist: ingestion re-running on the Version
+  // may have replaced them since they were read — its own ranges then
+  // stand — and a range for a deleted Chunk would fail the whole search.
+  await pool.query(
+    `INSERT INTO chunk_ranges (chunk_id, char_start, char_end)
+     SELECT r.chunk_id, r.char_start, r.char_end
+     FROM unnest($1::uuid[], $2::int[], $3::int[]) AS r(chunk_id, char_start, char_end)
+     JOIN chunks c ON c.id = r.chunk_id
+     ON CONFLICT (chunk_id) DO UPDATE SET char_start = EXCLUDED.char_start, char_end = EXCLUDED.char_end`,
+    [ids, ids.map((id) => ranges.get(id)!.charStart), ids.map((id) => ranges.get(id)!.charEnd)],
+  );
+  await pool.query(
+    'UPDATE document_versions SET chunk_ranges_located_at = now() WHERE id = ANY($1::uuid[])',
+    [unique],
+  );
   return ranges;
 }

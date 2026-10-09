@@ -142,9 +142,24 @@ Each result carries:
 
 The Search page links a result the way a Citation links
 (`?version=&chunk=&from=&to=`), so opening it shows the Converted Markdown
-scrolled to that Chunk and highlighted. The range is found per query
-(`src/documents/chunk-ranges.ts`); a Chunk whose text can't be found in the
-Markdown gets a null range and opens unscrolled.
+scrolled to that Chunk and highlighted. A Chunk whose text can't be found in
+the Markdown gets a null range and opens unscrolled.
+
+The ranges are stored (NBK-107), in `chunk_ranges`. Ingestion stage 3 finds
+them as it writes a Version's Chunks, with the same forward scan
+(`locateInMarkdown`, `src/documents/chunk-ranges.ts`), and stamps the
+Version `chunk_ranges_located_at`. A Version written before that is located
+by the first search that meets it, once. Before this, every search rescanned
+its result Versions' whole Converted Markdown:
+
+| Query | Every search, before | First search per Version | After |
+| --- | --- | --- | --- |
+| bene gesserit | 0.9 s | 1.9 s | 0.11 s |
+| paul | 0.7 s | 0.8 s | 0.12 s |
+
+The ranges have a table of their own because writing one onto an existing
+`chunks` row recomputed that row's stored `search_vector` and its GIN
+entries. Tried that way, a first search took 27 s.
 
 Two filters are applied before anything is matched, both straight out of
 GLOSSARY.md:

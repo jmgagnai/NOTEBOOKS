@@ -552,6 +552,51 @@ describe('embed-chunks job', () => {
     }
   });
 
+  // NBK-107: where each Chunk sits in the Converted Markdown is stored with
+  // it, so a search opening a result at its Chunk need not rescan the
+  // whole Document on every query.
+  it('stores where each Chunk sits in the Converted Markdown, and marks the Version located', async () => {
+    const markdown = [
+      '# Field Handbook',
+      '',
+      'Soil sampling begins with a clean auger.',
+      '',
+      '## Storage',
+      '',
+      'Samples are kept cold and dark.',
+      '',
+    ].join('\n');
+    const seeded = await seedSummarizedVersion('handbook.md', markdown);
+    const { fetchStub } = stubEmbeddings();
+
+    await runEmbedChunksJob(depsWith(fetchStub), {
+      payload: { documentId: seeded.documentId, versionId: seeded.versionId },
+      willRetry: false,
+    });
+
+    const { rows } = await pool.query<{ text: string; char_start: number; char_end: number }>(
+      `SELECT c.text, r.char_start, r.char_end
+       FROM chunks c JOIN chunk_ranges r ON r.chunk_id = c.id
+       WHERE c.document_version_id = $1 ORDER BY c.chunk_index`,
+      [seeded.versionId],
+    );
+    // Every Chunk has its range: none drops out of the join.
+    const { rows: all } = await pool.query<{ n: string }>(
+      'SELECT count(*) AS n FROM chunks WHERE document_version_id = $1',
+      [seeded.versionId],
+    );
+    expect(rows.length).toBeGreaterThan(1);
+    expect(rows).toHaveLength(Number(all[0].n));
+    for (const row of rows) {
+      expect(markdown.slice(row.char_start, row.char_end)).toBe(row.text);
+    }
+    const { rows: version } = await pool.query<{ located: Date | null }>(
+      'SELECT chunk_ranges_located_at AS located FROM document_versions WHERE id = $1',
+      [seeded.versionId],
+    );
+    expect(version[0].located).not.toBeNull();
+  });
+
   it("replaces a Version's chunks on a re-run instead of accumulating them", async () => {
     const seeded = await seedSummarizedVersion('rerun.md', `# Rerun\n\n${prose('first', 20)}\n`);
 
