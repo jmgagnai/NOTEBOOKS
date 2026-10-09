@@ -88,6 +88,13 @@
     color: var(--mat-sys-error);
   }
 
+  // Under a list cut at its best results (more matched than it shows).
+  &__cut {
+    margin: 0.5rem 12px 0;
+    font: var(--mat-sys-body-small);
+    color: var(--mat-sys-on-surface-variant);
+  }
+
   // "Showing results for …" (NBK-105): a quiet line above the results, its
   // exact-search link in the primary colour like any link.
   &__corrected {

@@ -160,6 +160,7 @@ describe('Search routes — Documents, by keyword (NBK-104)', () => {
     return response.json() as {
       correctedQuery: string | null;
       words: string[];
+      total: number;
       results: DocumentSearchResult[];
     };
   }
@@ -359,10 +360,12 @@ describe('Search routes — Documents, by keyword (NBK-104)', () => {
       },
     ]);
 
-    const hits = await results(session, notebookId, 'sholmes');
+    const body = await answer(session, notebookId, 'sholmes');
 
-    expect(hits).toHaveLength(20);
-    expect(hits[0].filename).toBe('thrice.md');
+    expect(body.results).toHaveLength(20);
+    expect(body.results[0].filename).toBe('thrice.md');
+    // How many matched in all, so the page can say the list is cut.
+    expect(body.total).toBe(27);
   });
 
   it('honours web-search syntax: a word to leave out', async () => {
@@ -561,7 +564,7 @@ describe('Search routes — Documents, by keyword (NBK-104)', () => {
     const notebookId = await notebookOf(session);
     await seedDocument(notebookId, 'any.md', [{ chunks: [{ text: 'Anything.' }] }]);
 
-    expect(await results(session, notebookId, '   ')).toEqual([]);
+    expect(await answer(session, notebookId, '   ')).toMatchObject({ total: 0, results: [] });
   });
 
   it('hands Chunk text back as text, markup and all, never as markup', async () => {

@@ -95,6 +95,13 @@
                   </li>
                 }
               </ul>
+              @if (store.chunksTotal() > store.chunks().length) {
+                <!-- Cut at its best results: say how many matched, and how to narrow it. -->
+                <p class="search-page__cut">
+                  Showing the {{ store.chunks().length }} best of {{ store.chunksTotal() }} matching
+                  Chunks. Add a word or a "quoted phrase" to narrow the search.
+                </p>
+              }
             }
           </section>
         }
@@ -141,6 +148,12 @@
                   </li>
                 }
               </ul>
+              @if (store.exchangesTotal() > store.exchanges().length) {
+                <p class="search-page__cut">
+                  Showing the {{ store.exchanges().length }} best of {{ store.exchangesTotal() }}
+                  matching Exchanges. Add a word or a "quoted phrase" to narrow the search.
+                </p>
+              }
             }
           </section>
         }

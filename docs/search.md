@@ -89,6 +89,16 @@ corrected to the closest word it does: "rosigny" becomes "rossigny", and
   sends `exact=true` and skips correction. A new query typed in the box is
   always corrected.
 
+## When a list is cut
+
+Each search returns its best 20 results and `total`, how many matched in
+all, counted with `COUNT(*) OVER ()` before the `LIMIT`. The ranking has to
+see every match anyway, so the count costs nothing measurable. When a
+section shows fewer than its total, the Search page says so under it:
+*"Showing the 20 best of 1999 matching Chunks. Add a word or a "quoted
+phrase" to narrow the search."* No paging: narrowing the search beats
+scrolling through weaker matches.
+
 ## The words, where a result opens
 
 Both routes also return `words`: the words the search read the query as
