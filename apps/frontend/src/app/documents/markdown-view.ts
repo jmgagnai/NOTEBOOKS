@@ -8,7 +8,6 @@ import {
   effect,
   ElementRef,
   inject,
-  Injector,
   input,
   output,
   signal,
@@ -93,9 +92,10 @@ function scrollingAncestor(element: HTMLElement): Element | null {
  * the document's start, and the rest is added a slice at a time between
  * tasks, the page staying usable throughout; `progress` says how much is
  * there. Blocks added above the reader's position would push it
- * down, so the view moves by what they added. It does this itself, with the
- * browser's own anchoring turned off for the blocks (markdown-view.scss):
- * Safari does not anchor, and Chrome anchoring as well moved the text twice.
+ * down, and so would the pictures in them once decoded, so the view moves by
+ * what they added (`keepPlace`). It does this itself, with the browser's own
+ * anchoring turned off for the blocks (markdown-view.scss): Safari does not
+ * anchor, and Chrome anchoring as well moved the text twice.
  */
 @Component({
   selector: 'app-markdown-view',
@@ -139,7 +139,7 @@ export class MarkdownView {
   readonly progress = output<number>();
 
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
-  private readonly injector = inject(Injector);
+  private readonly destroyRef = inject(DestroyRef);
 
   /** The blocks rendered so far: `first` to `last`, exclusive. */
   private readonly window = signal({ first: 0, last: 0 });
@@ -184,7 +184,7 @@ export class MarkdownView {
         this.startRendering(cited);
       });
     });
-    inject(DestroyRef).onDestroy(() => this.stopRendering());
+    this.destroyRef.onDestroy(() => this.stopRendering());
 
     // Scrolling is a side effect on the real DOM, so it waits until the
     // blocks are rendered. `scrollIntoView` is called defensively: it is
@@ -194,6 +194,40 @@ export class MarkdownView {
       if (this.highlightFrom() === null || this.blocks().length === 0) return;
       this.cited()?.scrollIntoView?.({ block: 'center' });
     });
+
+    afterNextRender(() => this.keepPlace());
+  }
+
+  /**
+   * Keeps the text the reader is looking at where it is while what is above
+   * it grows: blocks added a slice at a time, and the pictures among them
+   * (NBK-108), which have no height until decoded — after the slice that
+   * holds them was laid out. Every growth of the rendering is seen, and the
+   * view moves by however much the anchor moved down within it. The
+   * anchor's place within the rendering, not on screen, is what is
+   * compared, so a reader's own scrolling is never undone.
+   */
+  private keepPlace(): void {
+    const content = this.host.nativeElement.querySelector<HTMLElement>('.markdown-view');
+    if (!content || typeof ResizeObserver === 'undefined') return;
+    let anchor: HTMLElement | null = null;
+    let offset = 0;
+    const place = (block: HTMLElement) =>
+      block.getBoundingClientRect().top - content.getBoundingClientRect().top;
+    const observer = new ResizeObserver(() => {
+      const current = this.anchor();
+      if (!current) return;
+      const now = place(current);
+      // A new anchor (the cited block, rendered) is a new reference, not a move.
+      if (current === anchor && now !== offset) {
+        const scroller = scrollingAncestor(this.host.nativeElement);
+        if (scroller) scroller.scrollTop += now - offset;
+      }
+      anchor = current;
+      offset = now;
+    });
+    observer.observe(content);
+    this.destroyRef.onDestroy(() => observer.disconnect());
   }
 
   /**
@@ -212,29 +246,7 @@ export class MarkdownView {
   private renderMore(): void {
     const total = this.blocks().length;
     const { first, last } = this.window();
-    const above = Math.max(0, first - SLICE);
-    const anchor = above < first ? this.anchor() : null;
-    const scroller = anchor ? scrollingAncestor(this.host.nativeElement) : null;
-    const anchorBefore = anchor?.getBoundingClientRect().top ?? 0;
-    const scrollBefore = scroller?.scrollTop ?? 0;
-    this.window.set({ first: above, last: Math.min(total, last + SLICE) });
-    if (anchor && scroller) {
-      // What the new blocks above added, taken back off the scroll, so the
-      // text the reader is looking at stays where it is. The blocks render
-      // up to a frame later, and the reader may scroll meanwhile: the anchor
-      // moved by what was added less what they scrolled, so their scroll is
-      // added back rather than undone.
-      afterNextRender(
-        {
-          write: () => {
-            const scrolled = scroller.scrollTop - scrollBefore;
-            const added = anchor.getBoundingClientRect().top - anchorBefore + scrolled;
-            if (added !== 0) scroller.scrollTop += added;
-          },
-        },
-        { injector: this.injector },
-      );
-    }
+    this.window.set({ first: Math.max(0, first - SLICE), last: Math.min(total, last + SLICE) });
     this.reportAndContinue();
   }
 
