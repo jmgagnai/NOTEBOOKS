@@ -14,8 +14,13 @@ const NOTEBOOK_ID = '11111111-1111-1111-1111-111111111111';
 const SEARCH_URL = `/notebooks/${NOTEBOOK_ID}/search`;
 
 /** What a search answers with (NBK-105): its results, and the query searched if it was corrected. */
-function found<T>(results: T[], correctedQuery: string | null = null, words: string[] = []) {
-  return { correctedQuery, words, results };
+function found<T>(
+  results: T[],
+  correctedQuery: string | null = null,
+  words: string[] = [],
+  total = results.length,
+) {
+  return { correctedQuery, words, total, results };
 }
 
 /**
@@ -33,6 +38,25 @@ function result(overrides: Partial<Record<string, unknown>> = {}) {
       { text: 'The tallest volcano on ', match: false },
       { text: 'Mars', match: true },
       { text: ' rises 22 km above the plains.', match: false },
+    ],
+    ...overrides,
+  };
+}
+
+/** One Exchange result as the generated client returns it. */
+function exchange(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    threadId: 'thread-1',
+    threadTitle: 'Who is who',
+    askedBy: { id: 'user-ada', email: 'ada@example.com' },
+    askedAt: '2026-10-08T10:00:00.000Z',
+    questionId: 'q-1',
+    answerId: 'a-1',
+    question: [{ text: 'Who helps Hortense?', match: false }],
+    answer: [
+      { text: 'Prince Rénine helps her escape ', match: false },
+      { text: 'Rossigny', match: true },
+      { text: ', her suitor.', match: false },
     ],
     ...overrides,
   };
@@ -375,25 +399,6 @@ describe('SearchPage', () => {
   describe('Chat Threads', () => {
     afterEach(() => vi.useRealTimers());
 
-    /** One Exchange result as the generated client returns it. */
-    function exchange(overrides: Partial<Record<string, unknown>> = {}) {
-      return {
-        threadId: 'thread-1',
-        threadTitle: 'Who is who',
-        askedBy: { id: 'user-ada', email: 'ada@example.com' },
-        askedAt: '2026-10-08T10:00:00.000Z',
-        questionId: 'q-1',
-        answerId: 'a-1',
-        question: [{ text: 'Who helps Hortense?', match: false }],
-        answer: [
-          { text: 'Prince Rénine helps her escape ', match: false },
-          { text: 'Rossigny', match: true },
-          { text: ', her suitor.', match: false },
-        ],
-        ...overrides,
-      };
-    }
-
     it('searches the Chat Threads alongside the Documents, Documents first', async () => {
       const searchChatThreads = vi.fn().mockResolvedValue(found([exchange()]));
       await renderSearch(vi.fn().mockResolvedValue(found([result()])), { searchChatThreads });
@@ -604,6 +609,63 @@ describe('SearchPage', () => {
       await navigate(`${SEARCH_URL}?q=rosigny&exact=1`);
 
       await waitFor(() => expect(searchNotebook).toHaveBeenCalledTimes(2));
+    });
+  });
+
+  // Each search returns its best 20; when more matched, the section says
+  // so, with how many, and how to narrow the search.
+  describe('a list cut at its best results', () => {
+    const NARROW = 'Add a word or a "quoted phrase" to narrow the search.';
+    const many = <T>(make: (i: number) => T) => Array.from({ length: 20 }, (_, i) => make(i));
+
+    it('says how many Chunks matched beyond those shown, under the Documents', async () => {
+      await renderSearch(
+        vi.fn().mockResolvedValue(
+          found(
+            many((i) =>
+              result({
+                match: { versionId: 'v-1', chunkId: `chunk-${i}`, charStart: 0, charEnd: 1 },
+              }),
+            ),
+            null,
+            [],
+            143,
+          ),
+        ),
+      );
+      await searchFor('mars');
+
+      const documents = await screen.findByRole('region', { name: 'Documents' });
+      expect(
+        within(documents).getByText(`Showing the 20 best of 143 matching Chunks. ${NARROW}`),
+      ).toBeTruthy();
+    });
+
+    it('says how many Exchanges matched beyond those shown, under the Chat Threads', async () => {
+      await renderSearch(vi.fn().mockResolvedValue(found([])), {
+        searchChatThreads: vi.fn().mockResolvedValue(
+          found(
+            many((i) => exchange({ answerId: `a-${i}` })),
+            null,
+            [],
+            25,
+          ),
+        ),
+      });
+      await searchFor('rossigny');
+
+      const threads = await screen.findByRole('region', { name: 'Chat Threads' });
+      expect(
+        within(threads).getByText(`Showing the 20 best of 25 matching Exchanges. ${NARROW}`),
+      ).toBeTruthy();
+    });
+
+    it('says nothing when every match is shown', async () => {
+      await renderSearch(vi.fn().mockResolvedValue(found([result()])));
+      await searchFor('mars');
+
+      await screen.findByRole('link', { name: /The Red Planet/ });
+      expect(screen.queryByText(/Showing the \d+ best/)).toBeNull();
     });
   });
 });

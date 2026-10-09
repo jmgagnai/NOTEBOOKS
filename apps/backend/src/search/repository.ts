@@ -3,7 +3,9 @@ import { locateChunkRanges } from '../documents/chunk-ranges.js';
 import { SEARCHABLE_VERSIONS_CTE } from '../documents/searchable-versions.js';
 import {
   excerpt,
+  type Found,
   headlineOptions,
+  NOTHING_FOUND,
   namesAWord,
   TEXT_SEARCH_CONFIG,
   withoutTags,
@@ -35,7 +37,10 @@ const SEARCH_CHUNKS_SQL = `
   SELECT
     s.document_id, s.filename, s.version_id,
     c.id AS chunk_id, c.heading_path, c.text,
-    NULLIF(v.metadata ->> 'title', '') AS title
+    NULLIF(v.metadata ->> 'title', '') AS title,
+    -- Every match, counted before LIMIT keeps the best: the ranking has to
+    -- see them all anyway, so knowing how many costs nothing more.
+    COUNT(*) OVER () AS total
   FROM searchable_versions s
   JOIN chunks c ON c.document_version_id = s.version_id
   JOIN document_versions v ON v.id = s.version_id
@@ -74,6 +79,7 @@ interface ChunkRow {
   heading_path: string[];
   text: string;
   title: string | null;
+  total: string;
 }
 
 /**
@@ -87,15 +93,15 @@ export async function searchChunks(
   notebookId: string,
   query: string,
   typed: string = query,
-): Promise<DocumentSearchResult[]> {
-  if (!(await namesAWord(pool, query))) return [];
+): Promise<Found<DocumentSearchResult>> {
+  if (!(await namesAWord(pool, query))) return NOTHING_FOUND;
   const { rows } = await pool.query<ChunkRow>(SEARCH_CHUNKS_SQL, [
     notebookId,
     query,
     DOCUMENT_RESULT_LIMIT,
     typed,
   ]);
-  if (rows.length === 0) return [];
+  if (rows.length === 0) return NOTHING_FOUND;
 
   const texts = rows.map((row) => plainText(row.text));
   const { rows: excerpts } = await pool.query<{ excerpt: string }>(EXCERPTS_SQL, [
@@ -109,7 +115,7 @@ export async function searchChunks(
     pool,
     rows.map((row) => row.version_id),
   );
-  return rows.map((row, i) => {
+  const results = rows.map((row, i) => {
     const range = ranges.get(row.chunk_id);
     return {
       documentId: row.document_id,
@@ -125,4 +131,5 @@ export async function searchChunks(
       excerpt: excerpt(excerpts[i].excerpt, texts[i]),
     };
   });
+  return { results, total: Number(rows[0].total) };
 }

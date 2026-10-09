@@ -6,6 +6,7 @@ import { errorResponseSchema } from '../auth/schema.js';
 import { notebookExists } from '../notebooks/repository.js';
 import { EXCHANGE_RESULT_LIMIT, searchExchanges } from './exchanges.js';
 import { correct, searchedWords } from './correction.js';
+import type { Found } from './keywords.js';
 import { DOCUMENT_RESULT_LIMIT, searchChunks } from './repository.js';
 import {
   searchNotebookParamsSchema,
@@ -115,9 +116,10 @@ async function search<T>(
   pool: Pool,
   notebookId: string,
   { q, exact }: { q: string; exact: 'true' | 'false' },
-  find: (query: string, typed: string) => Promise<T[]>,
-): Promise<{ correctedQuery: string | null; words: string[]; results: T[] }> {
+  find: (query: string, typed: string) => Promise<Found<T>>,
+): Promise<{ correctedQuery: string | null; words: string[]; total: number; results: T[] }> {
   const { searched, correctedQuery } =
     exact === 'true' ? { searched: q, correctedQuery: null } : await correct(pool, notebookId, q);
-  return { correctedQuery, words: searchedWords(searched), results: await find(searched, q) };
+  const { results, total } = await find(searched, q);
+  return { correctedQuery, words: searchedWords(searched), total, results };
 }

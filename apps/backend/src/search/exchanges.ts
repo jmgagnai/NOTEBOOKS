@@ -1,7 +1,9 @@
 import type { Pool } from 'pg';
 import { notebookIsActive } from '../notebooks/active-notebooks.js';
 import {
+  type Found,
   headlineOptions,
+  NOTHING_FOUND,
   namesAWord,
   segments,
   TEXT_SEARCH_CONFIG,
@@ -59,6 +61,8 @@ const SEARCH_EXCHANGES_SQL = `
     e.chat_thread_id, t.title AS thread_title,
     e.question_id, e.answer_id, qm.created_at AS asked_at,
     u.id AS asker_id, u.email AS asker_email,
+    -- Every matching Exchange, counted before LIMIT keeps the best.
+    COUNT(*) OVER () AS total,
     ts_headline('${TEXT_SEARCH_CONFIG}', ${withoutTags('qm.content')}, q.query, $4) AS question,
     ts_headline('${TEXT_SEARCH_CONFIG}', ${withoutTags('am.content')}, q.query, $5) AS answer
   FROM exchanges e
@@ -89,6 +93,7 @@ interface ExchangeRow {
   asker_email: string;
   question: string;
   answer: string;
+  total: string;
 }
 
 /**
@@ -101,8 +106,8 @@ export async function searchExchanges(
   notebookId: string,
   query: string,
   typed: string = query,
-): Promise<ExchangeSearchResult[]> {
-  if (!(await namesAWord(pool, query))) return [];
+): Promise<Found<ExchangeSearchResult>> {
+  if (!(await namesAWord(pool, query))) return NOTHING_FOUND;
   const { rows } = await pool.query<ExchangeRow>(SEARCH_EXCHANGES_SQL, [
     notebookId,
     query,
@@ -111,7 +116,7 @@ export async function searchExchanges(
     ANSWER_HEADLINE,
     typed,
   ]);
-  return rows.map((row) => ({
+  const results = rows.map((row) => ({
     threadId: row.chat_thread_id,
     threadTitle: row.thread_title,
     askedBy: { id: row.asker_id, email: row.asker_email },
@@ -121,4 +126,5 @@ export async function searchExchanges(
     question: segments(row.question),
     answer: segments(row.answer),
   }));
+  return { results, total: rows.length === 0 ? 0 : Number(rows[0].total) };
 }

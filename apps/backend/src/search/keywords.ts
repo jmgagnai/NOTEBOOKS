@@ -100,3 +100,15 @@ export function excerpt(headline: string, source: string): TextSegment[] {
     ...(tail ? [{ text: tail, match: false }] : []),
   ];
 }
+
+/**
+ * What one search finds: the best results, up to its limit, and how many
+ * matched in all — so the page can say when the list is cut, and how much.
+ */
+export interface Found<T> {
+  results: T[];
+  total: number;
+}
+
+/** Nothing found. */
+export const NOTHING_FOUND: Found<never> = { results: [], total: 0 };

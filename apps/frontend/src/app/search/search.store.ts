@@ -87,6 +87,12 @@ interface SearchState {
    * the opened page marks them.
    */
   words: string[];
+  /**
+   * How many Chunks and Exchanges matched in all: more than the lists hold
+   * when a search found more than its best 20, which the page then says.
+   */
+  chunksTotal: number;
+  exchangesTotal: number;
 }
 
 const initialState: SearchState = {
@@ -95,6 +101,8 @@ const initialState: SearchState = {
   exact: false,
   correctedQuery: null,
   words: [],
+  chunksTotal: 0,
+  exchangesTotal: 0,
   chunks: [],
   exchanges: [],
   searching: false,
@@ -153,6 +161,8 @@ export const SearchStore = signalStore(
           searching: false,
           searched: true,
           chunks: foundChunks.value?.results ?? [],
+          chunksTotal: foundChunks.value?.total ?? 0,
+          exchangesTotal: foundExchanges.value?.total ?? 0,
           chunksError: foundChunks.error,
           exchanges: foundExchanges.value?.results ?? [],
           exchangesError: foundExchanges.error,
@@ -198,6 +208,7 @@ export const SearchStore = signalStore(
 interface Found<T> {
   correctedQuery: string | null;
   words: string[];
+  total: number;
   results: T[];
 }
 

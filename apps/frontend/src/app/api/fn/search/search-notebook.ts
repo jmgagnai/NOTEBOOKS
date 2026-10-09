@@ -33,6 +33,11 @@ export function searchNotebook(http: HttpClient, rootUrl: string, params: Search
  * The words searched for — as corrected, without `or` or excluded words — to mark where a result opens.
  */
 'words': Array<string>;
+
+/**
+ * How many matched in all; more than the results when the list was cut.
+ */
+'total': number;
 'results': Array<{
 'documentId': string;
 'filename': string;
@@ -105,6 +110,11 @@ export function searchNotebook(http: HttpClient, rootUrl: string, params: Search
        * The words searched for — as corrected, without `or` or excluded words — to mark where a result opens.
        */
       'words': Array<string>;
+      
+      /**
+       * How many matched in all; more than the results when the list was cut.
+       */
+      'total': number;
       'results': Array<{
       'documentId': string;
       'filename': string;

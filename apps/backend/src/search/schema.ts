@@ -43,6 +43,10 @@ function searchResponse<T extends z.ZodTypeAny>(result: T) {
         'The words searched for — as corrected, without `or` or excluded words — to mark ' +
           'where a result opens.',
       ),
+    total: z
+      .number()
+      .int()
+      .describe('How many matched in all; more than the results when the list was cut.'),
     results: z.array(result),
   });
 }

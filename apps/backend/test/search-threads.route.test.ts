@@ -192,10 +192,21 @@ describe('Chat Thread search', () => {
       ['Ganimard and Ganimard again?', 'Ganimard, Ganimard and Ganimard.'],
     ]);
 
-    const hits = await results(session, notebookId, 'ganimard');
+    const body = await answer(session, notebookId, 'ganimard');
 
-    expect(hits).toHaveLength(20);
-    expect(hits[0].threadTitle).toBe('Best');
+    expect(body.results).toHaveLength(20);
+    expect(body.results[0].threadTitle).toBe('Best');
+    // How many matched in all, so the page can say the list is cut.
+    expect((body as unknown as { total: number }).total).toBe(25);
+  });
+
+  it('counts every match even when all are shown', async () => {
+    const session = await signIn();
+    const notebookId = await notebookOf(session);
+    await threadWith(session, notebookId, 'Few', [['Ganimard?', 'Yes.']]);
+
+    expect(await answer(session, notebookId, 'ganimard')).toMatchObject({ total: 1 });
+    expect(await answer(session, notebookId, 'zzz')).toMatchObject({ total: 0, results: [] });
   });
 
   it('leaves out deleted Chat Threads and other Notebooks', async () => {
