@@ -306,9 +306,15 @@ describe('DocumentDetailPage — following Ingestion while open', () => {
     });
 
     it('hands the live stream between the Notebook page and the Document page', async () => {
+      // The list reports the Document as the server holds it by then.
+      let stored = CONVERTING;
+      const send = (status: string) => {
+        stored = { ...stored, status };
+        appEvents.events.next(statusChanged(status));
+      };
       const documents = {
         ...clients(),
-        listDocuments: vi.fn().mockResolvedValue([CONVERTING]),
+        listDocuments: vi.fn().mockImplementation(() => Promise.resolve([stored])),
       };
       const { navigate, appEvents } = await renderRouted(documents, noChat());
       await navigate(`/notebooks/${NOTEBOOK_ID}`);
@@ -318,12 +324,12 @@ describe('DocumentDetailPage — following Ingestion while open', () => {
 
       await navigate(`/notebooks/${NOTEBOOK_ID}/documents/${DOCUMENT_ID}`);
       const byline = await screen.findByTestId('byline');
-      appEvents.events.next(statusChanged('converted'));
+      send('converted');
       expect(await within(byline).findByText('Converted')).toBeTruthy();
 
       await navigate(`/notebooks/${NOTEBOOK_ID}`);
       await waitFor(() => expect(screen.queryByTestId('byline')).toBeNull());
-      appEvents.events.next(statusChanged('indexing'));
+      send('indexing');
       expect(await screen.findByText('Indexing')).toBeTruthy();
       // Handed over, not stacked: as many subscriptions as before the trip.
       expect(appEvents.events.observers.length).toBe(onNotebookPage);

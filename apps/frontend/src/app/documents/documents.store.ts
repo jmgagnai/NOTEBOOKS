@@ -376,6 +376,9 @@ const initialState: DocumentsState = {
  * is no ownership check anywhere in this chain — any authenticated user can
  * upload, delete, or restore any Document in any Notebook.
  */
+/** How many times a Document list read that the Notebook outran is retried. */
+const MAX_LIST_READS = 3;
+
 export const DocumentsStore = signalStore(
   { providedIn: 'root' },
   withState(initialState),
@@ -418,6 +421,9 @@ export const DocumentsStore = signalStore(
       // reads that overtake each other, and only the read the reader asked
       // for last may land. Plumbing, like
       // `watching`, so outside the state.
+      // Whether a status event arrived while the Document list was being
+      // read (see `loadDocuments`). Plumbing, so outside the state.
+      let heardWhileLoading = false;
       let openRequest = 0;
       // The Version whose Converted Markdown is on its way, so a second ask
       // for it waits on that fetch instead of starting another.
@@ -795,8 +801,21 @@ export const DocumentsStore = signalStore(
         async loadDocuments(notebookId: string): Promise<void> {
           patchState(store, { loading: true, error: null });
           try {
-            const documents = await documentsService.listDocuments({ notebookId });
-            patchState(store, { documents, documentsNotebookId: notebookId, loading: false });
+            // The list answers as of when the server read it, and the
+            // Notebook moves on meanwhile: a Document lands, a status event
+            // arrives — maybe about a Document this answer will not have.
+            // Applying the answer then would wipe that out, so a list that
+            // changed, or heard an event, while the request was out is read
+            // again: an event is a hint, the list the truth (ADR-0004).
+            for (let attempt = 1; ; attempt++) {
+              const before = store.documents();
+              heardWhileLoading = false;
+              const documents = await documentsService.listDocuments({ notebookId });
+              const outdated = store.documents() !== before || heardWhileLoading;
+              if (outdated && attempt < MAX_LIST_READS) continue;
+              patchState(store, { documents, documentsNotebookId: notebookId, loading: false });
+              return;
+            }
           } catch (err) {
             patchState(store, {
               loading: false,
@@ -1081,6 +1100,7 @@ export const DocumentsStore = signalStore(
           watching = appEvents.stream([`notebook:${notebookId}`]).subscribe((event) => {
             const change = asStatusChange(event);
             if (!change) return;
+            if (store.loading()) heardWhileLoading = true;
             followOpenVersion(notebookId, change);
             followList(notebookId, change);
           });

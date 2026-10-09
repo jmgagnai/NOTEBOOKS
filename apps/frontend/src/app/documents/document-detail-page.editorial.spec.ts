@@ -95,7 +95,7 @@ describe('DocumentDetailPage — editorial reading view', () => {
     await renderDetail(SUMMARIZED_DETAIL);
 
     const header = await screen.findByTestId('document-pane-header');
-    expect(within(header).getByText('quarterly.pdf')).toBeTruthy();
+    expect(await within(header).findByText('quarterly.pdf')).toBeTruthy();
     const close = within(header).getByRole('link', { name: 'Back to the Notebook' });
     expect(close.getAttribute('href')).toBe(`/notebooks/${NOTEBOOK_ID}`);
     expect(screen.queryByText(/← Back to the Notebook/)).toBeNull();
