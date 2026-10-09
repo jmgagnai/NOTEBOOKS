@@ -88,6 +88,18 @@
     color: var(--mat-sys-error);
   }
 
+  // "Showing results for …" (NBK-105): a quiet line above the results, its
+  // exact-search link in the primary colour like any link.
+  &__corrected {
+    margin: 1.5rem 4px 0;
+    font: var(--mat-sys-body-medium);
+    color: var(--mat-sys-on-surface-variant);
+  }
+
+  &__exact {
+    color: var(--mat-sys-primary);
+  }
+
   // Documents, then Chat Threads (NBK-97), each under its own heading.
   &__section {
     margin-top: 1.5rem;

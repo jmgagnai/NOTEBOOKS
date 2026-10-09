@@ -25,7 +25,9 @@ const SEARCH_EXCHANGES_SQL = `
   WITH q AS (SELECT websearch_to_tsquery('${TEXT_SEARCH_CONFIG}', $2) AS query),
   hits AS (
     SELECT m.id, m.chat_thread_id, m.role, m.seq,
-           ts_rank(to_tsvector('${TEXT_SEARCH_CONFIG}', m.content), q.query) AS rank
+           ts_rank(to_tsvector('${TEXT_SEARCH_CONFIG}', m.content), q.query) AS rank,
+           to_tsvector('${TEXT_SEARCH_CONFIG}', m.content)
+             @@ websearch_to_tsquery('${TEXT_SEARCH_CONFIG}', $6) AS as_typed
     FROM chat_messages m
     JOIN chat_threads t ON t.id = m.chat_thread_id
     CROSS JOIN q
@@ -34,7 +36,7 @@ const SEARCH_EXCHANGES_SQL = `
       AND to_tsvector('${TEXT_SEARCH_CONFIG}', m.content) @@ q.query
   ),
   pairs AS (
-    SELECT h.chat_thread_id, h.rank,
+    SELECT h.chat_thread_id, h.rank, h.as_typed,
       CASE WHEN h.role = 'user' THEN h.id ELSE (
         SELECT p.id FROM chat_messages p
         WHERE p.chat_thread_id = h.chat_thread_id AND p.role = 'user' AND p.seq < h.seq
@@ -48,7 +50,7 @@ const SEARCH_EXCHANGES_SQL = `
     FROM hits h
   ),
   exchanges AS (
-    SELECT chat_thread_id, question_id, answer_id, SUM(rank) AS rank
+    SELECT chat_thread_id, question_id, answer_id, SUM(rank) AS rank, bool_or(as_typed) AS as_typed
     FROM pairs
     WHERE question_id IS NOT NULL AND answer_id IS NOT NULL
     GROUP BY chat_thread_id, question_id, answer_id
@@ -65,7 +67,8 @@ const SEARCH_EXCHANGES_SQL = `
   JOIN chat_messages am ON am.id = e.answer_id
   JOIN users u ON u.id = qm.asked_by
   CROSS JOIN q
-  ORDER BY e.rank DESC, qm.seq DESC
+  -- What matched as typed first (NBK-105), then by rank, newest first.
+  ORDER BY e.as_typed DESC, e.rank DESC, qm.seq DESC
   LIMIT $3
 `;
 
@@ -88,10 +91,16 @@ interface ExchangeRow {
   answer: string;
 }
 
+/**
+ * Searches one Notebook's Chat Threads for `query` — the one typed, or its
+ * correction (NBK-105), in which case what matches `typed` as it was typed
+ * ranks first.
+ */
 export async function searchExchanges(
   pool: Pool,
   notebookId: string,
   query: string,
+  typed: string = query,
 ): Promise<ExchangeSearchResult[]> {
   if (!(await namesAWord(pool, query))) return [];
   const { rows } = await pool.query<ExchangeRow>(SEARCH_EXCHANGES_SQL, [
@@ -100,6 +109,7 @@ export async function searchExchanges(
     EXCHANGE_RESULT_LIMIT,
     QUESTION_HEADLINE,
     ANSWER_HEADLINE,
+    typed,
   ]);
   return rows.map((row) => ({
     threadId: row.chat_thread_id,

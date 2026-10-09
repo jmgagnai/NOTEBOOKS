@@ -484,7 +484,7 @@ describe('Versioning integrity, end to end', () => {
       cookies: { session },
     });
     expect(response.statusCode).toBe(200);
-    return response.json() as SearchHit[];
+    return (response.json() as { results: SearchHit[] }).results;
   }
 
   interface ApiCitation {

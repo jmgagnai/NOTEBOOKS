@@ -62,6 +62,9 @@ export class SearchPage implements OnDestroy {
   });
   private readonly urlQuery = computed(() => (this.query().get('q') ?? '').trim());
 
+  /** Whether the URL asks for the query exactly as typed (`&exact=1`, NBK-105). */
+  private readonly urlExact = computed(() => this.query().get('exact') === '1');
+
   /**
    * What is in the search box right now — component state, not store state:
    * it is an unsubmitted draft, and the store holds the query the displayed
@@ -78,10 +81,13 @@ export class SearchPage implements OnDestroy {
     // The URL's query is what is searched: on arrival, and on each Enter.
     effect(() => {
       const q = this.urlQuery();
+      const exact = this.urlExact();
       untracked(() => {
         this.draft.set(q);
         if (!q) this.store.clear();
-        else if (!this.store.holds(this.notebookId, q)) void this.store.search(this.notebookId, q);
+        else if (!this.store.holds(this.notebookId, q, exact)) {
+          void this.store.search(this.notebookId, q, exact);
+        }
       });
     });
   }
@@ -109,10 +115,14 @@ export class SearchPage implements OnDestroy {
     this.submit();
   }
 
-  /** Searches the box's query: into the URL, which searches; the same query again searches again. */
+  /**
+   * Searches the box's query: into the URL, which searches; the same query
+   * again searches again. Always corrected (NBK-105): searching exactly is
+   * what the "Search instead for" link is for.
+   */
   protected submit(): void {
     const q = this.draft().trim();
-    if (q === this.urlQuery()) {
+    if (q === this.urlQuery() && !this.urlExact()) {
       if (q) void this.store.search(this.notebookId, q);
       return;
     }

@@ -90,15 +90,31 @@ describe('Chat Thread search', () => {
     answer: Segment[];
   }
 
-  async function search(session: string, notebookId: string, q: string) {
+  async function search(
+    session: string,
+    notebookId: string,
+    q: string,
+    params: Record<string, string> = {},
+  ) {
     return app.inject({
       method: 'GET',
-      url: `/notebooks/${notebookId}/search/threads?${new URLSearchParams({ q })}`,
+      url: `/notebooks/${notebookId}/search/threads?${new URLSearchParams({ q, ...params })}`,
       cookies: { session },
     });
   }
+  /** The response body: the Exchanges, and the query searched if it was corrected (NBK-105). */
+  const answer = async (
+    session: string,
+    notebookId: string,
+    q: string,
+    params: Record<string, string> = {},
+  ) =>
+    (await search(session, notebookId, q, params)).json() as {
+      correctedQuery: string | null;
+      results: ExchangeResult[];
+    };
   const results = async (session: string, notebookId: string, q: string) =>
-    (await search(session, notebookId, q)).json() as ExchangeResult[];
+    (await answer(session, notebookId, q)).results;
   const plain = (segments: Segment[]) => segments.map((s) => s.text).join('');
   const marked = (segments: Segment[]) => segments.filter((s) => s.match).map((s) => s.text);
 
@@ -120,7 +136,7 @@ describe('Chat Thread search', () => {
     const response = await search(session, notebookId, 'rossigny');
 
     expect(response.statusCode).toBe(200);
-    const [hit] = response.json() as ExchangeResult[];
+    const [hit] = (response.json() as { results: ExchangeResult[] }).results;
     expect(hit).toMatchObject({
       threadId,
       threadTitle: 'Who is who',
@@ -216,8 +232,8 @@ describe('Chat Thread search', () => {
       ['Where is the needle?', 'At Étretat, in the sea.'],
     ]);
 
-    const unaccented = (await search(session, notebookId, 'etretat')).json() as ExchangeResult[];
-    const accented = (await search(session, notebookId, 'ÉTRÉTAT')).json() as ExchangeResult[];
+    const unaccented = await results(session, notebookId, 'etretat');
+    const accented = await results(session, notebookId, 'ÉTRÉTAT');
 
     expect(unaccented.map((hit) => marked(hit.answer))).toEqual([['Étretat']]);
     expect(accented).toHaveLength(1);
@@ -230,7 +246,7 @@ describe('Chat Thread search', () => {
 
     const response = await search(session, notebookId, '-lupin');
 
-    expect(response.json()).toEqual([]);
+    expect(response.json()).toEqual({ correctedQuery: null, results: [] });
   });
 
   it("keeps angle brackets in an answer's Excerpt as text", async () => {
@@ -240,9 +256,28 @@ describe('Chat Thread search', () => {
       ['What type?', 'Use List<String> for the Lupin names.'],
     ]);
 
-    const [hit] = (await search(session, notebookId, 'lupin')).json() as ExchangeResult[];
+    const [hit] = await results(session, notebookId, 'lupin');
 
     expect(plain(hit.answer)).toContain('List<String>');
+  });
+
+  // NBK-105: a misspelt word is corrected to the closest word the
+  // Notebook really holds, as for Documents.
+  it('finds the Exchange for a misspelt word, and says what it searched', async () => {
+    const session = await signIn('ada@example.com');
+    const notebookId = await notebookOf(session);
+    await threadWith(session, notebookId, 'Who is who', [
+      ['Who helps Hortense?', 'Prince Rénine, at Rossigny.'],
+    ]);
+
+    const body = await answer(session, notebookId, 'rosigny');
+
+    expect(body.correctedQuery).toBe('rossigny');
+    expect(body.results.map((hit) => marked(hit.answer))).toEqual([['Rossigny']]);
+    expect(await answer(session, notebookId, 'rosigny', { exact: 'true' })).toEqual({
+      correctedQuery: null,
+      results: [],
+    });
   });
 
   it('returns no results for a blank query', async () => {
@@ -253,7 +288,7 @@ describe('Chat Thread search', () => {
     const response = await search(session, notebookId, '   ');
 
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual([]);
+    expect(response.json()).toEqual({ correctedQuery: null, results: [] });
   });
 
   it("returns 404 for a Notebook that doesn't exist", async () => {

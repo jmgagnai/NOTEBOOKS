@@ -26,14 +26,20 @@ export class SearchService extends BaseService {
   /**
    * Search a Notebook's Documents by keyword. Returns each matching Chunk as an Excerpt with its matches marked; up to 20, best first.
    *
-   * Full-text search over the Chunks of each Document's latest ready Version, accents and case ignored (no embedding, so it needs no OpenRouter key). A Document appears once per matching Chunk. Per ADR-0001 there is no ownership check.
+   * Full-text search over the Chunks of each Document's latest ready Version, accents and case ignored (no embedding, so it needs no OpenRouter key). A Document appears once per matching Chunk. A misspelt word is corrected to the closest word the Notebook holds unless exact=true; correctedQuery says what was searched. Per ADR-0001 there is no ownership check.
    *
    * This method provides access to the full `HttpResponse`, allowing access to response headers.
    * To access only the response body, use `searchNotebook()` instead.
    *
    * This method doesn't expect any request body.
    */
-  searchNotebook$Response(params: SearchNotebook$Params, context?: HttpContext): Promise<StrictHttpResponse<Array<{
+  searchNotebook$Response(params: SearchNotebook$Params, context?: HttpContext): Promise<StrictHttpResponse<{
+
+/**
+ * The query actually searched, its misspelt words corrected to words the Notebook holds; null when it was searched as typed.
+ */
+'correctedQuery': string | null;
+'results': Array<{
 'documentId': string;
 'filename': string;
 
@@ -80,7 +86,8 @@ export class SearchService extends BaseService {
 'text': string;
 'match': boolean;
 }>;
-}>>> {
+}>;
+}>> {
     const obs = searchNotebook(this.http, this.rootUrl, params, context);
     return firstValueFrom(obs);
   }
@@ -88,14 +95,20 @@ export class SearchService extends BaseService {
   /**
    * Search a Notebook's Documents by keyword. Returns each matching Chunk as an Excerpt with its matches marked; up to 20, best first.
    *
-   * Full-text search over the Chunks of each Document's latest ready Version, accents and case ignored (no embedding, so it needs no OpenRouter key). A Document appears once per matching Chunk. Per ADR-0001 there is no ownership check.
+   * Full-text search over the Chunks of each Document's latest ready Version, accents and case ignored (no embedding, so it needs no OpenRouter key). A Document appears once per matching Chunk. A misspelt word is corrected to the closest word the Notebook holds unless exact=true; correctedQuery says what was searched. Per ADR-0001 there is no ownership check.
    *
    * This method provides access only to the response body.
    * To access the full response (for headers, for example), `searchNotebook$Response()` instead.
    *
    * This method doesn't expect any request body.
    */
-  searchNotebook(params: SearchNotebook$Params, context?: HttpContext): Promise<Array<{
+  searchNotebook(params: SearchNotebook$Params, context?: HttpContext): Promise<{
+
+/**
+ * The query actually searched, its misspelt words corrected to words the Notebook holds; null when it was searched as typed.
+ */
+'correctedQuery': string | null;
+'results': Array<{
 'documentId': string;
 'filename': string;
 
@@ -142,9 +155,16 @@ export class SearchService extends BaseService {
 'text': string;
 'match': boolean;
 }>;
-}>> {
+}>;
+}> {
     const resp = this.searchNotebook$Response(params, context);
-    return resp.then((r: StrictHttpResponse<Array<{
+    return resp.then((r: StrictHttpResponse<{
+
+/**
+ * The query actually searched, its misspelt words corrected to words the Notebook holds; null when it was searched as typed.
+ */
+'correctedQuery': string | null;
+'results': Array<{
 'documentId': string;
 'filename': string;
 
@@ -191,7 +211,14 @@ export class SearchService extends BaseService {
 'text': string;
 'match': boolean;
 }>;
-}>>): Array<{
+}>;
+}>): {
+
+/**
+ * The query actually searched, its misspelt words corrected to words the Notebook holds; null when it was searched as typed.
+ */
+'correctedQuery': string | null;
+'results': Array<{
 'documentId': string;
 'filename': string;
 
@@ -238,7 +265,8 @@ export class SearchService extends BaseService {
 'text': string;
 'match': boolean;
 }>;
-}> => r.body);
+}>;
+} => r.body);
   }
 
   /** Path part for operation `searchChatThreads()` */
@@ -247,14 +275,20 @@ export class SearchService extends BaseService {
   /**
    * Search a Notebook's Chat Threads by keyword. Returns each matching Exchange — a question and the answer it produced — with its matches marked; up to 20, best first.
    *
-   * Full-text search over questions and answers, accents and case ignored (no embedding, so it needs no OpenRouter key). Deleted Chat Threads are left out. Per ADR-0001 there is no ownership check.
+   * Full-text search over questions and answers, accents and case ignored (no embedding, so it needs no OpenRouter key). A misspelt word is corrected as for Documents. Deleted Chat Threads are left out. Per ADR-0001 there is no ownership check.
    *
    * This method provides access to the full `HttpResponse`, allowing access to response headers.
    * To access only the response body, use `searchChatThreads()` instead.
    *
    * This method doesn't expect any request body.
    */
-  searchChatThreads$Response(params: SearchChatThreads$Params, context?: HttpContext): Promise<StrictHttpResponse<Array<{
+  searchChatThreads$Response(params: SearchChatThreads$Params, context?: HttpContext): Promise<StrictHttpResponse<{
+
+/**
+ * The query actually searched, its misspelt words corrected to words the Notebook holds; null when it was searched as typed.
+ */
+'correctedQuery': string | null;
+'results': Array<{
 'threadId': string;
 'threadTitle': string;
 'askedBy': {
@@ -288,7 +322,8 @@ export class SearchService extends BaseService {
 'text': string;
 'match': boolean;
 }>;
-}>>> {
+}>;
+}>> {
     const obs = searchChatThreads(this.http, this.rootUrl, params, context);
     return firstValueFrom(obs);
   }
@@ -296,14 +331,20 @@ export class SearchService extends BaseService {
   /**
    * Search a Notebook's Chat Threads by keyword. Returns each matching Exchange — a question and the answer it produced — with its matches marked; up to 20, best first.
    *
-   * Full-text search over questions and answers, accents and case ignored (no embedding, so it needs no OpenRouter key). Deleted Chat Threads are left out. Per ADR-0001 there is no ownership check.
+   * Full-text search over questions and answers, accents and case ignored (no embedding, so it needs no OpenRouter key). A misspelt word is corrected as for Documents. Deleted Chat Threads are left out. Per ADR-0001 there is no ownership check.
    *
    * This method provides access only to the response body.
    * To access the full response (for headers, for example), `searchChatThreads$Response()` instead.
    *
    * This method doesn't expect any request body.
    */
-  searchChatThreads(params: SearchChatThreads$Params, context?: HttpContext): Promise<Array<{
+  searchChatThreads(params: SearchChatThreads$Params, context?: HttpContext): Promise<{
+
+/**
+ * The query actually searched, its misspelt words corrected to words the Notebook holds; null when it was searched as typed.
+ */
+'correctedQuery': string | null;
+'results': Array<{
 'threadId': string;
 'threadTitle': string;
 'askedBy': {
@@ -337,9 +378,16 @@ export class SearchService extends BaseService {
 'text': string;
 'match': boolean;
 }>;
-}>> {
+}>;
+}> {
     const resp = this.searchChatThreads$Response(params, context);
-    return resp.then((r: StrictHttpResponse<Array<{
+    return resp.then((r: StrictHttpResponse<{
+
+/**
+ * The query actually searched, its misspelt words corrected to words the Notebook holds; null when it was searched as typed.
+ */
+'correctedQuery': string | null;
+'results': Array<{
 'threadId': string;
 'threadTitle': string;
 'askedBy': {
@@ -373,7 +421,14 @@ export class SearchService extends BaseService {
 'text': string;
 'match': boolean;
 }>;
-}>>): Array<{
+}>;
+}>): {
+
+/**
+ * The query actually searched, its misspelt words corrected to words the Notebook holds; null when it was searched as typed.
+ */
+'correctedQuery': string | null;
+'results': Array<{
 'threadId': string;
 'threadTitle': string;
 'askedBy': {
@@ -407,7 +462,8 @@ export class SearchService extends BaseService {
 'text': string;
 'match': boolean;
 }>;
-}> => r.body);
+}>;
+} => r.body);
   }
 
 }

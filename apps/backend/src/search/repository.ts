@@ -41,9 +41,10 @@ const SEARCH_CHUNKS_SQL = `
   JOIN document_versions v ON v.id = s.version_id
   CROSS JOIN q
   WHERE to_tsvector('${TEXT_SEARCH_CONFIG}', c.text) @@ q.query
-  -- Ties broken by age and position, so the same query twice never
-  -- shuffles its own results.
-  ORDER BY ts_rank(to_tsvector('${TEXT_SEARCH_CONFIG}', c.text), q.query) DESC,
+  -- What matched as typed first (NBK-105), then by rank; ties broken by
+  -- age and position, so the same query twice never shuffles its results.
+  ORDER BY to_tsvector('${TEXT_SEARCH_CONFIG}', c.text) @@ websearch_to_tsquery('${TEXT_SEARCH_CONFIG}', $4) DESC,
+           ts_rank(to_tsvector('${TEXT_SEARCH_CONFIG}', c.text), q.query) DESC,
            s.document_created_at ASC, c.chunk_index ASC
   LIMIT $3
 `;
@@ -76,19 +77,23 @@ interface ChunkRow {
 }
 
 /**
- * Searches one Notebook's Documents by keyword, best match first; a blank
- * query finds nothing. Per ADR-0001 there is no ownership check.
+ * Searches one Notebook's Documents by keyword for `query` — the one typed,
+ * or its correction (NBK-105), in which case what matches `typed` as it was
+ * typed ranks first. A blank query finds nothing. Per ADR-0001 there is no
+ * ownership check.
  */
 export async function searchChunks(
   pool: Pool,
   notebookId: string,
   query: string,
+  typed: string = query,
 ): Promise<DocumentSearchResult[]> {
   if (!(await namesAWord(pool, query))) return [];
   const { rows } = await pool.query<ChunkRow>(SEARCH_CHUNKS_SQL, [
     notebookId,
     query,
     DOCUMENT_RESULT_LIMIT,
+    typed,
   ]);
   if (rows.length === 0) return [];
 

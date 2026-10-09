@@ -5,6 +5,15 @@ export const searchNotebookParamsSchema = z.object({
 });
 export type SearchNotebookParams = z.infer<typeof searchNotebookParamsSchema>;
 
+/**
+ * `exact=true` searches the words as typed (NBK-105). Otherwise a word the
+ * Notebook does not hold is corrected to its closest word.
+ */
+const exactSchema = z
+  .enum(['true', 'false'])
+  .default('false')
+  .describe("'true' to search the words as typed, with no correction of misspelt words.");
+
 export const searchNotebookQuerySchema = z.object({
   q: z
     .string()
@@ -14,8 +23,23 @@ export const searchNotebookQuerySchema = z.object({
       'Keywords, matched literally in the Chunks of each latest ready Version, accents and ' +
         'case ignored; web-search syntax ("a phrase", -word, or). Blank returns no results.',
     ),
+  exact: exactSchema,
 });
 export type SearchNotebookQuery = z.infer<typeof searchNotebookQuerySchema>;
+
+/** What both searches answer with: the results, and the query searched when it was corrected. */
+function searchResponse<T extends z.ZodTypeAny>(result: T) {
+  return z.object({
+    correctedQuery: z
+      .string()
+      .nullable()
+      .describe(
+        'The query actually searched, its misspelt words corrected to words the Notebook ' +
+          'holds; null when it was searched as typed.',
+      ),
+    results: z.array(result),
+  });
+}
 
 /** A run of an Excerpt, `match` when it is one of the searched words. Text, never markup. */
 export const textSegmentSchema = z.object({ text: z.string(), match: z.boolean() });
@@ -63,7 +87,7 @@ export const documentSearchResultSchema = z
   .describe('A Chunk of a Document that matches the query.');
 export type DocumentSearchResult = z.infer<typeof documentSearchResultSchema>;
 
-export const searchNotebookResponseSchema = z.array(documentSearchResultSchema);
+export const searchNotebookResponseSchema = searchResponse(documentSearchResultSchema);
 
 // Chat Thread search (NBK-97): one result per matching Exchange (GLOSSARY.md).
 
@@ -76,6 +100,7 @@ export const searchThreadsQuerySchema = z.object({
       'Keywords, matched literally in questions and answers, accents and case ignored; blank ' +
         'returns no results.',
     ),
+  exact: exactSchema,
 });
 
 export const exchangeSearchResultSchema = z
@@ -94,4 +119,4 @@ export const exchangeSearchResultSchema = z
   .describe('An Exchange of a Chat Thread that matches the query.');
 export type ExchangeSearchResult = z.infer<typeof exchangeSearchResultSchema>;
 
-export const searchThreadsResponseSchema = z.array(exchangeSearchResultSchema);
+export const searchThreadsResponseSchema = searchResponse(exchangeSearchResultSchema);

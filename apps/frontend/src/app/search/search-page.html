@@ -40,89 +40,107 @@
         Search finds the words you type in the Notebook's Documents and Chat Threads, accents
         ignored. Only Documents that have finished ingesting are searched.
       </p>
-    } @else if (nothingMatches()) {
-      <p class="search-page__hint">Nothing in this Notebook matches "{{ store.query() }}".</p>
     } @else {
-      <!--
+      @if (store.correctedQuery(); as corrected) {
+        <!--
+          A misspelt word was corrected before it was searched (NBK-105):
+          said, so a result without the typed word does not look like a bug,
+          with the way to search for exactly what was typed.
+        -->
+        <p class="search-page__corrected">
+          Showing results for "{{ corrected }}". Search instead for "<a
+            class="search-page__exact"
+            [routerLink]="[]"
+            [queryParams]="{ q: store.query(), exact: 1 }"
+            >{{ store.query() }}</a
+          >"
+        </p>
+      }
+      @if (nothingMatches()) {
+        <p class="search-page__hint">Nothing in this Notebook matches "{{ store.query() }}".</p>
+      } @else {
+        <!--
         Documents first, then Chat Threads (NBK-97), each only when it has
         something to show; a section whose search failed says so, without
         hiding the other's results.
       -->
-      @if (store.results().length || store.error()) {
-        <section class="search-page__section" aria-labelledby="search-documents">
-          <h2 class="search-page__section-title" id="search-documents">Documents</h2>
-          @if (store.error(); as error) {
-            <p class="search-page__error">{{ error }}</p>
-          } @else {
-            <!--
+        @if (store.results().length || store.error()) {
+          <section class="search-page__section" aria-labelledby="search-documents">
+            <h2 class="search-page__section-title" id="search-documents">Documents</h2>
+            @if (store.error(); as error) {
+              <p class="search-page__error">{{ error }}</p>
+            } @else {
+              <!--
               One flat row per matching Chunk (NBK-104), the whole row a link
               to the Document at that Chunk (NBK-96): its Excerpt, the words
               searched for bold, then which Document it is from and where.
             -->
-            <ul class="search-page__results">
-              @for (result of store.results(); track result.match.chunkId) {
-                <li>
-                  <a
-                    class="search-page__result"
-                    [routerLink]="['/notebooks', notebookId, 'documents', result.documentId]"
-                    [queryParams]="chunkLink(result.match)"
-                    [state]="openedFromSearch"
-                  >
-                    <span class="search-page__result-body">
-                      <app-marked-text
-                        class="search-page__result-excerpt"
-                        [segments]="result.excerpt"
-                      />
-                      <span class="search-page__result-meta">{{ whereFrom(result) }}</span>
-                    </span>
-                  </a>
-                </li>
-              }
-            </ul>
-          }
-        </section>
-      }
+              <ul class="search-page__results">
+                @for (result of store.results(); track result.match.chunkId) {
+                  <li>
+                    <a
+                      class="search-page__result"
+                      [routerLink]="['/notebooks', notebookId, 'documents', result.documentId]"
+                      [queryParams]="chunkLink(result.match)"
+                      [state]="openedFromSearch"
+                    >
+                      <span class="search-page__result-body">
+                        <app-marked-text
+                          class="search-page__result-excerpt"
+                          [segments]="result.excerpt"
+                        />
+                        <span class="search-page__result-meta">{{ whereFrom(result) }}</span>
+                      </span>
+                    </a>
+                  </li>
+                }
+              </ul>
+            }
+          </section>
+        }
 
-      @if (store.exchanges().length || store.exchangesError()) {
-        <section class="search-page__section" aria-labelledby="search-chat-threads">
-          <h2 class="search-page__section-title" id="search-chat-threads">Chat Threads</h2>
-          @if (store.exchangesError(); as error) {
-            <p class="search-page__error">{{ error }}</p>
-          } @else {
-            <!--
+        @if (store.exchanges().length || store.exchangesError()) {
+          <section class="search-page__section" aria-labelledby="search-chat-threads">
+            <h2 class="search-page__section-title" id="search-chat-threads">Chat Threads</h2>
+            @if (store.exchangesError(); as error) {
+              <p class="search-page__error">{{ error }}</p>
+            } @else {
+              <!--
               One row per matching Exchange, the whole row a link opening its
               Chat Thread there (NBK-97): the question whole, the answer as
               excerpts, the matched words bold.
             -->
-            <ul class="search-page__results">
-              @for (exchange of store.exchanges(); track exchange.answerId) {
-                <li>
-                  <a
-                    class="search-page__result"
-                    [routerLink]="['/notebooks', notebookId]"
-                    [queryParams]="{ thread: exchange.threadId, message: exchange.answerId }"
-                  >
-                    <mat-icon class="search-page__result-icon" svgIcon="chat" />
-                    <span class="search-page__result-body">
-                      <span class="search-page__result-title">{{ exchange.threadTitle }}</span>
-                      <span class="search-page__result-meta"
-                        >{{ exchange.askedBy.email }} · {{ exchange.askedAt | date: 'MMM d' }}</span
-                      >
-                      <app-marked-text
-                        class="search-page__result-question"
-                        [segments]="exchange.question"
-                      />
-                      <app-marked-text
-                        class="search-page__result-answer"
-                        [segments]="exchange.answer"
-                      />
-                    </span>
-                  </a>
-                </li>
-              }
-            </ul>
-          }
-        </section>
+              <ul class="search-page__results">
+                @for (exchange of store.exchanges(); track exchange.answerId) {
+                  <li>
+                    <a
+                      class="search-page__result"
+                      [routerLink]="['/notebooks', notebookId]"
+                      [queryParams]="{ thread: exchange.threadId, message: exchange.answerId }"
+                    >
+                      <mat-icon class="search-page__result-icon" svgIcon="chat" />
+                      <span class="search-page__result-body">
+                        <span class="search-page__result-title">{{ exchange.threadTitle }}</span>
+                        <span class="search-page__result-meta"
+                          >{{ exchange.askedBy.email }} ·
+                          {{ exchange.askedAt | date: 'MMM d' }}</span
+                        >
+                        <app-marked-text
+                          class="search-page__result-question"
+                          [segments]="exchange.question"
+                        />
+                        <app-marked-text
+                          class="search-page__result-answer"
+                          [segments]="exchange.answer"
+                        />
+                      </span>
+                    </a>
+                  </li>
+                }
+              </ul>
+            }
+          </section>
+        }
       }
     }
   </div>

@@ -41,7 +41,36 @@ same expression, so they use the GIN indexes. The configuration's name lives
 once in TypeScript, `TEXT_SEARCH_CONFIG` in `src/search/keywords.ts`, along
 with the Excerpt helpers both routes share.
 
-## Documents: one result per Chunk
+## Misspelt words are corrected (NBK-105)
+
+Before either search runs, a query word the Notebook does not hold is
+corrected to the closest word it does: "rosigny" becomes "rossigny", and
+"hortnse" becomes "hortense" (`src/search/correction.ts`).
+
+- **The word list.** `notebook_words` (migration 0016) holds every distinct
+  `simple_unaccent` lexeme of a Notebook's Chunks and chat messages. Triggers
+  on `chunks` and `chat_messages` keep it up to date, so neither ingestion
+  nor chat has to remember to; the migration backfills it. Words are never
+  removed: a stale one only ever corrects towards something that is no
+  longer found.
+- **Choosing a correction.** A word is kept as typed if the list holds it,
+  is shorter than 4 letters, or is excluded with `-`. Otherwise it becomes
+  the most similar listed word by `pg_trgm` similarity, if that is at least
+  0.4. The `%` operator lets the trigram index find candidates. A word with
+  no close neighbour stays as typed, and so finds nothing rather than
+  something unrelated.
+- **Syntax survives.** Only the words are replaced, so quoted phrases,
+  `-word` and `or` keep working around them.
+- **Ranking.** What matches the query as typed ranks above what only the
+  corrected query matches, then by `ts_rank`.
+- **Saying so.** Both routes answer `{ correctedQuery, results }`.
+  `correctedQuery` is the query actually searched, or null when nothing was
+  corrected. The Search page then shows `Showing results for "…". Search
+  instead for "…"`. The second part links to `?q=<typed>&exact=1`, which
+  sends `exact=true` and skips correction. A new query typed in the box is
+  always corrected.
+
+
 
 A result is a **Chunk**, not a Document. A reader looks for the places a word
 occurs, so a Document appears once per Chunk that holds it. Results are

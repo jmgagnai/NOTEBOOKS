@@ -74,11 +74,20 @@ interface SearchState {
    * wording on screen.
    */
   searched: boolean;
+  /** Whether the query was searched exactly as typed, with no correction (NBK-105). */
+  exact: boolean;
+  /**
+   * The query actually searched when its misspelt words were corrected
+   * (NBK-105); null when it was searched as typed.
+   */
+  correctedQuery: string | null;
 }
 
 const initialState: SearchState = {
   notebookId: null,
   query: '',
+  exact: false,
+  correctedQuery: null,
   results: [],
   exchanges: [],
   searching: false,
@@ -102,7 +111,11 @@ export const SearchStore = signalStore(
     let latest = 0;
 
     return {
-      async search(notebookId: string, query: string): Promise<void> {
+      /**
+       * Searches the Notebook's Documents and Chat Threads, correcting
+       * misspelt words unless `exact` (NBK-105).
+       */
+      async search(notebookId: string, query: string, exact = false): Promise<void> {
         const request = ++latest;
         const trimmed = query.trim();
         // A blank query finds nothing (the backend answers []), so it is not
@@ -115,30 +128,29 @@ export const SearchStore = signalStore(
         patchState(store, {
           notebookId,
           query: trimmed,
+          exact,
           searching: true,
           error: null,
           exchangesError: null,
         });
         // Both at once, each failing on its own: the Documents' Chunks and
         // the Chat Threads' Exchanges, both by keyword (NBK-97, NBK-104).
+        const params = { notebookId, q: trimmed, ...(exact ? { exact: 'true' as const } : {}) };
         const [documents, exchanges] = await Promise.all([
-          settle(
-            searchService.searchNotebook({ notebookId, q: trimmed }) as Promise<SearchResult[]>,
-          ),
-          settle(
-            searchService.searchChatThreads({ notebookId, q: trimmed }) as Promise<
-              ExchangeResult[]
-            >,
-          ),
+          settle(searchService.searchNotebook(params) as Promise<Found<SearchResult>>),
+          settle(searchService.searchChatThreads(params) as Promise<Found<ExchangeResult>>),
         ]);
         if (request !== latest) return;
         patchState(store, {
           searching: false,
           searched: true,
-          results: documents.value ?? [],
+          results: documents.value?.results ?? [],
           error: documents.error,
-          exchanges: exchanges.value ?? [],
+          exchanges: exchanges.value?.results ?? [],
           exchangesError: exchanges.error,
+          // Both correct against the same Notebook's words, so either says it.
+          correctedQuery:
+            documents.value?.correctedQuery ?? exchanges.value?.correctedQuery ?? null,
         });
       },
 
@@ -148,10 +160,11 @@ export const SearchStore = signalStore(
        * shown again as they were left rather than fetched again. A failed
        * search is not kept.
        */
-      holds(notebookId: string, query: string): boolean {
+      holds(notebookId: string, query: string, exact = false): boolean {
         return (
           store.notebookId() === notebookId &&
           store.query() === query.trim() &&
+          store.exact() === exact &&
           store.searched() &&
           !store.searching() &&
           store.error() === null &&
@@ -167,6 +180,12 @@ export const SearchStore = signalStore(
     };
   }),
 );
+
+/** What either search answers with (NBK-105). */
+interface Found<T> {
+  correctedQuery: string | null;
+  results: T[];
+}
 
 /** A search's answer, or why it failed — so one failing never sinks the other. */
 async function settle<T>(answer: Promise<T>): Promise<{ value: T | null; error: string | null }> {
