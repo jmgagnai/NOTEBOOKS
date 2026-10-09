@@ -194,12 +194,19 @@ guessed from the error text, which is written for operators and stays in
 | A PDF converted to nothing but image placeholders (a scan)           | `no-text-layer`       |
 | The container ran past `DOCLING_TIMEOUT_MS` and was killed           | `timed-out`           |
 | `docker` could not be started at all (not installed, not on `PATH`)  | `service-unavailable` |
-| Docling exited non-zero, or was killed (an OOM, a crash)             | `unreadable`          |
+| Docling was killed: exit 137 or 143, or `docker` ended by a signal   | `unexpected`          |
+| Docling exited with any other non-zero code (it crashed on the file) | `unreadable`          |
 | Docling exited 0 but wrote no Markdown (e.g. a legacy `.xls`)        | `unreadable`          |
 | Anything else thrown in stage 1 (S3 read, filesystem)                | `unexpected`          |
 
 A reason is recorded only once pg_boss has no retry left; until then the
 Version goes back to `queued` with no reason.
+
+A killed conversion is not the file's fault (NBK-112): Docker's memory cap,
+a backend restart's clean-up (NBK-111) or a stopped Docker kill it, and exit
+137 alone cannot tell which, since `--rm` takes the container's `OOMKilled`
+flag with it. So it is `unexpected`, which a user can Retry (NBK-110); the
+diagnostics stay in `ingestion_error`.
 
 The `-cpu` variant is deliberate: the CUDA variant is much larger and buys
 nothing without a GPU.
