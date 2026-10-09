@@ -56,21 +56,26 @@ $column-width: 760px;
     }
   }
 
+  // The folder and the Notebook's title on one line, the folder at the
+  // title's size so the two read as one heading.
   &__landing {
     flex: none;
     padding: 0 12px;
     display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.5rem;
+    align-items: center;
+    gap: 12px;
     margin-bottom: 1rem;
   }
 
   &__landing-icon {
+    flex: none;
+    width: 44px;
+    height: 44px;
     color: var(--mat-sys-on-surface-variant);
   }
 
   &__landing-title {
+    min-width: 0;
     max-width: 100%;
     margin: 0;
     font: inherit;
