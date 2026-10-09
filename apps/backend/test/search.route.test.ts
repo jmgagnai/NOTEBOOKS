@@ -480,6 +480,22 @@ describe('Search routes — Documents, by keyword (NBK-104)', () => {
       ]);
     });
 
+    // NBK-109: the word list leaves out what looks like picture data, and a
+    // few real words with it ("md5sum"). One of those, typed, is searched as
+    // typed — never "corrected" to the nearest word the list does hold.
+    it('searches a word the word list leaves out as typed, not as its nearest word', async () => {
+      const session = await signIn();
+      const notebookId = await notebookOf(session);
+      await seedDocument(notebookId, 'checksums.md', [
+        { chunks: [{ text: 'Check it with md5sum.' }, { text: 'Or with mdsum.' }] },
+      ]);
+
+      const body = await answer(session, notebookId, 'md5sum');
+
+      expect(body.correctedQuery).toBeNull();
+      expect(body.results.map((hit) => shown(hit.excerpt))).toEqual(['Check it with [md5sum].']);
+    });
+
     it('is searched as typed when asked for exactly', async () => {
       const session = await signIn();
       const notebookId = await notebookOf(session);
