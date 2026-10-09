@@ -75,7 +75,8 @@ screenshot shows what; they drag them into the PR.
 For a layout question (how wide is it, does it overflow, where did it
 scroll), measure it rather than squint at a PNG. `--eval` runs a JavaScript
 expression in each page once it has settled. A promise is awaited, and the
-value prints as JSON beside the path. `--no-shot` skips the screenshots.
+value prints as JSON beside the path (`undefined`, `NaN` and the like as
+JavaScript). `--no-shot` skips the screenshots; it needs `--eval`.
 
 ```bash
 node scripts/screenshot.mjs --no-shot --eval '(() => {
@@ -87,10 +88,9 @@ node scripts/screenshot.mjs --no-shot --eval '(() => {
 
 - Return plain data. The value travels as JSON, so a `DOMRect` arrives as
   `{}`; copy out the fields you need, as above.
-- An expression that throws is reported for its path. The other paths still
-  run, and the script exits non-zero.
-- Several paths in one run measure the same thing across pages, and
-  `--width 800` measures the narrow layouts.
+- An expression that throws is reported for its path, on stderr. The other
+  paths still run, and the script exits non-zero.
+- Several paths in one run measure the same thing across pages.
 
 **A state no path reaches.** `ng serve` runs in development mode, which
 exposes Angular's debugging API on `window.ng`. `ng.getComponent(element)`
@@ -113,4 +113,3 @@ TypeScript's `protected` does not exist at runtime, so any field the
 template reads can be set. This works on `ng serve` only, since a
 production build strips `window.ng`, and it is a local tool for looking,
 never something a test relies on.
-
