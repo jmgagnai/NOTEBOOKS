@@ -50,15 +50,34 @@ corrected to the closest word it does: "rosigny" becomes "rossigny", and
 - **The word list.** `notebook_words` (migration 0016) holds every distinct
   `simple_unaccent` lexeme of a Notebook's Chunks and chat messages. Triggers
   on `chunks` and `chat_messages` keep it up to date, so neither ingestion
-  nor chat has to remember to; the migration backfills it. Words are never
-  removed: a stale one only ever corrects towards something that is no
-  longer found.
+  nor chat has to remember to. The migration backfills it in one pass before
+  building its indexes; on a 138,000-Chunk development database that is
+  about 1.3M words and a few minutes at startup. Words are never removed: a
+  stale one only ever corrects towards something that is no longer found.
+- **No unique key, on purpose.** A writer adds a word only if it is not
+  there yet. A unique key would make each writer wait on the others'
+  uncommitted words, so two Documents of one Notebook ingesting at once
+  could deadlock, and recording an answer would wait for a stage-3
+  transaction. The cost is that a race can store a word twice, which
+  readers tolerate.
+- **Finding the closest word.** One GIN index on `(notebook_id, word
+  gin_trgm_ops)`, via `btree_gin`, serves both conditions at once.
+  Measured: under 1 ms among 1.6M words in 31 Notebooks, where the
+  exact-word check (a b-tree) takes 2 ms.
 - **Choosing a correction.** A word is kept as typed if the list holds it,
-  is shorter than 4 letters, or is excluded with `-`. Otherwise it becomes
+  is shorter than 4 letters, or is excluded with `-`. A `-` excludes only
+  when it opens a term outside quotes; in "jean-baptiste" or a quoted phrase
+  it is text. Otherwise it becomes
   the most similar listed word by `pg_trgm` similarity, if that is at least
   0.4. The `%` operator lets the trigram index find candidates. A word with
   no close neighbour stays as typed, and so finds nothing rather than
   something unrelated.
+- **What trigrams miss.** Swapped letters in a short word share few
+  trigrams: "pual" is 0.11 similar to "paul", so it is not corrected. A
+  dropped, doubled or wrong letter is caught ("rosigny", "hortnse",
+  "batiste").
+- **The corrected word as stored.** It comes back lowercased and
+  unaccented ("rossigny"), because that is how the list holds it.
 - **Syntax survives.** Only the words are replaced, so quoted phrases,
   `-word` and `or` keep working around them.
 - **Ranking.** What matches the query as typed ranks above what only the
@@ -70,11 +89,12 @@ corrected to the closest word it does: "rosigny" becomes "rossigny", and
   sends `exact=true` and skips correction. A new query typed in the box is
   always corrected.
 
-
+## Documents: one result per Chunk
 
 A result is a **Chunk**, not a Document. A reader looks for the places a word
 occurs, so a Document appears once per Chunk that holds it. Results are
-ranked by `ts_rank`, with ties broken by Document age and Chunk position,
+ranked by whether they match the query as typed (NBK-105), then by
+`ts_rank`, with ties broken by Document age and Chunk position,
 and capped at 20.
 
 Each result carries:

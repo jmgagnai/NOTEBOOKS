@@ -407,7 +407,7 @@ describe('Search routes — Documents, by keyword (NBK-104)', () => {
   });
 
   describe('a misspelt word (NBK-105)', () => {
-    it('is corrected to the closest word the Notebook holds, and the page is told', async () => {
+    it('is corrected to the closest word the Notebook holds, and the correction reported', async () => {
       const session = await signIn();
       const notebookId = await notebookOf(session);
       await seedDocument(notebookId, 'renine.md', [
@@ -487,6 +487,23 @@ describe('Search routes — Documents, by keyword (NBK-104)', () => {
       expect(body.results.map((hit) => shown(hit.excerpt))).toEqual([
         'The [woods] [of] [Rossigny] at dawn.',
       ]);
+    });
+
+    // A "-" excludes only at the start of a term outside quotes: inside a
+    // hyphenated word, or a quoted phrase, it is part of the text.
+    it('corrects either half of a hyphenated word, and inside quotes', async () => {
+      const session = await signIn();
+      const notebookId = await notebookOf(session);
+      await seedDocument(notebookId, 'names.md', [
+        { chunks: [{ text: 'Jean-Baptiste met Hortense at the Saint-Germain market.' }] },
+      ]);
+
+      expect((await answer(session, notebookId, 'jean-batiste')).correctedQuery).toBe(
+        'jean-baptiste',
+      );
+      expect((await answer(session, notebookId, '"saint -german"')).correctedQuery).toBe(
+        '"saint -germain"',
+      );
     });
 
     it('ranks what matched as typed above what needed a correction', async () => {

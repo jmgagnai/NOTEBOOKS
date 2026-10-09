@@ -60,10 +60,10 @@
         <p class="search-page__hint">Nothing in this Notebook matches "{{ store.query() }}".</p>
       } @else {
         <!--
-        Documents first, then Chat Threads (NBK-97), each only when it has
-        something to show; a section whose search failed says so, without
-        hiding the other's results.
-      -->
+          Documents first, then Chat Threads (NBK-97), each only when it has
+          something to show; a section whose search failed says so, without
+          hiding the other's results.
+        -->
         @if (store.results().length || store.error()) {
           <section class="search-page__section" aria-labelledby="search-documents">
             <h2 class="search-page__section-title" id="search-documents">Documents</h2>
@@ -71,10 +71,10 @@
               <p class="search-page__error">{{ error }}</p>
             } @else {
               <!--
-              One flat row per matching Chunk (NBK-104), the whole row a link
-              to the Document at that Chunk (NBK-96): its Excerpt, the words
-              searched for bold, then which Document it is from and where.
-            -->
+                One flat row per matching Chunk (NBK-104), the whole row a link
+                to the Document at that Chunk (NBK-96): its Excerpt, the words
+                searched for bold, then which Document it is from and where.
+              -->
               <ul class="search-page__results">
                 @for (result of store.results(); track result.match.chunkId) {
                   <li>
@@ -106,10 +106,10 @@
               <p class="search-page__error">{{ error }}</p>
             } @else {
               <!--
-              One row per matching Exchange, the whole row a link opening its
-              Chat Thread there (NBK-97): the question whole, the answer as
-              excerpts, the matched words bold.
-            -->
+                One row per matching Exchange, the whole row a link opening its
+                Chat Thread there (NBK-97): the question whole, the answer as
+                excerpts, the matched words bold.
+              -->
               <ul class="search-page__results">
                 @for (exchange of store.exchanges(); track exchange.answerId) {
                   <li>

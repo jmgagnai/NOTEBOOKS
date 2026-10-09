@@ -280,6 +280,33 @@ describe('Chat Thread search', () => {
     });
   });
 
+  it('corrects every misspelt word, as for Documents', async () => {
+    const session = await signIn('ada@example.com');
+    const notebookId = await notebookOf(session);
+    await threadWith(session, notebookId, 'Who', [['Who helps Hortense?', 'Rénine.']]);
+
+    const body = await answer(session, notebookId, 'hortnse');
+
+    expect(body.correctedQuery).toBe('hortense');
+    expect(body.results).toHaveLength(1);
+  });
+
+  it('ranks what matched as typed above what needed a correction', async () => {
+    const session = await signIn('ada@example.com');
+    const notebookId = await notebookOf(session);
+    await threadWith(session, notebookId, 'Both', [
+      ['Rossigny, Rossigny, Rossigny?', 'Rossigny again.'],
+      ['Where is Ganimard?', 'Waiting.'],
+    ]);
+
+    const body = await answer(session, notebookId, 'rosigny or ganimard');
+
+    expect(body.results.map((hit) => plain(hit.question))).toEqual([
+      'Where is Ganimard?',
+      'Rossigny, Rossigny, Rossigny?',
+    ]);
+  });
+
   it('returns no results for a blank query', async () => {
     const session = await signIn();
     const notebookId = await notebookOf(session);

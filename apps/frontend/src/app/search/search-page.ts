@@ -62,7 +62,11 @@ export class SearchPage implements OnDestroy {
   });
   private readonly urlQuery = computed(() => (this.query().get('q') ?? '').trim());
 
-  /** Whether the URL asks for the query exactly as typed (`&exact=1`, NBK-105). */
+  /**
+   * Whether the URL asks for the query exactly as typed (NBK-105): `&exact=1`,
+   * the short form a URL reads best with; the store turns it into the API's
+   * `exact=true`.
+   */
   private readonly urlExact = computed(() => this.query().get('exact') === '1');
 
   /**

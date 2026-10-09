@@ -118,8 +118,8 @@ export const SearchStore = signalStore(
       async search(notebookId: string, query: string, exact = false): Promise<void> {
         const request = ++latest;
         const trimmed = query.trim();
-        // A blank query finds nothing (the backend answers []), so it is not
-        // sent at all.
+        // A blank query finds nothing (the backend answers no results), so it
+        // is not sent at all.
         if (!trimmed) {
           patchState(store, { ...initialState });
           return;
@@ -135,6 +135,7 @@ export const SearchStore = signalStore(
         });
         // Both at once, each failing on its own: the Documents' Chunks and
         // the Chat Threads' Exchanges, both by keyword (NBK-97, NBK-104).
+        // The API's spelling of the flag ('true'), not the page URL's ('1').
         const params = { notebookId, q: trimmed, ...(exact ? { exact: 'true' as const } : {}) };
         const [documents, exchanges] = await Promise.all([
           settle(searchService.searchNotebook(params) as Promise<Found<SearchResult>>),
@@ -181,7 +182,11 @@ export const SearchStore = signalStore(
   }),
 );
 
-/** What either search answers with (NBK-105). */
+/**
+ * What either search answers with (NBK-105): the generated client's shape,
+ * from `searchResponse` in apps/backend/src/search/schema.ts, which is the
+ * source of truth.
+ */
 interface Found<T> {
   correctedQuery: string | null;
   results: T[];

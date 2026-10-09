@@ -50,7 +50,7 @@ export interface Correction {
  */
 export async function correct(pool: Pool, notebookId: string, query: string): Promise<Correction> {
   const words = [...query.matchAll(WORD)].filter(
-    (m) => m[0].length >= MIN_CORRECTED_LENGTH && query[m.index - 1] !== '-',
+    (m) => m[0].length >= MIN_CORRECTED_LENGTH && !isExcluded(query, m.index),
   );
   if (words.length === 0) return { searched: query, correctedQuery: null };
 
@@ -67,4 +67,16 @@ export async function correct(pool: Pool, notebookId: string, query: string): Pr
       searched.slice(0, match.index) + row.closest + searched.slice(match.index + match[0].length);
   }
   return { searched, correctedQuery: searched === query ? null : searched };
+}
+
+/**
+ * Whether the word at `index` is excluded, in web-search syntax: a `-` that
+ * opens a term — at the start or after a space — outside quotes. Inside a
+ * hyphenated word ("jean-paul") or a quoted phrase, `-` is text.
+ */
+function isExcluded(query: string, index: number): boolean {
+  if (query[index - 1] !== '-') return false;
+  const opensTerm = index === 1 || /\s/.test(query[index - 2]);
+  const insideQuotes = (query.slice(0, index).match(/"/g) ?? []).length % 2 === 1;
+  return opensTerm && !insideQuotes;
 }
