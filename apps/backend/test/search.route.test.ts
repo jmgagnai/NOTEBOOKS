@@ -380,6 +380,57 @@ describe('Search routes — Documents, by keyword (NBK-104)', () => {
     expect(hits.map((h) => shown(h.excerpt))).toEqual(['[Ganimard] rests at home.']);
   });
 
+  // NBK-107: a Version whose Chunks were written before ranges were stored
+  // is located by the first search that meets it, once; later searches read
+  // the stored ranges rather than rescanning the Converted Markdown.
+  it('locates a Version once, then reads its stored ranges', async () => {
+    const session = await signIn();
+    const notebookId = await notebookOf(session);
+    const intro = 'Hortense meets Rénine.';
+    const escape = 'They flee through Rossigny.';
+    const { versionIds } = await seedDocument(notebookId, 'renine.md', [
+      { chunks: [{ text: intro }, { text: escape }] },
+    ]);
+
+    const [first] = await results(session, notebookId, 'rossigny');
+    expect(first.match).toMatchObject({
+      charStart: intro.length + 2,
+      charEnd: intro.length + 2 + escape.length,
+    });
+    const { rows } = await pool.query<{ located: Date | null }>(
+      'SELECT chunk_ranges_located_at AS located FROM document_versions WHERE id = $1',
+      [versionIds[0]],
+    );
+    expect(rows[0].located).not.toBeNull();
+
+    // Were the Markdown read again, the range would now be lost: it is not.
+    await pool.query("UPDATE document_versions SET markdown = 'gone' WHERE id = $1", [
+      versionIds[0],
+    ]);
+    const [second] = await results(session, notebookId, 'rossigny');
+    expect(second.match).toEqual(first.match);
+  });
+
+  it('locates a Version once even when one of its Chunks cannot be found', async () => {
+    const session = await signIn();
+    const notebookId = await notebookOf(session);
+    const { versionIds } = await seedDocument(notebookId, 'odd.md', [
+      { chunks: [{ text: 'Ganimard waits.' }] },
+    ]);
+    await pool.query("UPDATE document_versions SET markdown = 'something else' WHERE id = $1", [
+      versionIds[0],
+    ]);
+
+    const [hit] = await results(session, notebookId, 'ganimard');
+
+    expect(hit.match).toMatchObject({ charStart: null, charEnd: null });
+    const { rows } = await pool.query<{ located: Date | null }>(
+      'SELECT chunk_ranges_located_at AS located FROM document_versions WHERE id = $1',
+      [versionIds[0]],
+    );
+    expect(rows[0].located).not.toBeNull();
+  });
+
   it("searches only each Document's latest Version, and only when it is ready", async () => {
     const session = await signIn();
     const notebookId = await notebookOf(session);

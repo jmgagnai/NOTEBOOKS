@@ -1,5 +1,5 @@
 import type { Pool } from 'pg';
-import { locateChunkRanges } from '../documents/chunk-ranges.js';
+import { storeChunkRanges } from '../documents/chunk-ranges.js';
 import { SEARCHABLE_VERSIONS_CTE } from '../documents/searchable-versions.js';
 import {
   excerpt,
@@ -42,6 +42,7 @@ const SEARCH_CHUNKS_SQL = `
   SELECT
     s.document_id, s.filename, s.version_id,
     c.id AS chunk_id, c.heading_path, c.text,
+    r.char_start, r.char_end, v.chunk_ranges_located_at IS NOT NULL AS located,
     NULLIF(v.metadata ->> 'title', '') AS title,
     -- Every match, counted before LIMIT keeps the best: the ranking has to
     -- see them all anyway, so knowing how many costs nothing more.
@@ -49,6 +50,7 @@ const SEARCH_CHUNKS_SQL = `
   FROM searchable_versions s
   JOIN chunks c ON c.document_version_id = s.version_id
   JOIN document_versions v ON v.id = s.version_id
+  LEFT JOIN chunk_ranges r ON r.chunk_id = c.id
   CROSS JOIN q
   WHERE c.search_vector @@ q.query
   -- What matched as typed first (NBK-105), then by rank; ties broken by
@@ -83,6 +85,9 @@ interface ChunkRow {
   chunk_id: string;
   heading_path: string[];
   text: string;
+  char_start: number | null;
+  char_end: number | null;
+  located: boolean;
   title: string | null;
   total: string;
 }
@@ -114,14 +119,20 @@ export async function searchChunks(
     query,
     EXCERPT_HEADLINE,
   ]);
-  // Each Chunk located in its Version's Converted Markdown, so the result
-  // opens at it as a Citation does (NBK-96).
-  const ranges = await locateChunkRanges(
+  // Each Chunk's place in its Version's Converted Markdown, so the result
+  // opens at it as a Citation does (NBK-96): stored with the Chunk
+  // (NBK-107), and found once, then stored, for a Version written before
+  // ranges were.
+  const ranges = await storeChunkRanges(
     pool,
-    rows.map((row) => row.version_id),
+    rows.filter((row) => !row.located).map((row) => row.version_id),
   );
   const results = rows.map((row, i) => {
-    const range = ranges.get(row.chunk_id);
+    const range = row.located
+      ? row.char_start === null
+        ? undefined
+        : { charStart: row.char_start, charEnd: row.char_end! }
+      : ranges.get(row.chunk_id);
     return {
       documentId: row.document_id,
       filename: row.filename,

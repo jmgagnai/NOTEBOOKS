@@ -6,6 +6,7 @@ import type { DocumentStatus } from '../documents/schema.js';
 import { EMBEDDING_DIMENSIONS } from '../llm/models.js';
 import type { Embedder } from '../llm/embeddings.js';
 import { chunkMarkdown, type DocumentChunk } from './chunking.js';
+import { locateInMarkdown } from '../documents/chunk-ranges.js';
 import { classifyProviderFailure } from './provider-failure.js';
 import {
   attemptFailed,
@@ -105,18 +106,38 @@ async function transitionTo(
 async function replaceChunks(
   pool: Pool,
   versionId: string,
+  markdown: string,
   chunks: DocumentChunk[],
   vectors: number[][],
 ): Promise<void> {
+  // Where each Chunk sits in the Markdown, stored with it (NBK-107): a
+  // search opening a result at its Chunk reads it instead of rescanning
+  // the whole Document on every query.
+  const ranges = locateInMarkdown(
+    markdown,
+    chunks.map((chunk) => chunk.text),
+  );
   await inTransaction(pool, async (client) => {
     await client.query('DELETE FROM chunks WHERE document_version_id = $1', [versionId]);
     for (const [i, chunk] of chunks.entries()) {
-      await client.query(
+      const { rows } = await client.query<{ id: string }>(
         `INSERT INTO chunks (document_version_id, chunk_index, heading_path, text, embedding)
-         VALUES ($1, $2, $3, $4, $5::vector)`,
+         VALUES ($1, $2, $3, $4, $5::vector)
+         RETURNING id`,
         [versionId, chunk.index, chunk.headingPath, chunk.text, toVectorLiteral(vectors[i])],
       );
+      const range = ranges[i];
+      if (range) {
+        await client.query(
+          'INSERT INTO chunk_ranges (chunk_id, char_start, char_end) VALUES ($1, $2, $3)',
+          [rows[0].id, range.charStart, range.charEnd],
+        );
+      }
     }
+    await client.query(
+      'UPDATE document_versions SET chunk_ranges_located_at = now() WHERE id = $1',
+      [versionId],
+    );
   });
 }
 
@@ -198,7 +219,7 @@ export async function runEmbedChunksJob(
       }
     }
 
-    await replaceChunks(pool, version.versionId, chunks, vectors);
+    await replaceChunks(pool, version.versionId, row.markdown, chunks, vectors);
     await transitionTo(pool, version, 'ready');
   } catch (err) {
     const failed = attemptFailed(classifyProviderFailure(err), {
