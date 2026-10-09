@@ -11,7 +11,7 @@ import { errorMessage } from '../shared/error-message';
  * sits under. The generated client's shape, from `documentSearchResultSchema`
  * in apps/backend/src/search/schema.ts, which is the source of truth.
  */
-export interface SearchResult {
+export interface ChunkResult {
   documentId: string;
   filename: string;
   /** The title Stage 2 extracted, or null when there is none. */
@@ -56,15 +56,15 @@ interface SearchState {
   notebookId: string | null;
   /** The query the currently-displayed results answer. '' before any search. */
   query: string;
-  /** The matching Documents. */
-  results: SearchResult[];
+  /** The matching Chunks of the Notebook's Documents (NBK-104). */
+  chunks: ChunkResult[];
   /** The matching Exchanges of the Notebook's Chat Threads (NBK-97). */
   exchanges: ExchangeResult[];
   searching: boolean;
   /** Why the Documents search failed, if it did. */
-  error: string | null;
+  chunksError: string | null;
   /**
-   * Why the Chat Threads search failed, if it did — apart from `error`, so
+   * Why the Chat Threads search failed, if it did — apart from `chunksError`, so
    * one search failing never hides the other's results (NBK-97).
    */
   exchangesError: string | null;
@@ -88,10 +88,10 @@ const initialState: SearchState = {
   query: '',
   exact: false,
   correctedQuery: null,
-  results: [],
+  chunks: [],
   exchanges: [],
   searching: false,
-  error: null,
+  chunksError: null,
   exchangesError: null,
   searched: false,
 };
@@ -130,28 +130,27 @@ export const SearchStore = signalStore(
           query: trimmed,
           exact,
           searching: true,
-          error: null,
+          chunksError: null,
           exchangesError: null,
         });
         // Both at once, each failing on its own: the Documents' Chunks and
         // the Chat Threads' Exchanges, both by keyword (NBK-97, NBK-104).
         // The API's spelling of the flag ('true'), not the page URL's ('1').
         const params = { notebookId, q: trimmed, ...(exact ? { exact: 'true' as const } : {}) };
-        const [documents, exchanges] = await Promise.all([
-          settle(searchService.searchNotebook(params) as Promise<Found<SearchResult>>),
+        const [chunks, exchanges] = await Promise.all([
+          settle(searchService.searchNotebook(params) as Promise<Found<ChunkResult>>),
           settle(searchService.searchChatThreads(params) as Promise<Found<ExchangeResult>>),
         ]);
         if (request !== latest) return;
         patchState(store, {
           searching: false,
           searched: true,
-          results: documents.value?.results ?? [],
-          error: documents.error,
+          chunks: chunks.value?.results ?? [],
+          chunksError: chunks.error,
           exchanges: exchanges.value?.results ?? [],
           exchangesError: exchanges.error,
           // Both correct against the same Notebook's words, so either says it.
-          correctedQuery:
-            documents.value?.correctedQuery ?? exchanges.value?.correctedQuery ?? null,
+          correctedQuery: chunks.value?.correctedQuery ?? exchanges.value?.correctedQuery ?? null,
         });
       },
 
@@ -168,7 +167,7 @@ export const SearchStore = signalStore(
           store.exact() === exact &&
           store.searched() &&
           !store.searching() &&
-          store.error() === null &&
+          store.chunksError() === null &&
           store.exchangesError() === null
         );
       },

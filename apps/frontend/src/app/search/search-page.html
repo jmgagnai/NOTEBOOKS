@@ -64,10 +64,10 @@
           something to show; a section whose search failed says so, without
           hiding the other's results.
         -->
-        @if (store.results().length || store.error()) {
+        @if (store.chunks().length || store.chunksError()) {
           <section class="search-page__section" aria-labelledby="search-documents">
             <h2 class="search-page__section-title" id="search-documents">Documents</h2>
-            @if (store.error(); as error) {
+            @if (store.chunksError(); as error) {
               <p class="search-page__error">{{ error }}</p>
             } @else {
               <!--
@@ -76,7 +76,7 @@
                 searched for bold, then which Document it is from and where.
               -->
               <ul class="search-page__results">
-                @for (result of store.results(); track result.match.chunkId) {
+                @for (result of store.chunks(); track result.match.chunkId) {
                   <li>
                     <a
                       class="search-page__result"
