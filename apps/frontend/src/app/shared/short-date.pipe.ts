@@ -7,6 +7,10 @@ import { inject, LOCALE_ID, Pipe, PipeTransform } from '@angular/core';
  * without the year two dates a year apart read the same. The current year is
  * the viewer's, in their local time. One pipe for every such line, so they
  * cannot drift apart.
+ *
+ * Pure, as pipes are by default: a line already on screen keeps its format
+ * across New Year until it is rendered again, which costs nothing anyone
+ * would notice and spares re-formatting every line on every change.
  */
 @Pipe({ name: 'shortDate', standalone: true })
 export class ShortDatePipe implements PipeTransform {

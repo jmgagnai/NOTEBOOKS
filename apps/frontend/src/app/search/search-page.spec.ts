@@ -405,7 +405,7 @@ describe('SearchPage', () => {
       await searchFor('rossigny');
 
       const row = await screen.findByRole('link', { name: /Who is who/ });
-      expect(within(row).getByText(/ada@example\.com · Oct 8/)).toBeTruthy();
+      expect(within(row).getByText('ada@example.com · Oct 8')).toBeTruthy();
       expect(within(row).getByText('Who helps Hortense?')).toBeTruthy();
       // The matched word in bold, the rest as text.
       expect(within(row).getByText('Rossigny').tagName).toBe('STRONG');
@@ -423,7 +423,7 @@ describe('SearchPage', () => {
       await searchFor('rossigny');
 
       const row = await screen.findByRole('link', { name: /Who is who/ });
-      expect(within(row).getByText(/ada@example\.com · Oct 8, 2025/)).toBeTruthy();
+      expect(within(row).getByText('ada@example.com · Oct 8, 2025')).toBeTruthy();
     });
 
     it('opens the Chat Thread at that Exchange', async () => {
