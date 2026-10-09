@@ -21,11 +21,15 @@ Administrator signs in like anyone else.
 ## Finding a deleted Chat Thread
 
 The UI lists no deleted Threads. Each deletion leaves a line in the backend's
-output, with what a restore needs:
+log (`docs/logging.md`), with what a restore needs, as its message and as
+fields (`threadId`, `notebookId`, `title`, `author`):
 
 ```text
 Chat Thread deleted: id=<threadId> title="Revenue questions" notebook=<notebookId> author=ada@example.com
 ```
+
+In production's JSON log, `grep 'Chat Thread deleted'` finds it, and `jq`
+reads its fields: `… | jq 'select(.threadId) | {threadId, notebookId, title}'`.
 
 Or ask Postgres, which keeps every deleted Thread with its messages:
 

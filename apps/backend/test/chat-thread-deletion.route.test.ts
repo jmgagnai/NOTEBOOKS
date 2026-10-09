@@ -8,6 +8,7 @@ import { createPool } from '../src/db/pool.js';
 import { createOpenRouterEmbedder } from '../src/llm/embeddings.js';
 import { EMBEDDING_DIMENSIONS } from '../src/llm/models.js';
 import { createOpenRouterCompleter } from '../src/llm/openrouter.js';
+import { capturedLogger, LEVEL } from './support/captured-logger.js';
 
 /**
  * NBK-95: only its author deletes a Chat Thread, softly — its messages and
@@ -73,8 +74,8 @@ describe('Chat Thread deletion', () => {
     };
   }
 
-  const remove = (url: string, session: string) =>
-    app.inject({ method: 'DELETE', url, cookies: { session } });
+  const remove = (url: string, session: string, on = app) =>
+    on.inject({ method: 'DELETE', url, cookies: { session } });
   const restore = (url: string, session: string, on = app) =>
     on.inject({ method: 'POST', url: `${url}/restore`, cookies: { session } });
   const listed = async (notebookId: string, session: string) =>
@@ -223,18 +224,30 @@ describe('Chat Thread deletion', () => {
       }
     });
 
+    // Read back through the backend's logger (NBK-113): the line
+    // docs/administration.md tells an Administrator to look for, and its
+    // fields for a log tool.
     it('logs the deletion with what an Administrator needs to find it', async () => {
-      const info = vi.spyOn(console, 'info').mockImplementation(() => {});
-      const author = await signIn('ada@example.com');
-      const { notebookId, threadId, url } = await threadOf(author);
+      const { logger, lines } = capturedLogger();
+      const logged = await buildApp({ pool, logger });
+      try {
+        const author = await signIn('ada@example.com');
+        const { notebookId, threadId, url } = await threadOf(author);
 
-      await remove(url, author);
+        await remove(url, author, logged);
 
-      const line = info.mock.calls.map((args) => args.join(' ')).find((l) => l.includes(threadId));
-      expect(line).toBeDefined();
-      expect(line).toContain('Revenue questions');
-      expect(line).toContain(notebookId);
-      expect(line).toContain('ada@example.com');
+        const line = lines.find((l) => l.msg?.startsWith('Chat Thread deleted'));
+        expect(line).toMatchObject({
+          level: LEVEL.info,
+          threadId,
+          notebookId,
+          title: 'Revenue questions',
+          author: 'ada@example.com',
+        });
+        expect(line?.msg).toContain(threadId);
+      } finally {
+        await logged.close();
+      }
     });
   });
 

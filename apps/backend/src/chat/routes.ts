@@ -189,8 +189,8 @@ export function registerChatRoutes(
       }
       // There is no list of deleted Threads: this line is how an
       // Administrator finds one to restore (docs/administration.md).
-      // eslint-disable-next-line no-console
-      console.info(
+      request.log.info(
+        { threadId, notebookId, title: thread.title, author: thread.author.email },
         `Chat Thread deleted: id=${threadId} title=${JSON.stringify(thread.title)} ` +
           `notebook=${notebookId} author=${thread.author.email}`,
       );

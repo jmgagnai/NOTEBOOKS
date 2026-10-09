@@ -291,7 +291,7 @@ export function registerDocumentRoutes(
           });
         } catch (err) {
           request.log.error(
-            { err },
+            { err, documentId: document.id, versionId: document.latestVersion.id },
             'Could not enqueue Markdown conversion for the uploaded Document Version.',
           );
         }
@@ -421,7 +421,10 @@ export function registerDocumentRoutes(
             versionId,
           });
         } catch (err) {
-          request.log.error({ err }, 'Could not enqueue the retried Ingestion Stage.');
+          request.log.error(
+            { err, documentId, versionId },
+            'Could not enqueue the retried Ingestion Stage.',
+          );
         }
       }
 

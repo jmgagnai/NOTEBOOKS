@@ -24,6 +24,9 @@ To see a UI change rendered — signed in, as screenshots — see
 Administrators (restoring a deleted Chat Thread, `ADMIN_EMAILS`) use the
 API with curl: see `docs/administration.md`.
 
+The backend logs through one pino logger (`LOG_LEVEL`, `LOG_FORMAT`): see
+`docs/logging.md`.
+
 Hit something the environment fought you on — a gated Docker image, a
 Testcontainers flake, a silent `ng build` failure? See
 `docs/environment-gotchas.md` before debugging it.
