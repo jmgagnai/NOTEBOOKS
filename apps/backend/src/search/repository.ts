@@ -27,13 +27,18 @@ export const DOCUMENT_RESULT_LIMIT = 20;
  * rules shared with chat retrieval and explained in
  * `documents/searchable-versions.ts`. It consumes `$1`.
  *
- * The match runs on `to_tsvector('simple_unaccent', text)`, the expression
- * migration 0015 indexes: accents and case ignored, no stemming, and the
- * query in web-search syntax (quoted phrases, `-word`, `or`).
+ * The match runs on `chunks.search_vector`, the Chunk's text as
+ * `simple_unaccent` reads it, stored and indexed (migration 0017): accents
+ * and case ignored, no stemming, the query in web-search syntax (quoted
+ * phrases, `-word`, `or`). Stored, not recomputed per match: ranking every
+ * match of a common word recomputed it 43,000 times (NBK-106).
  */
 const SEARCH_CHUNKS_SQL = `
   WITH ${SEARCHABLE_VERSIONS_CTE},
-  q AS (SELECT websearch_to_tsquery('${TEXT_SEARCH_CONFIG}', $2) AS query)
+  q AS (
+    SELECT websearch_to_tsquery('${TEXT_SEARCH_CONFIG}', $2) AS query,
+           websearch_to_tsquery('${TEXT_SEARCH_CONFIG}', $4) AS typed
+  )
   SELECT
     s.document_id, s.filename, s.version_id,
     c.id AS chunk_id, c.heading_path, c.text,
@@ -45,11 +50,11 @@ const SEARCH_CHUNKS_SQL = `
   JOIN chunks c ON c.document_version_id = s.version_id
   JOIN document_versions v ON v.id = s.version_id
   CROSS JOIN q
-  WHERE to_tsvector('${TEXT_SEARCH_CONFIG}', c.text) @@ q.query
+  WHERE c.search_vector @@ q.query
   -- What matched as typed first (NBK-105), then by rank; ties broken by
   -- age and position, so the same query twice never shuffles its results.
-  ORDER BY to_tsvector('${TEXT_SEARCH_CONFIG}', c.text) @@ websearch_to_tsquery('${TEXT_SEARCH_CONFIG}', $4) DESC,
-           ts_rank(to_tsvector('${TEXT_SEARCH_CONFIG}', c.text), q.query) DESC,
+  ORDER BY c.search_vector @@ q.typed DESC,
+           ts_rank(c.search_vector, q.query) DESC,
            s.document_created_at ASC, c.chunk_index ASC
   LIMIT $3
 `;

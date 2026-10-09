@@ -20,22 +20,24 @@ export const EXCHANGE_RESULT_LIMIT = 20;
  * answer after it, a hit on an answer with the question before it, and an
  * Exchange both halves of which match is one result, ranked by the two
  * together. Full-text on `simple_unaccent` (accents and case ignored), on
- * the expression migration 0015 indexes. Deleted Chat Threads and Notebooks
- * are left out.
+ * each message's stored `search_vector` (migration 0017, NBK-106). Deleted
+ * Chat Threads and Notebooks are left out.
  */
 const SEARCH_EXCHANGES_SQL = `
-  WITH q AS (SELECT websearch_to_tsquery('${TEXT_SEARCH_CONFIG}', $2) AS query),
+  WITH q AS (
+    SELECT websearch_to_tsquery('${TEXT_SEARCH_CONFIG}', $2) AS query,
+           websearch_to_tsquery('${TEXT_SEARCH_CONFIG}', $6) AS typed
+  ),
   hits AS (
     SELECT m.id, m.chat_thread_id, m.role, m.seq,
-           ts_rank(to_tsvector('${TEXT_SEARCH_CONFIG}', m.content), q.query) AS rank,
-           to_tsvector('${TEXT_SEARCH_CONFIG}', m.content)
-             @@ websearch_to_tsquery('${TEXT_SEARCH_CONFIG}', $6) AS as_typed
+           ts_rank(m.search_vector, q.query) AS rank,
+           m.search_vector @@ q.typed AS as_typed
     FROM chat_messages m
     JOIN chat_threads t ON t.id = m.chat_thread_id
     CROSS JOIN q
     WHERE t.notebook_id = $1 AND t.deleted_at IS NULL
       AND ${notebookIsActive('t.notebook_id')}
-      AND to_tsvector('${TEXT_SEARCH_CONFIG}', m.content) @@ q.query
+      AND m.search_vector @@ q.query
   ),
   pairs AS (
     SELECT h.chat_thread_id, h.rank, h.as_typed,
