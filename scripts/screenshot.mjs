@@ -8,7 +8,10 @@
  * path. No dependencies: Node's fetch and WebSocket, and the installed Chrome.
  *
  *   node scripts/screenshot.mjs [--register] [--out dir] [--width 1440] [--height 900] \
- *        [--settle 2000] / /notebooks/<id> ...
+ *        [--settle 2000] [--eval '<js>' [--no-shot]] / /notebooks/<id> ...
+ *
+ * `--eval` measures instead of eyeballing, and `--no-shot` (with it) skips
+ * the PNGs: docs/run-for-screenshots.md, "Measure instead of eyeballing".
  *
  * Needs the backend and `ng serve` running (docs/run-for-screenshots.md).
  * Account: SCREENSHOT_EMAIL / SCREENSHOT_PASSWORD, defaulting to a throwaway
@@ -31,11 +34,27 @@ const opt = (name, fallback) => {
   const i = args.indexOf(`--${name}`);
   return i === -1 ? fallback : args.splice(i, 2)[1];
 };
-const register = args.includes('--register') && args.splice(args.indexOf('--register'), 1);
+const flag = (name) => {
+  const i = args.indexOf(`--${name}`);
+  return i !== -1 && args.splice(i, 1).length === 1;
+};
+const register = flag('register');
 const out = resolve(opt('out', 'screenshots'));
 const width = Number(opt('width', 1440));
 const height = Number(opt('height', 900));
 const settle = Number(opt('settle', 2000));
+// Read before the flags, so a forgotten value shows up as `--eval --no-shot`.
+const expression = opt('eval', null);
+const noShot = flag('no-shot');
+// Refused before signing in and starting Chrome: a forgotten value would
+// otherwise evaluate the next argument — a flag, an app path — as JavaScript.
+const looksLikeAnArgument = (value) => value.startsWith('--') || /^\/[\w/-]*$/.test(value);
+if (expression !== null && (expression === undefined || looksLikeAnArgument(expression))) {
+  throw new Error('--eval needs an expression: --eval \'document.title\'');
+}
+if (noShot && expression === null) {
+  throw new Error('--no-shot without --eval would load every page and do nothing');
+}
 const paths = args.length > 0 ? args : ['/'];
 
 async function post(path, body) {
@@ -56,6 +75,17 @@ if (!login.ok) {
   throw new Error(`login as ${email} → ${login.status}; pass --register the first time`);
 }
 const cookies = login.headers.getSetCookie().map((c) => c.split(';')[0].split('='));
+
+/**
+ * An evaluated value as printed: JSON, except what JSON cannot say —
+ * `undefined`, and `NaN`, `Infinity`, `-0` and BigInts, which the DevTools
+ * protocol hands back apart from the value — printed as JavaScript.
+ */
+function shown(result) {
+  if (result.unserializableValue !== undefined) return result.unserializableValue;
+  if (result.type === 'undefined') return 'undefined';
+  return JSON.stringify(result.value);
+}
 
 // Headless Chrome prints its DevTools endpoint on stderr.
 const chrome = spawn(CHROME, [
@@ -107,6 +137,10 @@ const once = (method, sessionId) =>
     listeners.add(listener);
   });
 
+// An expression that threw on one path must still fail the run, or a caller
+// reading only the exit code would take the measurement for a success.
+let failed = false;
+
 try {
   const { targetId } = await send('Target.createTarget', { url: 'about:blank' });
   const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true });
@@ -120,13 +154,28 @@ try {
     { width, height, deviceScaleFactor: 1, mobile: false },
     sessionId,
   );
-  mkdirSync(out, { recursive: true });
+  if (!noShot) mkdirSync(out, { recursive: true });
   for (const path of paths) {
     const loaded = once('Page.loadEventFired', sessionId);
     await send('Page.navigate', { url: `${APP}${path}` }, sessionId);
     await loaded;
     // The app fetches its data after load; give it time to render.
     await new Promise((done) => setTimeout(done, settle));
+    if (expression !== null) {
+      const { result, exceptionDetails } = await send(
+        'Runtime.evaluate',
+        { expression, awaitPromise: true, returnByValue: true },
+        sessionId,
+      );
+      if (exceptionDetails) {
+        failed = true;
+        const reason = exceptionDetails.exception?.description ?? exceptionDetails.text;
+        console.error(`${path}  threw: ${reason}`);
+      } else {
+        console.log(`${path}  ${shown(result)}`);
+      }
+    }
+    if (noShot) continue;
     const { data } = await send('Page.captureScreenshot', { format: 'png' }, sessionId);
     const file = join(out, `${path.replace(/^\/|\/$/g, '').replace(/\//g, '_') || 'home'}.png`);
     writeFileSync(file, Buffer.from(data, 'base64'));
@@ -136,3 +185,4 @@ try {
   socket.close();
   chrome.kill();
 }
+if (failed) process.exitCode = 1;

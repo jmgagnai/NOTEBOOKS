@@ -61,11 +61,55 @@ node scripts/screenshot.mjs --register --out "$CLAUDE_JOB_DIR/tmp/shots" / /note
 - `--width` / `--height` set the viewport (default 1440×900; try 800 wide
   for the narrow layouts), `--settle` the wait after load (default 2000 ms).
 - States behind a click (a menu, a collapsed sidebar, the hidden Documents
-  pane) are not reachable this way; the script captures what a path renders
-  on arrival.
+  pane) are not reachable by path alone; the script captures what a path
+  renders on arrival. Section 4 shows how to put a page into such a state.
 
 ## 3. Use them
 
 Look at each PNG before calling a UI change done. `gh` cannot upload images
 into a PR body, so for PR evidence give the user the paths and say which
 screenshot shows what; they drag them into the PR.
+
+## 4. Measure instead of eyeballing
+
+For a layout question (how wide is it, does it overflow, where did it
+scroll), measure it rather than squint at a PNG. `--eval` runs a JavaScript
+expression in each page once it has settled. A promise is awaited, and the
+value prints as JSON beside the path (`undefined`, `NaN` and the like as
+JavaScript). `--no-shot` skips the screenshots; it needs `--eval`.
+
+```bash
+node scripts/screenshot.mjs --no-shot --eval '(() => {
+  const r = document.querySelector(".search-page__column").getBoundingClientRect();
+  return { left: Math.round(r.left), width: Math.round(r.width) };
+})()' /notebooks/<id>/search
+# /notebooks/<id>/search  {"left":480,"width":760}
+```
+
+- Return plain data. The value travels as JSON, so a `DOMRect` arrives as
+  `{}`; copy out the fields you need, as above.
+- An expression that throws is reported for its path, on stderr. The other
+  paths still run, and the script exits non-zero.
+- Several paths in one run measure the same thing across pages.
+
+**A state no path reaches.** `ng serve` runs in development mode, which
+exposes Angular's debugging API on `window.ng`. `ng.getComponent(element)`
+returns the component instance behind an element, and after you change its
+state, `ng.applyChanges(component)` renders it. So an expression can set a
+component's signals and then measure the result: an answer in flight, a
+progress state, a draft in a box.
+
+```bash
+node scripts/screenshot.mjs --eval '(() => {
+  const page = ng.getComponent(document.querySelector("app-search-page"));
+  page.draft.set("rossigny");
+  ng.applyChanges(page);
+  return document.querySelector("input[type=search]").value;
+})()' /notebooks/<id>/search
+# /notebooks/<id>/search  "rossigny"   (and the PNG shows the box filled)
+```
+
+TypeScript's `protected` does not exist at runtime, so any field the
+template reads can be set. This works on `ng serve` only, since a
+production build strips `window.ng`, and it is a local tool for looking,
+never something a test relies on.
