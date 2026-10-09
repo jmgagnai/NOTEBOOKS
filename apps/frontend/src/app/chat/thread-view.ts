@@ -133,18 +133,26 @@ export class ThreadView {
     let followedThread: string | null = null;
     let followedMessages = 0;
     let followedBlocks = 0;
+    let followedLoading = false;
     effect(() => {
       const threadId = this.store.activeThreadId();
       const messages = this.store.messages().length;
       const blocks = this.streamingBlocks().length;
+      const loading = this.store.messagesLoading();
       // Counted apart: the recorded exchange replacing a preview adds
-      // messages as it drops blocks, and either growing is news.
+      // messages as it drops blocks, and either growing is news. Messages
+      // that arrive as the Thread finishes loading are not: the view saw it
+      // loading, empty, a moment before, and following them to the end
+      // would undo landing at a search result's Exchange.
       const grew =
-        threadId === followedThread && (messages > followedMessages || blocks > followedBlocks);
+        threadId === followedThread &&
+        !followedLoading &&
+        (messages > followedMessages || blocks > followedBlocks);
       followedThread = threadId;
       followedMessages = messages;
       followedBlocks = blocks;
-      if (!grew || this.store.messagesLoading()) return;
+      followedLoading = loading;
+      if (!grew || loading) return;
       this.afterRender((list) => list.scrollTo?.({ top: list.scrollHeight, behavior: 'smooth' }));
     });
 
