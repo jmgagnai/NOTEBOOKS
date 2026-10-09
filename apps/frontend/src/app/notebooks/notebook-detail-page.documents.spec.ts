@@ -293,6 +293,77 @@ describe('NotebookDetailPage — Documents panel', () => {
       ]);
     });
 
+    // NBK-110: a Document that failed for a reason a second attempt could
+    // change can be retried from its menu, on the same file.
+    it('offers Retry for a failure a second attempt could change, and retries it', async () => {
+      const saga = documentFor('saga.pdf', {
+        status: 'failed',
+        failure: { reason: 'unexpected', failedAt: 'converting' },
+      });
+      const retryIngestion = vi.fn().mockResolvedValue({ status: 'queued' });
+      const appEvents = appEventsStub();
+      await render(NotebookDetailPage, {
+        providers: pageProviders({
+          documents: { listDocuments: vi.fn().mockResolvedValue([saga]), retryIngestion },
+          appEvents,
+        }),
+      });
+      await screen.findByText('saga.pdf');
+
+      fireEvent.click(
+        within(documentRow('saga.pdf')).getByRole('button', { name: 'Actions for saga.pdf' }),
+      );
+      const items = await screen.findAllByRole('menuitem');
+      expect(items.map((item) => item.getAttribute('aria-label'))).toEqual([
+        'Open saga.pdf',
+        'Retry saga.pdf',
+        'Download saga.pdf',
+        'Delete saga.pdf',
+      ]);
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Retry saga.pdf' }));
+
+      expect(retryIngestion).toHaveBeenCalledWith({
+        notebookId: NOTEBOOK_ID,
+        documentId: saga.id,
+        versionId: saga.latestVersion.id,
+      });
+      // Under way again: the status App Event the Retry published clears the
+      // warning and shows the status, as for any Version moving on.
+      appEvents.events.next({
+        id: 'event-retried',
+        type: 'document-version-status-changed',
+        topic: `notebook:${NOTEBOOK_ID}`,
+        occurredAt: '2026-01-01T00:00:01.000Z',
+        data: { documentId: saga.id, versionId: saga.latestVersion.id, status: 'queued' },
+      });
+      expect(await within(documentRow('saga.pdf')).findByText('Queued')).toBeTruthy();
+      await waitFor(() =>
+        expect(
+          within(documentRow('saga.pdf')).queryByRole('img', { name: 'Ingestion failed' }),
+        ).toBeNull(),
+      );
+    });
+
+    it('offers no Retry for a failure the same file would repeat', async () => {
+      await renderWithUpload(vi.fn(), [
+        documentFor('scan.pdf', {
+          status: 'failed',
+          failure: { reason: 'unreadable', failedAt: 'converting' },
+        }),
+      ]);
+
+      fireEvent.click(
+        within(documentRow('scan.pdf')).getByRole('button', { name: 'Actions for scan.pdf' }),
+      );
+
+      const items = await screen.findAllByRole('menuitem');
+      expect(items.map((item) => item.getAttribute('aria-label'))).toEqual([
+        'Open scan.pdf',
+        'Download scan.pdf',
+        'Delete scan.pdf',
+      ]);
+    });
+
     it('leaves no Document card, badge or Abstract in the list', async () => {
       await renderWithUpload(vi.fn(), [
         documentFor('report.txt', { status: 'ready', abstract: 'An Abstract to skim.' }),

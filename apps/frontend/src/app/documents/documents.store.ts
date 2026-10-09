@@ -1073,6 +1073,26 @@ export const DocumentsStore = signalStore(
           }
         },
 
+        /**
+         * Retries a failed Document's latest Version (NBK-110). The row is
+         * not patched from the answer: the Retry publishes the Version's new
+         * status as an App Event, which `watchNotebook` follows like any
+         * other, and a Stage quick enough to move on (or fail again) before
+         * the answer arrives would otherwise be overwritten by it.
+         */
+        async retryIngestion(notebookId: string, document: Document): Promise<void> {
+          patchState(store, { error: null });
+          try {
+            await documentsService.retryIngestion({
+              notebookId,
+              documentId: document.id,
+              versionId: document.latestVersion.id,
+            });
+          } catch (err) {
+            patchState(store, { error: errorMessage(err, 'Failed to retry Document.') });
+          }
+        },
+
         async downloadDocumentVersion(notebookId: string, document: Document): Promise<void> {
           patchState(store, { error: null });
           try {

@@ -51,6 +51,8 @@ export type { GetDocumentVersionContent$Params as GetDocumentVersionContent$Para
 export { getDocumentVersionContent as getDocumentVersionContent } from './fn/documents/get-document-version-content';
 export type { RestoreDocument$Params as RestoreDocument$Params } from './fn/documents/restore-document';
 export { restoreDocument as restoreDocument } from './fn/documents/restore-document';
+export type { RetryIngestion$Params as RetryIngestion$Params } from './fn/documents/retry-ingestion';
+export { retryIngestion as retryIngestion } from './fn/documents/retry-ingestion';
 export type { DownloadDocumentVersion$Params as DownloadDocumentVersion$Params } from './fn/documents/download-document-version';
 export { downloadDocumentVersion as downloadDocumentVersion } from './fn/documents/download-document-version';
 export type { StreamEvents$Params as StreamEvents$Params } from './fn/events/stream-events';

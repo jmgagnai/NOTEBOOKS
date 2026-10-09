@@ -17,7 +17,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import type { FluentIconName } from '../shared/fluent-icons';
 import { statusLabel } from '../shared/status-badge';
 import type { Document, DocumentStatus } from './documents.store';
-import { failureSentence } from './failure-reason';
+import { canRetry, failureSentence } from './failure-reason';
 
 /** What the type icon at the start of a row says: which icon, and its accessible name. */
 export interface DocumentKind {
@@ -103,11 +103,14 @@ export class DocumentList {
 
   readonly download = output<Document>();
   readonly delete = output<Document>();
+  /** A failed Document's Retry (NBK-110), offered only when it could help. */
+  readonly retry = output<Document>();
 
   protected readonly kind = documentKind;
   protected readonly inProgress = isInProgress;
   protected readonly stage = statusLabel;
   protected readonly failureSentence = failureSentence;
+  protected readonly canRetry = canRetry;
 
   /** The Abstract popover's text: the full filename, then the Abstract. */
   protected popover(document: Document): string {
