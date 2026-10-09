@@ -15,6 +15,7 @@ import {
   untracked,
 } from '@angular/core';
 import { marked } from 'marked';
+import { markHtml } from '../shared/search-words';
 
 /**
  * One top-level block of the rendered Markdown, with the character range of
@@ -106,7 +107,7 @@ function scrollingAncestor(element: HTMLElement): Element | null {
         class="markdown-view__block"
         [class.markdown-view__block--cited]="isCited(block)"
         [attr.data-testid]="isCited(block) ? 'cited-passage' : null"
-        [innerHTML]="block.html"
+        [innerHTML]="html(block)"
       ></div>
     }
   </div>`,
@@ -123,6 +124,13 @@ export class MarkdownView {
   readonly highlightFrom = input<number | null>(null);
   /** End of that range, exclusive. Falls back to `highlightFrom`. */
   readonly highlightTo = input<number | null>(null);
+
+  /**
+   * Words a search found this text by, marked in yellow (`<mark>`): inside
+   * the highlighted blocks when a range is highlighted, else everywhere —
+   * a chat answer is short, and all of it is the found part.
+   */
+  readonly markWords = input<readonly string[]>([]);
 
   /**
    * How much of the document is rendered, from 0 to 1: under 1 while slices
@@ -253,6 +261,14 @@ export class MarkdownView {
     return (
       this.cited() ?? this.host.nativeElement.querySelector<HTMLElement>('.markdown-view__block')
     );
+  }
+
+  /** A block's HTML, with the words to mark marked where they belong. */
+  protected html(block: MarkdownBlock): string {
+    const words = this.markWords();
+    if (words.length === 0) return block.html;
+    if (this.highlightFrom() !== null && !this.isCited(block)) return block.html;
+    return markHtml(block.html, words);
   }
 
   /** Whether a block overlaps the highlighted range at all. */

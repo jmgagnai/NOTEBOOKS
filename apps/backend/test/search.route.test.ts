@@ -157,7 +157,11 @@ describe('Search routes — Documents, by keyword (NBK-104)', () => {
   ) {
     const response = await search(session, notebookId, q, params);
     expect(response.statusCode).toBe(200);
-    return response.json() as { correctedQuery: string | null; results: DocumentSearchResult[] };
+    return response.json() as {
+      correctedQuery: string | null;
+      words: string[];
+      results: DocumentSearchResult[];
+    };
   }
 
   async function results(session: string, notebookId: string, q: string) {
@@ -427,7 +431,7 @@ describe('Search routes — Documents, by keyword (NBK-104)', () => {
       const notebookId = await notebookOf(session);
       await seedDocument(notebookId, 'renine.md', [{ chunks: [{ text: 'Rossigny.' }] }]);
 
-      expect(await answer(session, notebookId, 'rosigny', { exact: 'true' })).toEqual({
+      expect(await answer(session, notebookId, 'rosigny', { exact: 'true' })).toMatchObject({
         correctedQuery: null,
         results: [],
       });
@@ -446,7 +450,7 @@ describe('Search routes — Documents, by keyword (NBK-104)', () => {
       const notebookId = await notebookOf(session);
       await seedDocument(notebookId, 'renine.md', [{ chunks: [{ text: 'Rossigny.' }] }]);
 
-      expect(await answer(session, notebookId, 'zanzibar')).toEqual({
+      expect(await answer(session, notebookId, 'zanzibar')).toMatchObject({
         correctedQuery: null,
         results: [],
       });
@@ -457,7 +461,7 @@ describe('Search routes — Documents, by keyword (NBK-104)', () => {
       const notebookId = await notebookOf(session);
       await seedDocument(notebookId, 'renine.md', [{ chunks: [{ text: 'The tower.' }] }]);
 
-      expect(await answer(session, notebookId, 'tha')).toEqual({
+      expect(await answer(session, notebookId, 'tha')).toMatchObject({
         correctedQuery: null,
         results: [],
       });
@@ -470,6 +474,25 @@ describe('Search routes — Documents, by keyword (NBK-104)', () => {
       await seedDocument(other, 'elsewhere.md', [{ chunks: [{ text: 'Rossigny.' }] }]);
 
       expect((await answer(session, notebookId, 'rosigny')).correctedQuery).toBeNull();
+    });
+
+    // The words searched for, as the Search page passes them on to mark
+    // where a result opens: corrected, every word of a phrase, not `or`,
+    // not an excluded one — the query as the search read it.
+    it('returns the words it searched for, corrected, without or and excluded ones', async () => {
+      const session = await signIn();
+      const notebookId = await notebookOf(session);
+      await seedDocument(notebookId, 'renine.md', [
+        { chunks: [{ text: 'The woods of Rossigny, near Jean-Baptiste.' }] },
+      ]);
+
+      const body = (
+        await search(session, notebookId, '"woods of rosigny" or jean-baptiste -lupin')
+      ).json() as {
+        words: string[];
+      };
+
+      expect(body.words).toEqual(['woods', 'of', 'rossigny', 'jean', 'baptiste']);
     });
 
     it('keeps web-search syntax around the corrected words', async () => {

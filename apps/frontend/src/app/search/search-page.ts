@@ -5,7 +5,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
-import { chunkLinkParams } from '../documents/chunk-link';
+import { ChunkPin, chunkLinkParams } from '../documents/chunk-link';
 import { OPENED_FROM_SEARCH } from '../documents/opened-from-search';
 import { NotebooksStore } from '../notebooks/notebooks.store';
 import { MarkedText } from './marked-text';
@@ -149,8 +149,18 @@ export class SearchPage implements OnDestroy {
       .join(' · ');
   }
 
-  /** A Document result opens the Document at its Chunk, as a Citation does. */
-  protected readonly chunkLink = chunkLinkParams;
+  /**
+   * The words searched for, as the backend read the query, carried by each
+   * result's link (`&words=`) so the opened page marks them in yellow inside
+   * the cited Chunk or Exchange. Null — no parameter — when there are none.
+   */
+  protected readonly words = computed(() => this.store.words().join(' ') || null);
+
+  /** A Document result opens the Document at its Chunk, as a Citation does, with the words. */
+  protected chunkLink(match: ChunkPin): Record<string, string | number> {
+    const words = this.words();
+    return words ? { ...chunkLinkParams(match), words } : chunkLinkParams(match);
+  }
 
   /** And says it came from here, so the Document's back arrow returns here (NBK-103). */
   protected readonly openedFromSearch = OPENED_FROM_SEARCH;

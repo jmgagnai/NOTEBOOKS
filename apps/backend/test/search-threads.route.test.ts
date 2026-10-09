@@ -246,7 +246,7 @@ describe('Chat Thread search', () => {
 
     const response = await search(session, notebookId, '-lupin');
 
-    expect(response.json()).toEqual({ correctedQuery: null, results: [] });
+    expect(response.json()).toMatchObject({ correctedQuery: null, results: [] });
   });
 
   it("keeps angle brackets in an answer's Excerpt as text", async () => {
@@ -274,7 +274,8 @@ describe('Chat Thread search', () => {
 
     expect(body.correctedQuery).toBe('rossigny');
     expect(body.results.map((hit) => marked(hit.answer))).toEqual([['Rossigny']]);
-    expect(await answer(session, notebookId, 'rosigny', { exact: 'true' })).toEqual({
+    expect((body as unknown as { words: string[] }).words).toEqual(['rossigny']);
+    expect(await answer(session, notebookId, 'rosigny', { exact: 'true' })).toMatchObject({
       correctedQuery: null,
       results: [],
     });
@@ -315,7 +316,7 @@ describe('Chat Thread search', () => {
     const response = await search(session, notebookId, '   ');
 
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({ correctedQuery: null, results: [] });
+    expect(response.json()).toMatchObject({ correctedQuery: null, results: [] });
   });
 
   it("returns 404 for a Notebook that doesn't exist", async () => {

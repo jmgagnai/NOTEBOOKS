@@ -5,7 +5,7 @@ import { createAuthGuard } from '../auth/guard.js';
 import { errorResponseSchema } from '../auth/schema.js';
 import { notebookExists } from '../notebooks/repository.js';
 import { EXCHANGE_RESULT_LIMIT, searchExchanges } from './exchanges.js';
-import { correct } from './correction.js';
+import { correct, searchedWords } from './correction.js';
 import { DOCUMENT_RESULT_LIMIT, searchChunks } from './repository.js';
 import {
   searchNotebookParamsSchema,
@@ -108,15 +108,16 @@ export function registerSearchRoutes(
 /**
  * One search, either kind: the query corrected first (NBK-105) unless asked
  * for exactly, then searched, and the correction reported beside the
- * results so the page can say what it searched for.
+ * results so the page can say what it searched for — and the words, so it
+ * can mark them where a result opens.
  */
 async function search<T>(
   pool: Pool,
   notebookId: string,
   { q, exact }: { q: string; exact: 'true' | 'false' },
   find: (query: string, typed: string) => Promise<T[]>,
-): Promise<{ correctedQuery: string | null; results: T[] }> {
+): Promise<{ correctedQuery: string | null; words: string[]; results: T[] }> {
   const { searched, correctedQuery } =
     exact === 'true' ? { searched: q, correctedQuery: null } : await correct(pool, notebookId, q);
-  return { correctedQuery, results: await find(searched, q) };
+  return { correctedQuery, words: searchedWords(searched), results: await find(searched, q) };
 }

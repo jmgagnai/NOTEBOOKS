@@ -22,6 +22,11 @@ import { AnswerBody } from './answer-body';
 import { CitationGroups } from './citation-groups';
 import { EditableTitle } from '../shared/editable-title';
 import { NotebooksStore } from '../notebooks/notebooks.store';
+import { MarkedText } from '../search/marked-text';
+import { MarkedRun, markRuns } from '../shared/search-words';
+
+/** No words to mark: one array, so a message's binding does not change every check. */
+const NO_WORDS: readonly string[] = [];
 
 /** One block of a streamed answer: a chunk, as received. */
 interface AnswerBlock {
@@ -69,6 +74,7 @@ interface AnswerBlock {
   standalone: true,
   imports: [
     AnswerBody,
+    MarkedText,
     CitationGroups,
     Composer,
     EditableTitle,
@@ -200,6 +206,25 @@ export class ThreadView {
     if (at < 1 || messages[at - 1].role !== 'user') return null;
     return { questionId: messages[at - 1].id, answerId: messages[at].id };
   });
+
+  /** The words to mark in a message: the search result's, in its Exchange only. */
+  protected marksFor(messageId: string): readonly string[] {
+    return this.isFound(messageId) ? this.store.foundWords() : NO_WORDS;
+  }
+
+  /** The found question's text, its words marked; computed once, not on every check. */
+  private readonly foundQuestionRuns = computed(() => {
+    const found = this.foundExchange();
+    const words = this.store.foundWords();
+    if (!found || words.length === 0) return null;
+    const question = this.store.messages().find((m) => m.id === found.questionId);
+    return question ? markRuns(question.content, words) : null;
+  });
+
+  /** The marked runs of a question: the found one's, else none (render it as typed). */
+  protected runsFor(messageId: string): readonly MarkedRun[] | null {
+    return messageId === this.foundExchange()?.questionId ? this.foundQuestionRuns() : null;
+  }
 
   /** Whether a message is half of the Exchange a search result opened (NBK-97). */
   protected isFound(messageId: string): boolean {

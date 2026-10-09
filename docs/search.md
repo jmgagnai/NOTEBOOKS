@@ -89,6 +89,20 @@ corrected to the closest word it does: "rosigny" becomes "rossigny", and
   sends `exact=true` and skips correction. A new query typed in the box is
   always corrected.
 
+## The words, where a result opens
+
+Both routes also return `words`: the words the search read the query as
+(`searchedWords`, `src/search/correction.ts`). They come from the corrected
+query if a word was corrected, without `or` or excluded `-words`. A result's
+link carries them (`&words=`), so the rule lives in the backend only, and
+the frontend just marks (`apps/frontend/src/app/shared/search-words.ts`).
+The opened page marks them in yellow (`<mark class="search-hit">`, token
+`--app-search-hit`) inside the highlighted part only: the cited Chunk of a
+Document, or the question and answer of a Chat Thread's Exchange. Matching
+is whole words, ignoring accents and case, as the search matches. The
+Search results list keeps them bold. A Citation carries no words, so it
+shows no yellow.
+
 ## Documents: one result per Chunk
 
 A result is a **Chunk**, not a Document. A reader looks for the places a word

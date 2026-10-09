@@ -80,3 +80,16 @@ function isExcluded(query: string, index: number): boolean {
   const insideQuotes = (query.slice(0, index).match(/"/g) ?? []).length % 2 === 1;
   return opensTerm && !insideQuotes;
 }
+
+/**
+ * The words a query searches for, to mark where a result opens: every word,
+ * a quoted phrase's included, but not `or` and not an excluded one — the
+ * query as the search reads it. Given the corrected query, they are the
+ * corrected words.
+ */
+export function searchedWords(query: string): string[] {
+  const words = [...query.matchAll(WORD)]
+    .filter((m) => !isExcluded(query, m.index) && m[0].toLowerCase() !== 'or')
+    .map((m) => m[0]);
+  return [...new Set(words)];
+}

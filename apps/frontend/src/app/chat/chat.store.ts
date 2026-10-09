@@ -170,6 +170,8 @@ interface ChatState {
    * opened any other way, and cleared the moment another is.
    */
   foundAnswerId: string | null;
+  /** The words that search result was found by, marked in that Exchange; [] otherwise. */
+  foundWords: string[];
   error: string | null;
 }
 
@@ -185,6 +187,7 @@ const initialState: ChatState = {
   pendingQuestion: null,
   failedQuestions: {},
   foundAnswerId: null,
+  foundWords: [],
   error: null,
 };
 
@@ -288,10 +291,12 @@ export const ChatStore = signalStore(
       notebookId: string,
       threadId: string,
       foundAnswerId: string | null = null,
+      foundWords: string[] = [],
     ): Promise<void> {
       patchState(store, {
         activeThreadId: threadId,
         foundAnswerId,
+        foundWords: foundAnswerId === null ? [] : foundWords,
         // The previous Thread's messages belong to a different Chat Thread,
         // and so does anything that was streaming into it.
         messages: [],
@@ -344,6 +349,7 @@ export const ChatStore = signalStore(
       patchState(store, {
         activeThreadId: null,
         foundAnswerId: null,
+        foundWords: [],
         messages: [],
         messagesLoading: false,
         streamingAnswer: null,
@@ -372,6 +378,7 @@ export const ChatStore = signalStore(
         notebookId: string,
         preferredThreadId: string | null = null,
         foundAnswerId: string | null = null,
+        foundWords: string[] = [],
       ): Promise<void> {
         patchState(store, { threadsLoading: true, error: null });
         try {
@@ -389,6 +396,7 @@ export const ChatStore = signalStore(
               notebookId,
               (preferred ?? newest).id,
               preferred ? foundAnswerId : null,
+              foundWords,
             );
           } else if (store.activeThreadId() === null) {
             await openThread(notebookId, (preferred ?? newest).id);
@@ -415,6 +423,7 @@ export const ChatStore = signalStore(
             threads: [thread, ...store.threads()],
             activeThreadId: thread.id,
             foundAnswerId: null,
+            foundWords: [],
             messages: [],
             streamingAnswer: null,
           });

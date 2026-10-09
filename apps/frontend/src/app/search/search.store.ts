@@ -81,6 +81,12 @@ interface SearchState {
    * (NBK-105); null when it was searched as typed.
    */
   correctedQuery: string | null;
+  /**
+   * The words searched for, as the backend read the query — corrected,
+   * without `or` or excluded words — for the results' links to carry, so
+   * the opened page marks them.
+   */
+  words: string[];
 }
 
 const initialState: SearchState = {
@@ -88,6 +94,7 @@ const initialState: SearchState = {
   query: '',
   exact: false,
   correctedQuery: null,
+  words: [],
   chunks: [],
   exchanges: [],
   searching: false,
@@ -152,6 +159,7 @@ export const SearchStore = signalStore(
           // Both correct against the same Notebook's words, so either says it.
           correctedQuery:
             foundChunks.value?.correctedQuery ?? foundExchanges.value?.correctedQuery ?? null,
+          words: foundChunks.value?.words ?? foundExchanges.value?.words ?? [],
         });
       },
 
@@ -189,6 +197,7 @@ export const SearchStore = signalStore(
  */
 interface Found<T> {
   correctedQuery: string | null;
+  words: string[];
   results: T[];
 }
 
