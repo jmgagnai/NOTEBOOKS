@@ -10,7 +10,7 @@ import { chunkLinkParams } from '../documents/chunk-link';
 import { OPENED_FROM_SEARCH } from '../documents/opened-from-search';
 import { NotebooksStore } from '../notebooks/notebooks.store';
 import { MarkedText } from './marked-text';
-import { SearchResult, SearchStore } from './search.store';
+import { ChunkResult, SearchStore } from './search.store';
 import { showPageTitle } from '../shared/page-title';
 
 /**
@@ -136,15 +136,15 @@ export class SearchPage implements OnDestroy {
   /** A search that found nothing in either the Documents or the Chat Threads. */
   protected readonly nothingMatches = computed(
     () =>
-      !this.store.results().length &&
+      !this.store.chunks().length &&
       !this.store.exchanges().length &&
-      !this.store.error() &&
+      !this.store.chunksError() &&
       !this.store.exchangesError(),
   );
 
   /** Which Document a Chunk is from, and where: "<title or filename> · <heading › heading>". */
-  protected whereFrom(result: SearchResult): string {
-    return [result.title ?? result.filename, result.headingPath.join(' › ')]
+  protected whereFrom(chunk: ChunkResult): string {
+    return [chunk.title ?? chunk.filename, chunk.headingPath.join(' › ')]
       .filter((part) => part !== '')
       .join(' · ');
   }
