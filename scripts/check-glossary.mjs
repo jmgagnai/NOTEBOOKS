@@ -1,16 +1,21 @@
 #!/usr/bin/env node
 /**
  * Fails when a term GLOSSARY.md tells us to avoid appears in text a user or
- * an API consumer reads: the published OpenAPI contract's human-readable text,
- * and the frontend's UI copy (template text and the labels assistive
- * technology reads out).
+ * an API consumer reads — the published OpenAPI contract's human-readable
+ * text, and the frontend's UI copy (template text and the labels assistive
+ * technology reads out) — or in the test titles a developer reads (NBK-101),
+ * held to the UI copy's terms.
  *
  * The contract because it is published: it flows into apps/frontend/src/app/api/,
  * so a wrong word there reaches every consumer of the generated client. UI copy
  * because CODING_STANDARDS.md holds it to the same glossary, and every review of
  * the Copilot UI series (NBK-27..NBK-62) caught the same slips by hand — "Source
  * N" for a Citation, "conversation" for a Chat Thread. Prompt text is covered by
- * assertions in the chat tests, and source comments are left to review.
+ * assertions in the chat tests, and source comments are left to review. Test
+ * titles because review kept catching "passage" and "conversation" in them.
+ *
+ * The rules themselves — terms, exclusions, matching, title extraction — are
+ * in `check-glossary-rules.mjs`, where they are tested.
  *
  * GLOSSARY.md stays the single source of truth: the avoid lists are parsed from
  * it, never restated here. CONTEXTUAL below subtracts the terms that cannot be
@@ -18,70 +23,20 @@
  */
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import {
+  CONTEXTUAL,
+  findTerm,
+  parseAvoidTerms,
+  testTitles,
+  UI_CONTEXTUAL,
+} from './check-glossary-rules.mjs';
 
 const root = new URL('..', import.meta.url).pathname;
 const GLOSSARY = join(root, 'GLOSSARY.md');
 const OPENAPI = join(root, 'apps/backend/openapi.json');
 const FRONTEND_APP = join(root, 'apps/frontend/src/app');
-
-/**
- * Avoid-terms that are real guidance for a human but produce false positives
- * for a machine. Excluded deliberately — keep a reason with each, and prefer
- * deleting an entry here over weakening the check.
- */
-const CONTEXTUAL = new Map([
-  ['file', 'GLOSSARY itself reserves "file" for the raw upload'],
-  ['source', '"source file", and chat prompts legitimately say "sources"'],
-  ['reference', 'ordinary English, and $ref-adjacent wording'],
-  ['session', 'an auth session is a separate, legitimate concept here'],
-  ['content', 'Content-Type, and request/response body fields'],
-  ['message', 'chat_messages is a domain table; also error messages'],
-  ['update', 'ordinary verb: "update a Notebook"'],
-  ['import', 'a TypeScript keyword'],
-  ['project', 'pnpm workspace project, Jira project'],
-  ['workspace', 'pnpm workspace'],
-  ['span', 'HTML <span>, and character spans'],
-  ['segment', 'the frontend renders answer segments'],
-  ['revision', "quoted inside GLOSSARY's own definition of Document Version"],
-  ['notification', 'GLOSSARY reserves it for something addressed to a user'],
-  ['processing', 'ordinary English in operational text'],
-  ['indexing', "GLOSSARY assigns it to the embedding Stage's status"],
-]);
-
-/**
- * The contract's exclusions are mostly about API vocabulary (Content-Type,
- * $ref, table names). UI copy is read by users, so it is held to more of the
- * glossary: only these avoid-terms are excluded there, each with its reason.
- * "source", "conversation", "reference", "workspace" and the rest stay checked.
- */
-const UI_CONTEXTUAL = new Map([
-  ['file', 'GLOSSARY itself reserves "file" for the raw upload, which the upload copy names'],
-  ['content', 'GLOSSARY\'s Executive Summary entry says "the full converted content"'],
-  ['message', 'a chat message is a domain thing; the avoid entry is about App Events'],
-  ['session', 'signing in starts an auth session'],
-  ['update', 'ordinary verb in copy'],
-]);
-
-function parseAvoidTerms(markdown) {
-  const terms = new Map(); // term -> the glossary entry that forbids it
-  const lines = markdown.split('\n');
-  let currentTerm = null;
-  for (const line of lines) {
-    const heading = line.match(/^\*\*(.+?)\*\*:/);
-    if (heading) {
-      currentTerm = heading[1];
-      continue;
-    }
-    if (!line.startsWith('_Avoid_:') || !currentTerm) continue;
-    // Strip parenthetical qualifications and any trailing prose sentence.
-    const body = line.slice('_Avoid_:'.length).replace(/\([^)]*\)/g, '').split('.')[0];
-    for (const raw of body.split(',')) {
-      const term = raw.trim().replace(/^"|"$/g, '').toLowerCase();
-      if (term) terms.set(term, currentTerm);
-    }
-  }
-  return terms;
-}
+const FRONTEND_SRC = join(root, 'apps/frontend/src');
+const BACKEND_TESTS = join(root, 'apps/backend/test');
 
 /** Every human-readable string in the OpenAPI document, with its JSON path. */
 function* proseFields(node, path = '$') {
@@ -98,13 +53,6 @@ function* proseFields(node, path = '$') {
       yield* proseFields(value, here);
     }
   }
-}
-
-/** Whole words only, so "snapshot" doesn't fire inside "snapshotted". */
-function findTerm(text, terms) {
-  return terms.find((term) =>
-    new RegExp(`\\b${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(text),
-  );
 }
 
 function* filesUnder(dir) {
@@ -160,6 +108,12 @@ function* templates() {
   }
 }
 
+/** Every spec and test file: the frontend's `*.spec.ts`, and the backend's tests. */
+function* testFiles() {
+  for (const path of filesUnder(FRONTEND_SRC)) if (path.endsWith('.spec.ts')) yield path;
+  for (const path of filesUnder(BACKEND_TESTS)) if (path.endsWith('.ts')) yield path;
+}
+
 if (!existsSync(OPENAPI)) {
   console.error(
     `check-glossary: ${OPENAPI} is missing.\n` +
@@ -185,11 +139,18 @@ for (const { path, template } of templates()) {
   }
 }
 
+for (const path of testFiles()) {
+  for (const title of testTitles(readFileSync(path, 'utf8'))) {
+    const term = findTerm(title, uiCheckable);
+    if (term) violations.push({ where: path.replace(root, ''), term, text: title, fix: 'test' });
+  }
+}
+
 if (violations.length === 0) {
   console.log(
     `check-glossary: ok — ${checkable.length} terms checked across the OpenAPI contract ` +
       `(${CONTEXTUAL.size} excluded as contextual), ${uiCheckable.length} across the UI copy ` +
-      `(${UI_CONTEXTUAL.size} excluded).`
+      `and test titles (${UI_CONTEXTUAL.size} excluded).`
   );
   process.exit(0);
 }
@@ -208,5 +169,8 @@ if (violations.some((v) => v.fix === 'contract')) {
 }
 if (violations.some((v) => v.fix === 'ui')) {
   console.error('UI copy: reword the template text or label using the GLOSSARY.md term.');
+}
+if (violations.some((v) => v.fix === 'test')) {
+  console.error("Test title: rename the test using the GLOSSARY.md term; what it checks doesn't change.");
 }
 process.exit(1);

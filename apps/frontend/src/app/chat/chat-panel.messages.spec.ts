@@ -90,7 +90,7 @@ describe('Chat panel (ThreadNavigator + ThreadView) — messages and Citations',
       });
     });
 
-    it('turns each source marker in the prose into a link to the Chunk it cites', async () => {
+    it('turns each Citation marker in the prose into a link to the Chunk it cites', async () => {
       await openRevenueQuestions([
         message({
           id: 'a1',
@@ -119,7 +119,7 @@ describe('Chat panel (ThreadNavigator + ThreadView) — messages and Citations',
       expect(screen.getByText(/Lead times lengthened to 14 weeks/)).toBeTruthy();
     });
 
-    it('leaves a marker the answer has no Citation for as plain text', async () => {
+    it('leaves a marker the answer has no Citation for as text', async () => {
       await openRevenueQuestions([
         message({
           id: 'a1',
@@ -177,7 +177,7 @@ describe('Chat panel (ThreadNavigator + ThreadView) — messages and Citations',
       return { settle };
     }
 
-    it('renders each chunk as it arrives, and replaces the preview with the recorded answer', async () => {
+    it('renders each chunk as it arrives, and replaces the streamed answer with the recorded one', async () => {
       const { settle } = await askWithoutAnswering();
 
       // The panel asked for this Notebook's topic — the same stream the
@@ -240,7 +240,7 @@ describe('Chat panel (ThreadNavigator + ThreadView) — messages and Citations',
     // A stream that dies partway leaves prose that will never be persisted,
     // so the preview has to go: leaving it up would show a reader an answer
     // that no re-read of the Thread will ever contain.
-    it('drops the preview when the answer fails partway', async () => {
+    it('drops the streamed answer when it fails partway', async () => {
       await askWithoutAnswering();
 
       appEvents.events.next(chunk(0, '## Revenue'));

@@ -477,7 +477,7 @@ describe('Chat citations', () => {
   // number a source it was never given, and that must resolve to nothing
   // rather than to whatever chunk happens to sit at that index in the
   // Notebook.
-  it('drops source markers that match no retrieved Chunk, and records the answer regardless', async () => {
+  it('drops Citation markers that match no retrieved Chunk, and records the answer regardless', async () => {
     const answerText =
       'Lead times lengthened to 14 weeks [1]. Margins improved [4]. See also [0] and [1].';
     const chatApp = await appWithChat(openRouterStub(answerText).stubFetch);
