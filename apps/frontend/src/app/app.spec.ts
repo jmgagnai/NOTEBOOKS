@@ -14,6 +14,7 @@ import { provideAppIcons } from './shared/fluent-icons';
 import { APP_NAME } from './shared/brand';
 import { answeringLater } from './shared/answer-later.spec-helpers';
 import { pinToday } from './chat/chat-panel.spec-helpers';
+import { SIDEBAR_COLLAPSED_KEY } from './shell/sidebar';
 
 // App-level seam-3 test (NBK-3): renders the real shell through the real
 // app routes and auth guard, mocking only the generated ng-openapi-gen
@@ -111,6 +112,9 @@ const notebooksItem = () => within(sidebar()).getByRole('link', { name: 'Noteboo
 const collapseToggle = () => within(sidebar()).getByRole('button', { name: /sidebar$/ });
 
 describe('App', () => {
+  // The sidebar remembers its state in the browser (NBK-114), so one test's
+  // toggle would otherwise start the next one collapsed.
+  beforeEach(() => localStorage.clear());
   it('shows the sidebar, and no title bar, when a session exists', async () => {
     await renderSignedIn('ada@example.com');
 
@@ -205,15 +209,14 @@ describe('App', () => {
     });
 
     // NBK-103: the Document page is for reading only, so its sidebar lists
-    // no Chat Threads — they open on the Notebook page. It starts as the
-    // rail there, so this expands it.
+    // no Chat Threads — they open on the Notebook page.
     it('shows no Chat Threads on the Document page, even expanded', async () => {
       await renderSignedIn('ada@example.com', {
         url: DOCUMENT_URL,
         threads: [thread('thread-1', 'Revenue questions', '2026-01-01T00:00:00.000Z')],
       });
-      fireEvent.click(collapseToggle());
 
+      expect(collapseToggle().getAttribute('aria-expanded')).toBe('true');
       expect(within(sidebar()).getByRole('link', { name: 'Search this Notebook' })).toBeTruthy();
       expect(screen.queryByRole('navigation', { name: 'Chat Threads' })).toBeNull();
     });
@@ -283,18 +286,56 @@ describe('App', () => {
       expect(open.getAttribute('aria-current')).toBe('true');
     });
 
-    // Spec 08 (NBK-86): the Document page gives the reading column the
-    // width, so the sidebar gives up its own.
-    it('starts as the rail on the Document page, and expands from there', async () => {
-      await renderSignedIn('ada@example.com', {
-        url: DOCUMENT_URL,
+    // NBK-114: only the toggle changes the sidebar. Spec 08 had the Document
+    // page collapse it on entering, which undid the user's choice.
+    it('stays expanded on entering the Document page', async () => {
+      const { navigate } = await renderSignedIn('ada@example.com', {
+        url: `/notebooks/${NOTEBOOK_ID}`,
       });
 
-      expect(collapseToggle().getAttribute('aria-expanded')).toBe('false');
-      // The rail has no room for the Chat Thread rows (spec 07 story 16).
-      expect(screen.queryByRole('navigation', { name: 'Chat Threads' })).toBeNull();
-      fireEvent.click(collapseToggle());
+      await navigate(DOCUMENT_URL);
+
       expect(collapseToggle().getAttribute('aria-expanded')).toBe('true');
+    });
+
+    it('stays collapsed on going back from the Document page to the Notebook', async () => {
+      const { navigate } = await renderSignedIn('ada@example.com', { url: DOCUMENT_URL });
+      fireEvent.click(collapseToggle());
+
+      await navigate(`/notebooks/${NOTEBOOK_ID}`);
+
+      expect(collapseToggle().getAttribute('aria-expanded')).toBe('false');
+      expect(screen.queryByRole('navigation', { name: 'Chat Threads' })).toBeNull();
+    });
+
+    it('starts as the user left it after a reload', async () => {
+      await renderSignedIn('ada@example.com');
+      fireEvent.click(collapseToggle());
+      expect(localStorage.getItem(SIDEBAR_COLLAPSED_KEY)).toBe('true');
+
+      // A reload: a fresh app over the same browser storage.
+      TestBed.resetTestingModule();
+      await renderSignedIn('ada@example.com', { url: `/notebooks/${NOTEBOOK_ID}` });
+
+      expect(collapseToggle().getAttribute('aria-expanded')).toBe('false');
+    });
+
+    it('starts expanded and still toggles when the browser refuses storage', async () => {
+      vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+        throw new DOMException('denied', 'SecurityError');
+      });
+      vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+        throw new DOMException('denied', 'SecurityError');
+      });
+      try {
+        await renderSignedIn('ada@example.com');
+
+        expect(collapseToggle().getAttribute('aria-expanded')).toBe('true');
+        fireEvent.click(collapseToggle());
+        expect(collapseToggle().getAttribute('aria-expanded')).toBe('false');
+      } finally {
+        vi.restoreAllMocks();
+      }
     });
 
     describe('on a narrow window', () => {
@@ -312,6 +353,15 @@ describe('App', () => {
 
         expect(collapseToggle().getAttribute('aria-expanded')).toBe('false');
         expect(within(sidebar()).queryByText(APP_NAME)).toBeNull();
+      });
+
+      // NBK-114: the width only picks the start when the user has not chosen.
+      it('starts expanded below 900 px when the user last left it expanded', async () => {
+        localStorage.setItem(SIDEBAR_COLLAPSED_KEY, 'false');
+
+        await renderSignedIn('ada@example.com');
+
+        expect(collapseToggle().getAttribute('aria-expanded')).toBe('true');
       });
     });
   });

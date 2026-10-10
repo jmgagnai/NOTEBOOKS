@@ -70,8 +70,8 @@ no Chat Threads, and after the user goes back from an open Thread.
 14. As a user, I want to collapse the sidebar to a narrow icon rail and expand it again, so that the content gets the width when I need it.
 15. As a user with a collapsed sidebar, I want the rail to keep the brand mark, Notebooks, Search (inside a Notebook) and my avatar as icon buttons with tooltips, so that the main destinations stay reachable.
 16. As a user with a collapsed sidebar, I accept that the Chat Thread rows are hidden until I expand it, so that the rail stays narrow.
-17. As a user on a window narrower than 900 px, I want the sidebar to start collapsed, so that the page keeps usable width.
-18. As a user, I accept that the sidebar's collapsed state is not remembered across reloads, the same as the Documents pane's hidden state.
+17. As a user on a window narrower than 900 px, I want the sidebar to start collapsed, so that the page keeps usable width. _(Amended by NBK-114: only until I have collapsed or expanded it myself; my choice wins.)_
+18. _(Superseded by NBK-114: the sidebar keeps the state its toggle last set, across pages and reloads.)_ As a user, I accept that the sidebar's collapsed state is not remembered across reloads, the same as the Documents pane's hidden state.
 19. As a keyboard and screen-reader user, I want the sidebar to be a labelled navigation landmark, and the collapse toggle to say what it does, so that I can find and operate it.
 20. As a user on the sign-in or register page, I want no sidebar, since I am not signed in yet.
 
@@ -181,8 +181,10 @@ job; the sidebar only renders it.
 **Collapse.** Expanded about 280 px, collapsed about 56 px (icon rail: brand
 mark, Notebooks, Search when applicable, avatar; each an icon button with a
 tooltip carrying its accessible name). The Chat Threads section is not
-rendered while collapsed. The state is component state only, not persisted.
-Below a 900 px viewport the sidebar starts collapsed.
+rendered while collapsed. Since NBK-114 only the toggle changes the state,
+and the browser remembers it (`localStorage`) across pages and reloads.
+With nothing remembered yet, below a 900 px viewport the sidebar starts
+collapsed.
 
 **Notebooks home (amends spec 05).** Large "Notebooks" title, "Create
 Notebook" at the top right as a secondary button with the add icon, then a

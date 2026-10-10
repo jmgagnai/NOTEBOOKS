@@ -35,7 +35,7 @@ beside it, matching the Copilot page view (`reference/document-page-view.png`):
   text back link.
 - **Chat beside the Document.** The page becomes two flat panes: the chat
   pane on the left (about a third) and the Document on the right (about two
-  thirds), with the sidebar starting as the icon rail. The chat pane is the
+  thirds), with the sidebar starting as the icon rail (no longer since NBK-114). The chat pane is the
   same Chat Thread view as the Notebook page: it shows the Chat Thread the
   user came from, asks against the whole Notebook, and a Citation in it to
   the Document being read scrolls the page instead of reloading it.
@@ -79,8 +79,8 @@ The page stays its own route, so every Citation link keeps working
 
 25. As a reader, I want a chat pane beside the Document, so that I can ask about what I am reading without leaving it.
 26. As a reader on a wide window, I want the chat pane on the left at about a third of the width and the Document on the right at about two thirds, split by a thin line on a flat surface, so that the page matches Copilot's page view and the Document keeps the larger share.
-27. As a reader, I want the sidebar to start as the icon rail on the Document page, so that both panes get the width; I can expand it as anywhere else.
-28. As a reader, I accept that the rail state is not remembered across reloads (spec 07 story 18).
+27. _(Superseded by NBK-114: no page changes the sidebar; only its toggle does.)_ As a reader, I want the sidebar to start as the icon rail on the Document page, so that both panes get the width; I can expand it as anywhere else.
+28. _(Superseded by NBK-114, with spec 07 story 18: the sidebar's state is remembered.)_ As a reader, I accept that the rail state is not remembered across reloads (spec 07 story 18).
 29. As a reader who followed a Citation from a Chat Thread, I want that Chat Thread open in the chat pane, so that I can ask a follow-up straight away.
 30. As a reader who opened the Document from the Documents pane while a Chat Thread was open, I want that Chat Thread still open in the chat pane, so that the conversation I was in follows me.
 31. As a reader who opens a Citation link pasted to me by a colleague, I want the Chat Thread the Citation came from open beside the Document, so that I see the question it answered.
@@ -228,7 +228,8 @@ open Notebook. The navigator already opens a Chat Thread through the store
 without navigating, so clicking a row or "New Chat Thread" on the Document
 page changes only the chat pane. The sidebar starts collapsed to the rail
 when the Document page is entered, and still starts collapsed below 900 px
-everywhere (spec 07 story 17).
+everywhere (spec 07 story 17). NBK-114 removed the collapse on entering: the
+sidebar keeps the state its toggle last set.
 
 **Spec amendments.** Spec 07 story 12 (Chat Threads in the sidebar on the
 Notebook page only) and story 56 (the Document page keeps its own layout) are
@@ -291,7 +292,8 @@ superseded by this spec; both are marked there with a pointer here.
 - Redesigning the Search page (a possible follow-up, like this one was).
 - Copilot-only features on its page view: editing the page, sharing,
   "Creations", Infographic, inline Citation links inside the Document text.
-- Persisting the chat pane's hidden state or the sidebar's rail state.
+- Persisting the chat pane's hidden state or the sidebar's rail state (the
+  sidebar's is persisted since NBK-114).
 - A Version history or Version picker on the page (ADR-0007 §3).
 - Dark mode, localisation.
 - Glossary changes; replacing Angular Material (ADR-0008).

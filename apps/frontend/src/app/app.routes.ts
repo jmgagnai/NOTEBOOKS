@@ -11,12 +11,6 @@ import { NotebooksPage } from './notebooks/notebooks-page';
  */
 export const NOTEBOOK_PAGE_PATH = 'notebooks/:notebookId';
 
-/**
- * The Document page's route path, exported because the sidebar starts as the
- * rail there (spec 08), giving the reading column the width.
- */
-export const DOCUMENT_PAGE_PATH = 'notebooks/:notebookId/documents/:documentId';
-
 export const routes: Routes = [
   { path: '', component: NotebooksPage, canActivate: [authGuard] },
   { path: NOTEBOOK_PAGE_PATH, component: NotebookDetailPage, canActivate: [authGuard] },
@@ -35,7 +29,7 @@ export const routes: Routes = [
   // a Markdown renderer, so `marked` stays out of the initial bundle and is
   // fetched by the users who actually open a Document.
   {
-    path: DOCUMENT_PAGE_PATH,
+    path: 'notebooks/:notebookId/documents/:documentId',
     loadComponent: () =>
       import('./documents/document-detail-page').then((m) => m.DocumentDetailPage),
     canActivate: [authGuard],
