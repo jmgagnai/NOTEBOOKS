@@ -14,12 +14,18 @@
  *
  * Gaps are allowed on purpose. A reserved-then-unused number (0008 is one) is
  * harmless, and closing it would mean a rename.
+ *
+ * It also keeps docs/database-schema.md honest: that diagram is written by
+ * hand, so it names the migration it was drawn from, and a newer migration
+ * fails here until someone redraws it (or confirms it changes nothing).
  */
-import { readdirSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 const root = new URL('..', import.meta.url).pathname;
 const MIGRATIONS_DIR = join(root, 'apps/backend/src/db/migrations');
+const SCHEMA_DOC = 'docs/database-schema.md';
+const SCHEMA_DOC_AS_OF = /as of migration\s+`(\d{4})`/;
 const NAME = /^(\d{4})_[a-z0-9]+(?:_[a-z0-9]+)*\.sql$/;
 
 const files = readdirSync(MIGRATIONS_DIR)
@@ -63,6 +69,18 @@ const highest = numbers.length > 0 ? Math.max(...numbers) : 0;
 const gaps = [];
 for (let n = 1; n < highest; n += 1) {
   if (!byNumber.has(String(n).padStart(4, '0'))) gaps.push(String(n).padStart(4, '0'));
+}
+
+const latest = String(highest).padStart(4, '0');
+const asOf = readFileSync(join(root, SCHEMA_DOC), 'utf8').match(SCHEMA_DOC_AS_OF)?.[1];
+if (asOf !== latest) {
+  console.error(
+    `check-migrations: ${SCHEMA_DOC} is drawn as of migration ${asOf ?? '(none named)'}, ` +
+      `but the latest is ${latest}.\n\n` +
+      `Update its diagram for ${byNumber.get(latest)} (or confirm it changes nothing), ` +
+      `then set "as of migration \`${latest}\`" in it.`
+  );
+  process.exit(1);
 }
 
 console.log(
