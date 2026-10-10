@@ -1,4 +1,5 @@
-import { Component, computed, effect, inject, input, output, signal } from '@angular/core';
+import { DOCUMENT } from '@angular/common';
+import { Component, computed, inject, input, output, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import {
   ActivatedRouteSnapshot,
@@ -12,12 +13,40 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatMenuModule } from '@angular/material/menu';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { filter, map } from 'rxjs';
-import { DOCUMENT_PAGE_PATH, NOTEBOOK_PAGE_PATH } from '../app.routes';
+import { NOTEBOOK_PAGE_PATH } from '../app.routes';
 import { ThreadNavigator } from '../chat/thread-navigator';
 import { Avatar } from '../shared/avatar';
 import { APP_NAME } from '../shared/brand';
 import { CopycatMark } from '../shared/copycat-mark';
 import { isNarrowWindow } from '../shared/narrow-window';
+
+/**
+ * Where the browser keeps whether the sidebar is collapsed (NBK-114): only
+ * the toggle changes it, so the choice outlasts a page change and a reload.
+ */
+export const SIDEBAR_COLLAPSED_KEY = 'sidebar.collapsed';
+
+/**
+ * The saved choice, or null when there is none. Storage the browser refuses
+ * (private mode, a blocked site) reads as no choice: the sidebar is a
+ * convenience, never a reason for the shell to fail.
+ */
+function savedCollapsed(window: Window | null): boolean | null {
+  try {
+    const saved = window?.localStorage.getItem(SIDEBAR_COLLAPSED_KEY);
+    return saved === 'true' ? true : saved === 'false' ? false : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveCollapsed(window: Window | null, collapsed: boolean): void {
+  try {
+    window?.localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(collapsed));
+  } catch {
+    // Not remembered, as before NBK-114; the toggle still works.
+  }
+}
 
 /** The deepest activated route: the app's routes are flat, so it is the page's. */
 function leafOf(route: ActivatedRouteSnapshot): ActivatedRouteSnapshot {
@@ -61,6 +90,7 @@ export class Sidebar {
   protected readonly appName = APP_NAME;
 
   private readonly router = inject(Router);
+  private readonly window = inject(DOCUMENT).defaultView;
 
   private readonly page = toSignal(
     this.router.events.pipe(
@@ -74,14 +104,12 @@ export class Sidebar {
   protected readonly notebookId = computed(() => this.page().paramMap.get('notebookId'));
 
   /**
-   * Component state only, like the Documents pane's hidden state: a reload
-   * starts expanded again, or collapsed on a narrow window.
+   * Changed by the toggle alone (NBK-114): no page collapses or expands it.
+   * It starts as the user last left it; with nothing saved yet, expanded, or
+   * collapsed on a narrow window (spec 07 story 17). A saved choice wins over
+   * the window's width, because the user made it.
    */
-  protected readonly collapsed = signal(isNarrowWindow());
-
-  private readonly onDocumentPage = computed(
-    () => this.page().routeConfig?.path === DOCUMENT_PAGE_PATH,
-  );
+  protected readonly collapsed = signal(savedCollapsed(this.window) ?? isNarrowWindow());
 
   /**
    * The page whose open Chat Thread the sidebar switches: the Notebook page
@@ -92,15 +120,6 @@ export class Sidebar {
     () => this.page().routeConfig?.path === NOTEBOOK_PAGE_PATH,
   );
 
-  /**
-   * Entering the Document page collapses the sidebar to the rail (spec 08),
-   * giving the reading column the width. Only on entering: expanding it
-   * there, or moving from one Document to another, is left alone.
-   */
-  private readonly railOnDocumentPage = effect(() => {
-    if (this.onDocumentPage()) this.collapsed.set(true);
-  });
-
   /** The collapse control's name and tooltip, which say what it will do. */
   protected readonly toggleLabel = computed(() =>
     this.collapsed() ? 'Expand sidebar' : 'Collapse sidebar',
@@ -108,5 +127,6 @@ export class Sidebar {
 
   protected toggle(): void {
     this.collapsed.update((collapsed) => !collapsed);
+    saveCollapsed(this.window, this.collapsed());
   }
 }
