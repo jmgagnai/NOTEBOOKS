@@ -27,6 +27,10 @@ API with curl: see `docs/administration.md`.
 The backend logs through one pino logger (`LOG_LEVEL`, `LOG_FORMAT`): see
 `docs/logging.md`.
 
+The database schema is drawn in `docs/database-schema.md`, as of the migration
+it names. A new migration fails `check:migrations` until the diagram is
+updated for it and that number is bumped.
+
 Hit something the environment fought you on — a gated Docker image, a
 Testcontainers flake, a silent `ng build` failure? See
 `docs/environment-gotchas.md` before debugging it.
