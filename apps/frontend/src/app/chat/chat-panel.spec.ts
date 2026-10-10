@@ -10,14 +10,8 @@ import {
   resetAppEvents,
   renderPanel,
   pinToday,
+  doubleClick,
 } from './chat-panel.spec-helpers';
-
-/** What a browser sends for a double-click: two clicks, then the dblclick. */
-function doubleClick(element: HTMLElement): void {
-  fireEvent.click(element, { detail: 1 });
-  fireEvent.click(element, { detail: 2 });
-  fireEvent.dblClick(element, { detail: 2 });
-}
 
 describe('Chat panel (ThreadNavigator + ThreadView) — Chat Threads', () => {
   beforeEach(resetAppEvents);

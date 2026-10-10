@@ -105,6 +105,13 @@ export const newThreadButton = () =>
   screen.getByRole('button', { name: 'New Chat Thread' }) as HTMLButtonElement;
 
 /** The question most tests ask, and the exchange that records it. */
+/** What a browser sends for a double-click: two clicks, then the dblclick. */
+export function doubleClick(element: HTMLElement): void {
+  fireEvent.click(element, { detail: 1 });
+  fireEvent.click(element, { detail: 2 });
+  fireEvent.dblClick(element, { detail: 2 });
+}
+
 export const ASK = 'What was revenue in Q3?';
 export const q3Exchange = () => ({
   question: message({ id: 'q1', content: ASK }),

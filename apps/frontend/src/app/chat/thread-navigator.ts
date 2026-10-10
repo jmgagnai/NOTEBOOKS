@@ -1,4 +1,16 @@
-import { Component, inject, input } from '@angular/core';
+import {
+  afterNextRender,
+  Component,
+  effect,
+  ElementRef,
+  inject,
+  Injector,
+  input,
+  signal,
+  untracked,
+  viewChild,
+  viewChildren,
+} from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatDialog } from '@angular/material/dialog';
 import { MatIconModule } from '@angular/material/icon';
@@ -9,6 +21,7 @@ import { firstValueFrom } from 'rxjs';
 import { AuthStore } from '../auth/auth.store';
 import { ChatStore, ChatThread, NEW_THREAD_TITLE } from './chat.store';
 import { DeleteThreadDialog, type DeleteThreadDialogData } from './delete-thread-dialog';
+import { EditableTitle } from '../shared/editable-title';
 import { ShortDatePipe } from '../shared/short-date.pipe';
 
 /**
@@ -33,6 +46,7 @@ import { ShortDatePipe } from '../shared/short-date.pipe';
   selector: 'app-thread-navigator',
   standalone: true,
   imports: [
+    EditableTitle,
     ShortDatePipe,
     MatButtonModule,
     MatIconModule,
@@ -52,6 +66,27 @@ export class ThreadNavigator {
 
   private readonly dialog = inject(MatDialog);
 
+  private readonly injector = inject(Injector);
+
+  /**
+   * The Chat Thread whose row is being renamed in place (NBK-115), by
+   * double-click, F2 or its "⋯" menu — the way a Notebook row is (NBK-56).
+   * Open to anyone, like the title above the conversation (ADR-0001).
+   */
+  protected readonly renamingId = signal<string | null>(null);
+
+  // The row's text box opens as soon as it appears: the double-click, F2 or
+  // menu item was the activation. Untracked, so the Threads list re-binding
+  // the title (a rename landing, an App Event) cannot reopen the box and
+  // throw away what is being typed.
+  private readonly renamingTitle = viewChild(EditableTitle);
+  private readonly openRenameBox = effect(() => {
+    const title = this.renamingTitle();
+    if (title) untracked(() => title.edit());
+  });
+
+  private readonly rowButtons = viewChildren<ElementRef<HTMLElement>>('rowButton');
+
   protected newThread(): void {
     void this.store.createThread(this.notebookId(), NEW_THREAD_TITLE);
   }
@@ -64,14 +99,38 @@ export class ThreadNavigator {
     void this.store.openThread(this.notebookId(), thread.id);
   }
 
+  protected startRename(thread: ChatThread): void {
+    this.renamingId.set(thread.id);
+  }
+
+  protected rename(thread: ChatThread, title: string): void {
+    void this.store.renameThread(this.notebookId(), thread.id, title);
+  }
+
+  /**
+   * Enter and Escape take the focused box away, so the focus goes back to
+   * the row it came from; a box left for another control leaves it there.
+   */
+  protected closeRename(thread: ChatThread, refocus: boolean): void {
+    this.renamingId.set(null);
+    if (!refocus) return;
+    afterNextRender(
+      () =>
+        this.rowButtons()
+          .find((row) => row.nativeElement.dataset['threadId'] === thread.id)
+          ?.nativeElement.focus(),
+      { injector: this.injector },
+    );
+  }
+
   protected isOpen(thread: ChatThread): boolean {
     return thread.id === this.store.activeThreadId();
   }
 
   /**
    * Whether the signed-in user started this Thread: only its author may
-   * delete it (NBK-95, ADR-0001 amendment), so only their rows carry the
-   * "⋯" menu — Delete is its one item. The server refuses anyone else too.
+   * delete it (NBK-95, ADR-0001 amendment), so only their rows' "⋯" menu
+   * offers Delete. The server refuses anyone else too.
    */
   protected isMine(thread: ChatThread): boolean {
     return thread.author.id === this.auth.user()?.id;
