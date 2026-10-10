@@ -39,29 +39,56 @@
       -->
       <ul class="thread-navigator__thread-list">
         @for (thread of store.threads(); track thread.id) {
-          <li
-            class="thread-navigator__thread"
-            [class.thread-navigator__thread--mine]="isMine(thread)"
-          >
-            <button
-              type="button"
-              class="thread-navigator__thread-open"
-              [class.thread-navigator__thread-open--active]="isOpen(thread)"
-              [attr.aria-current]="isOpen(thread) ? 'true' : null"
-              [attr.aria-label]="'Open ' + thread.title"
-              (click)="openThread(thread)"
-            >
-              <span class="thread-navigator__thread-title">{{ thread.title }}</span>
-              <span class="thread-navigator__thread-meta"
-                >{{ thread.author.email }} · {{ thread.createdAt | shortDate }}</span
+          <li class="thread-navigator__thread">
+            <!--
+              NBK-115: while renaming, the row stops being a button — a text
+              box inside one would open the Thread on every click into it —
+              and holds the title's text box instead (NBK-56's Notebook rows).
+            -->
+            @if (renamingId() === thread.id) {
+              <div
+                class="thread-navigator__thread-open thread-navigator__thread-open--renaming"
+                [class.thread-navigator__thread-open--active]="isOpen(thread)"
               >
-            </button>
-            @if (isMine(thread)) {
-              <!--
-                NBK-95: the author's own Threads only, Delete its one item;
-                shown on hover and focus, like the Notebook rows' (spec 07
-                story 24).
-              -->
+                <app-editable-title
+                  size="small"
+                  editLabel="Chat Thread title"
+                  [title]="thread.title"
+                  (titleChange)="rename(thread, $event)"
+                  (editClosed)="closeRename(thread, $event.refocus)"
+                />
+                <span class="thread-navigator__thread-meta"
+                  >{{ thread.author.email }} · {{ thread.createdAt | shortDate }}</span
+                >
+              </div>
+            } @else {
+              <!-- A double-click opens the Thread on its first click, which is
+                   harmless: a second open of the open Thread is a no-op. -->
+              <button
+                #rowButton
+                type="button"
+                class="thread-navigator__thread-open"
+                [class.thread-navigator__thread-open--active]="isOpen(thread)"
+                [attr.data-thread-id]="thread.id"
+                [attr.aria-current]="isOpen(thread) ? 'true' : null"
+                [attr.aria-label]="'Open ' + thread.title"
+                (click)="openThread(thread)"
+                (dblclick)="startRename(thread)"
+                (keydown.f2)="startRename(thread)"
+              >
+                <span class="thread-navigator__thread-title">{{ thread.title }}</span>
+                <span class="thread-navigator__thread-meta"
+                  >{{ thread.author.email }} · {{ thread.createdAt | shortDate }}</span
+                >
+              </button>
+            }
+            <!--
+              Every row's: Rename for anyone (NBK-115, ADR-0001), Delete for
+              its author only (NBK-95). Shown on hover and focus, like the
+              Notebook rows' (spec 07 story 24); not while renaming, when the
+              text box takes the row's width.
+            -->
+            @if (renamingId() !== thread.id) {
               <button
                 mat-icon-button
                 type="button"
@@ -76,12 +103,23 @@
                 <button
                   mat-menu-item
                   type="button"
-                  [attr.aria-label]="'Delete ' + thread.title"
-                  (click)="deleteThread(thread)"
+                  [attr.aria-label]="'Rename ' + thread.title"
+                  (click)="startRename(thread)"
                 >
-                  <mat-icon svgIcon="delete" />
-                  <span>Delete</span>
+                  <mat-icon svgIcon="rename" />
+                  <span>Rename</span>
                 </button>
+                @if (isMine(thread)) {
+                  <button
+                    mat-menu-item
+                    type="button"
+                    [attr.aria-label]="'Delete ' + thread.title"
+                    (click)="deleteThread(thread)"
+                  >
+                    <mat-icon svgIcon="delete" />
+                    <span>Delete</span>
+                  </button>
+                }
               </mat-menu>
             }
           </li>

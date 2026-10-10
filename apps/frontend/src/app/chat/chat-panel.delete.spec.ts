@@ -48,11 +48,15 @@ describe('Chat panel (ThreadNavigator + ThreadView) — deleting a Chat Thread',
     return screen.findByRole('dialog');
   }
 
+  // Every row has the "⋯" menu since NBK-115, for Rename; Delete is in it
+  // on the author's own rows only.
   it("offers Delete on its author's own Chat Threads only", async () => {
     await renderWithThreads();
 
-    expect(actionsFor('My questions')).toBeTruthy();
-    expect(actionsFor('Their questions')).toBeNull();
+    // The author's own rows offering it is what every test below relies on.
+    fireEvent.click(actionsFor('Their questions')!);
+    expect(await screen.findByRole('menuitem', { name: 'Rename Their questions' })).toBeTruthy();
+    expect(screen.queryByRole('menuitem', { name: 'Delete Their questions' })).toBeNull();
   });
 
   it('asks first, saying it cannot be undone, and Cancel deletes nothing', async () => {
